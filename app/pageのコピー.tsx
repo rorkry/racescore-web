@@ -531,24 +531,6 @@ export default function Home() {
     setAllScores(scores);
   }, [nestedData]);
 
-  // --- 追加: 枠順確定タブ専用のスコア分布計算 ---
-  // 枠順確定タブでは entries を使わないため、frameNestedData だけで
-  // 頭数分布を再計算し allScores を更新する
-  useEffect(() => {
-    if (!Object.keys(frameNestedData).length) return;
-    const scores: number[] = [];
-    Object.values(frameNestedData).forEach(placeMap =>
-      Object.values(placeMap).forEach(raceMap =>
-        Object.values(raceMap).forEach(horses =>
-          horses.forEach(horse => {
-            scores.push(computeKisoScore(horse));
-          })
-        )
-      )
-    );
-    setAllScores(scores);
-  }, [frameNestedData]);
-
   // favorites が変わるたびに localStorage に保存
   useEffect(() => {
     localStorage.setItem('favorites', JSON.stringify(Array.from(favorites)));
