@@ -64,7 +64,7 @@ const frameBgStyle: Record<string, string> = {
 
 
 // 全角 A～E を半角に変換し、A→5★、…、E→1★
-function levelToStars(level: string): number {
+export function levelToStars(level: string): number {
   if (!level) return 0
   let ch = level.trim().charAt(0)
   const code = ch.charCodeAt(0)
@@ -94,7 +94,7 @@ function percentile(arr: number[], p: number): number {
 }
 
 // 全角数字を半角に変換
-function toHalfWidth(s: string): string {
+export function toHalfWidth(s: string): string {
   return s.replace(/[０-９]/g, c =>
     String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
   );
@@ -105,7 +105,7 @@ const normalizeName = (name: string = '') =>
   name.replace(/\u3000/g, '').replace(/\s/g, '');
 
 // "1085" → "1.08.5"
-function formatTime(t: string): string {
+export function formatTime(t: string): string {
   if (!t) return ''
   const str = t.toString().padStart(4, '0')
   const m  = str.slice(0,1)
@@ -123,7 +123,7 @@ function parseDateStr(str: string): Date | null {
 }
 
 // "mssd" を秒数に変換 (例: "2104" → 130.4 秒)
-function toSec(t: string): number {
+export function toSec(t: string): number {
   const str = t.padStart(4, '0');
   const m = parseInt(str.slice(0,1), 10);
   const ss = parseInt(str.slice(1,3), 10);
@@ -132,7 +132,7 @@ function toSec(t: string): number {
 }
 
 // クラス名を数値ランクに変換: 新馬:0, 未勝利:1, 1勝:2, 2勝:3, 3勝:4, OP系:5, G3:6, G2:7, G1:8
-function classToRank(cls: string): number {
+export function classToRank(cls: string): number {
   const s = cls.trim();
   if (s.includes('新馬')) return 0;
   if (s.includes('未勝利')) return 1;
@@ -1025,7 +1025,11 @@ export default function Home() {
                                             place={place}
                                             raceNo={raceNo}
                                             labels={labels}
+                                            scores={scores}         /* 追加 */
+                                            marks={marks}
+                                            setMarks={setMarks}
                                             favorites={favorites}
+                                            setFavorites={setFavorites}
                                             frameColor={frameColor}
                                             clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
                                           />
@@ -1124,6 +1128,13 @@ export default function Home() {
                                         // スコア順でラベルを割り当てる
                                         const scores = horses.map(horse => computeKisoScore(horse));
                                         const labels = assignLabels(scores);
+                                        console.log(
+                                          '枠順', dateCode, place, raceNo,
+                                          'horses=', horses.length,
+                                          'scores=', scores.length,
+                                          'labels=', labels.length,
+                                          labels.slice(0, 5)
+                                        );
                                         return (
                                           <Tab.Panel key={raceNo}>
                                             <EntryTable
@@ -1132,9 +1143,14 @@ export default function Home() {
                                               place={place}
                                               raceNo={raceNo}
                                               labels={labels}
+                                              scores={scores}         /* 追加 */
+                                              marks={marks}
+                                              setMarks={setMarks}
                                               favorites={favorites}
+                                              setFavorites={setFavorites}
                                               frameColor={frameBgStyle}
                                               clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                                              showLabels={true}
                                             />
                                           </Tab.Panel>
                                         );
@@ -1277,202 +1293,31 @@ export default function Home() {
                 {error && (
                   <div className="mt-2 text-red-600 font-medium">{error}</div>
                 )}
-                {searchResult && (
-                  <div className="mt-4 overflow-auto">
-                    <table className="min-w-full text-left border-collapse border border-black">
-                      <thead>
-                        <tr>
-                          <th className="px-2 py-1 border border-black bg-gray-100 text-black">
-                            馬名
-                          </th>
-                          <th className="px-2 py-1 border border-black bg-gray-100 text-black">
-                            騎手
-                          </th>
-                          {['前走','2走前','3走前','4走前','5走前'].map((label, i) => (
-                            <th key={i} className="px-2 py-1 border border-black bg-gray-100 text-black">
-                              {label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="odd:bg-white even:bg-gray-50">
-                          <td className="px-2 py-1 border border-black text-black align-top">
-                            <div className="font-bold">
-                              {searchResult.entry['馬名']}
-                            </div>
-                            <div className="text-sm">
-                              {searchResult.entry['性別']}{searchResult.entry['馬齢']}<br/>
-                              {searchResult.entry['調教師']}／{searchResult.entry['所属']}
-                            </div>
-                          </td>
-                          {/* 騎手・斤量 */}
-                          <td className="px-2 py-1 border border-black text-sm whitespace-nowrap text-black font-medium">
-                            {searchResult.entry['騎手']}
-                            {searchResult.entry['斤量'] && (
-                              <span className="ml-1 text-xs text-gray-600">
-                                {searchResult.entry['斤量']}kg
-                              </span>
-                            )}
-                          </td>
-                          {searchResult.past.map((r, j) => {
-                            // 距離差分計算
-                            const currDistEntry = searchResult.entry['距離']?.trim() || '';
-                            const currDist = parseInt(currDistEntry.replace(/[^\d]/g, ''), 10);
-                            const pastDist = parseInt((r['距離'] || '').replace(/[^\d]/g, ''), 10);
-                            const isDistDiff = !isNaN(currDist) && !isNaN(pastDist) && Math.abs(currDist - pastDist) >= 400;
-                            // 馬場(芝/ダ等)違い判定
-                            const currSurface = searchResult.entry['馬場']?.trim() || '';
-                            const pastSurface = (r['距離'] || '').trim().charAt(0);
-                            const isSurfaceDiff = currSurface !== '' && pastSurface !== '' && currSurface !== pastSurface;
-                            const rid = r['レースID(新/馬番無)']?.trim() || '';
-                            const date = r['日付(yyyy.mm.dd)']?.trim() || ''
-                            const starCount = levelToStars(r['レース印３']?.trim() || '')
-                            const stars = starCount > 0 ? '★'.repeat(starCount) : '-'
-                            let starColor = 'text-black'
-                            switch (starCount) {
-                              case 5: starColor = 'text-red-500'; break
-                              case 4: starColor = 'text-orange-500'; break
-                              case 3: starColor = 'text-blue-800'; break
-                              case 2: starColor = 'text-gray-700'; break
-                              case 1: starColor = 'text-gray-400'; break
-                            }
-                            // ペース判定（PCIベース・距離＆馬場別閾値）
-                            const pci = parseFloat(r['PCI'] || '0');
-                            const dist = parseInt((r['距離'] || '').replace(/[^\d]/g, ''), 10);
-                            const surface = (r['距離'] || '').trim().charAt(0); // '芝' or 'ダ'
-                            let paceCat: string;
-                            // Dirt ≤1600m
-                            if (surface === 'ダ' && dist <= 1600) {
-                              if (pci <= 41) paceCat = '超ハイペース';
-                              else if (pci <= 42) paceCat = 'ハイペース';
-                              else if (pci >= 49) paceCat = '超スローペース';
-                              else if (pci >= 48) paceCat = 'スローペース';
-                              else paceCat = 'ミドルペース';
-                            // Dirt ≥1700m
-                            } else if (surface === 'ダ' && dist >= 1700) {
-                              if (pci <= 44) paceCat = '超ハイペース';
-                              else if (pci <= 45) paceCat = 'ハイペース';
-                              else if (pci >= 49) paceCat = '超スローペース';
-                              else if (pci >= 48) paceCat = 'スローペース';
-                              else paceCat = 'ミドルペース';
-                            // Turf ≥1700m
-                            } else if (surface === '芝' && dist >= 1700) {
-                              if (pci <= 47.5) paceCat = '超ハイペース';
-                              else if (pci <= 50) paceCat = 'ハイペース';
-                              else if (pci >= 57) paceCat = '超スローペース';
-                              else if (pci >= 56) paceCat = 'スローペース';
-                              else paceCat = 'ミドルペース';
-                            // Turf ≤1600m
-                            } else if (surface === '芝' && dist <= 1600) {
-                              if (pci <= 46) paceCat = '超ハイペース';
-                              else if (pci <= 47) paceCat = 'ハイペース';
-                              else if (pci >= 52) paceCat = '超スローペース';
-                              else if (pci >= 50) paceCat = 'スローペース';
-                              else paceCat = 'ミドルペース';
-                            } else {
-                              paceCat = 'ミドルペース';
-                            }
-                            let paceShort: string;
-                            switch (paceCat) {
-                              case '超ハイペース': paceShort = '超ハイ'; break;
-                              case 'ハイペース':   paceShort = 'ハイ';   break;
-                              case 'ミドルペース': paceShort = 'ミドル'; break;
-                              case 'スローペース': paceShort = 'スロー'; break;
-                              case '超スローペース': paceShort = '超スロー'; break;
-                              default: paceShort = ''; break;
-                            }
-                            // calculate average passing position for this past race
-                            const passNums = [r['2角'], r['3角'], r['4角']]
-                              .map(x => parseInt((x||'').replace(/[^\d]/g, ''), 10))
-                              .filter(n => !isNaN(n));
-                            const avgPass = passNums.length > 0
-                              ? passNums.reduce((a,b) => a + b, 0) / passNums.length
-                              : 99;
-                            // margin difference
-                            const margin = parseFloat(r['着差']?.trim() || '0');
-                            const pass = [r['2角'], r['3角'], r['4角']]
-                              .filter(x => x?.trim())
-                              .map(x => x!.trim())
-                              .join('-')
-                            const fin = r['着差']?.trim() ? ` (${r['着差'].trim()})` : ''
-                            const finishPos = r['着順']?.trim() || ''
-                            return (
-                              <td key={j} className="align-top relative px-2 py-1 border border-black text-black">
-                                <div className="flex items-center mb-1">
-                                  <div className={`text-sm font-medium ${j === 0 && (isDistDiff || isSurfaceDiff) ? 'text-green-500' : ''}`}>
-                                    {date} {(r['場所'] || r['場所_1'] || '').trim()} {r['距離']?.trim() || ''}
-                                  </div>
-                                  <input
-                                    type="checkbox"
-                                    className="ml-2"
-                                    checked={favorites.has(rid)}
-                                    onChange={() => {
-                                      const next = new Set(favorites)
-                                      if (next.has(rid)) next.delete(rid)
-                                      else next.add(rid)
-                                      setFavorites(next)
-                                    }}
-                                  />
-                                </div>
-                                {finishPos && (
-                                  <div className="text-black text-lg font-semibold absolute bottom-1 right-1">
-                                    {finishPos}
-                                  </div>
-                                )}
-                                <div className="text-xs mb-1">
-                                  {`${r['クラス名'] || ''} ${r['頭数'] || ''}頭 ${r['馬番'] || ''}番 ${r['人気'] || ''}人気 ${r['騎手'] || ''}`}
-                                </div>
-                                <div className={starColor}>{stars}</div>
-                                <div className="text-xs">{paceCat}</div>
-                                {
-                                  // Determine passing color based on PCI pace, avgPass and margin
-                                }
-                                {(() => {
-                                  const passColorClass = (() => {
-                                    if (paceShort === '超ハイ' && avgPass <= 4) {
-                                      return margin <= 1
-                                        ? 'text-red-500 font-semibold'
-                                        : 'text-orange-500 font-semibold'
-                                    }
-                                    if (paceShort === 'ハイ' && avgPass <= 4 && margin <= 1) {
-                                      return 'text-red-500 font-semibold'
-                                    }
-                                    if (paceShort === '超スロー' && avgPass >= 8) {
-                                      return margin <= 1
-                                        ? 'text-red-500 font-semibold'
-                                        : 'text-orange-500 font-semibold'
-                                    }
-                                    if (paceShort === 'スロー' && avgPass >= 8 && margin <= 1) {
-                                      return 'text-red-500 font-semibold'
-                                    }
-                                    return 'text-black'
-                                  })()
-                                  return (
-                                    <div className={`text-xs ${passColorClass}`}>
-                                      {pass}
-                                    </div>
-                                  )
-                                })()}
-                                <div className="text-xs">
-                                  {formatTime(r['走破タイム'] || '')}{fin}
-                                </div>
-                                {getClusterElements(r, allRaces, clusterCache, DEBUG)}
-                                </td>
-                            )
-                          })}
-                          {searchResult.past.length < 5 &&
-                            Array.from({ length: 5 - searchResult.past.length }).map((_, k) => (
-                              <td
-                                key={`empty-${k}`}
-                                className="align-top px-2 py-1 border border-black bg-white text-black"
-                              >&nbsp;</td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                {searchResult && (() => {
+                  const horses = [searchResult];
+                  const scores = horses.map(h => computeKisoScore(h));
+                  const labels = assignLabels(scores);
+
+                  return (
+                    <div className="mt-4">
+                      <EntryTable
+                        horses={horses}
+                        dateCode="検索"
+                        place="-"
+                        raceNo="-"
+                        labels={labels}
+                        scores={scores}
+                        marks={marks}
+                        setMarks={setMarks}
+                        favorites={favorites}
+                        setFavorites={setFavorites}
+                        frameColor={{}}     /* 枠色なし */
+                        clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                        showLabels={false}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
             </Tab.Panel>
             {/* 分布タブ */}
