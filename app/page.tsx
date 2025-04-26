@@ -210,6 +210,85 @@ function timeDiffScore(selfSec: number, clusterSecs: number[]): number {
 }
 
 // Compute Kiso score for a horse based on recent 3 past races (reuse your finalScore logic)
+/**
+ * 別クラスタイムを計算（キャッシュ対応）
+ */
+function getClusterElements(
+  r: RecordRow,
+  allRaces: RecordRow[],
+  clusterCache: React.MutableRefObject<Record<string, JSX.Element[]>>,
+  DEBUG = false
+): JSX.Element[] {
+  const rid = r['レースID(新/馬番無)']?.trim() || '';
+  if (clusterCache.current[rid]) return clusterCache.current[rid];
+
+  const dateStr = r['日付(yyyy.mm.dd)']?.trim() || '';
+  const baseDate = parseDateStr(dateStr);
+  if (!baseDate) { clusterCache.current[rid] = []; return []; }
+
+  const cand = allRaces
+    .filter(x => toHalfWidth((x['着順'] || '').trim()) === '1')
+    .filter(x => {
+      const d = parseDateStr(x['日付(yyyy.mm.dd)'] || '');
+      return d && Math.abs(d.getTime() - baseDate.getTime()) <= 86400000;
+    })
+    .filter(x =>
+      (x['場所'] || x['場所_1'] || '').replace(/\s+/g, '') ===
+      (r['場所'] || r['場所_1'] || '').replace(/\s+/g, '')
+    )
+    .filter(x =>
+      (x['距離'] || '').replace(/\s+/g, '') ===
+      (r['距離'] || '').replace(/\s+/g, '')
+    )
+    .filter(x => {
+      const raw = (x['走破タイム'] || '').trim();
+      return raw && !isNaN(toSec(raw));
+    });
+
+  if (cand.length === 0) { clusterCache.current[rid] = []; return []; }
+
+  const elems = cand.map((c, i) => {
+    const otherTime = (c['走破タイム'] || '').trim();
+    const diffRaw = toSec(r['走破タイム'] || '') - toSec(otherTime);
+    const diff = diffRaw.toFixed(1);
+    const sign = diffRaw >= 0 ? '+' : '';
+
+    // 日付ラベル
+    const d2 = parseDateStr(c['日付(yyyy.mm.dd)'] || '');
+    let day = '';
+    if (d2) {
+      const delta = Math.round((d2.getTime() - baseDate.getTime()) / 86400000);
+      day = delta === 0 ? '同日' : delta === 1 ? '翌日' : delta === -1 ? '前日' : '';
+    }
+
+    // ハイライト
+    const currRank  = classToRank(r['クラス名'] || '');
+    const otherRank = classToRank((c['クラス名'] || '').trim());
+    let hl = '';
+    if (otherRank > currRank) {
+      if (diffRaw < 0)       hl = 'text-red-500';
+      else if (diffRaw <= 1) hl = 'text-orange-500';
+    }
+
+    return {
+      rawDiff: diffRaw,
+      el: (
+        <div key={i} className="text-xs mt-1">
+          <span className={`${hl} font-medium`}>
+            {day}{c['クラス名']?.trim()}{formatTime(otherTime)}
+            <span className="ml-1">{sign}{diff}</span>
+          </span>
+        </div>
+      )
+    };
+  }).filter(x => Number.isFinite(x.rawDiff));
+
+  elems.sort((a,b) => b.rawDiff - a.rawDiff);
+  const out = elems.slice(0,3).map(x => x.el);
+
+  clusterCache.current[rid] = out;
+  return out;
+}
 function computeKisoScore(horse: HorseWithPast): number {
   const recent = horse.past.slice(0, 3);
   // replicate the trialScores logic
@@ -1633,92 +1712,7 @@ export default function Home() {
                                                             {formatTime(r['走破タイム'] || '')}
                                                             {r['着差']?.trim() && ` (${r['着差'].trim()})`}
                                                           </div>
-                                                          {/* 別クラスタイム表示 */}
-                                                          {clusterCache.current[rid] ?? (() => {
-                                                            // find 1着 records within ±1 day, same location & distance, 除外: 自分自身
-                                                            const baseDateObj = parseDateStr(date);
-                                                            if (!baseDateObj) return null;
-                                                            // Stepwise candidate filtering for debug
-                                                            const firstFinish = allRaces.filter(x =>
-                                                              toHalfWidth((x['着順'] || '').trim()) === '1'
-                                                            );
-                                                            if (DEBUG) console.debug('Debug 別クラスタイム Step1 finish=1 count:', firstFinish.length);
-
-                                                            const dateFiltered = firstFinish.filter(x => {
-                                                              const d = parseDateStr(x['日付(yyyy.mm.dd)'] || '');
-                                                              return d && Math.abs(d.getTime() - baseDateObj.getTime()) <= 86400000;
-                                                            });
-                                                            if (DEBUG) console.debug('Debug 別クラスタイム Step2 date ±1d count:', dateFiltered.length);
-
-                                                            const locFiltered = dateFiltered.filter(x => {
-                                                              const la = (x['場所'] || x['場所_1'] || '').replace(/\s+/g, '');
-                                                              const lb = (r['場所'] || r['場所_1'] || '').replace(/\s+/g, '');
-                                                              return la === lb;
-                                                            });
-                                                            if (DEBUG) console.debug('Debug 別クラスタイム Step3 location match count:', locFiltered.length);
-
-                                                            const distFiltered = locFiltered.filter(x => {
-                                                              const a = (x['距離'] || '').replace(/\s+/g, '');
-                                                              const b = (r['距離'] || '').replace(/\s+/g, '');
-                                                              return a === b;
-                                                            });
-                                                            if (DEBUG) console.debug('Debug 別クラスタイム Step4 distance match count:', distFiltered.length);
-
-                                                            const candidates = distFiltered.filter(x => {
-                                                              const raw = (x['走破タイム'] || '').trim();
-                                                              return raw !== '' && !isNaN(toSec(raw));
-                                                            });
-                                                            // Fallback: log detailed debug info and throw error if no candidates
-                                                            if (candidates.length === 0) {
-                                                              if (DEBUG) console.warn(`別クラスタイムが見つかりません: ${date} ${r['距離']?.trim()}`);
-                                                              clusterCache.current[rid] = [];
-                                                              return [];
-                                                            }
-                                                            // build candidate info with rawDiff and element
-                                                            const infos = candidates.map((c, bi) => {
-                                                              const otherTime = (c['走破タイム'] || '').trim();
-                                                              const otherClass = (c['クラス名'] || '').trim();
-                                                              const diff = (toSec(r['走破タイム'] || '') - toSec(otherTime)).toFixed(1);
-                                                              const rawDiff = parseFloat(diff);
-                                                              const sign = diff.startsWith('-') ? '' : '+';
-                                                              const _xLoc = (c['場所'] || c['場所_1'] || '').trim();
-                                                              // 日付差によるラベル
-                                                              const d2 = parseDateStr(c['日付(yyyy.mm.dd)'] || '');
-                                                              let dayLabel = '';
-                                                              if (d2) {
-                                                                const delta = Math.round((d2.getTime() - baseDateObj.getTime()) / 86400000);
-                                                                if (delta === 0) dayLabel = '同日';
-                                                                else if (delta === 1) dayLabel = '翌日';
-                                                                else if (delta === -1) dayLabel = '前日';
-                                                              }
-                                                              // クラスランク比較と色付け
-                                                              const currRank = classToRank(r['クラス名'] || '');
-                                                              const otherRank = classToRank(otherClass);
-                                                              let highlight = '';
-                                                              if (otherRank > currRank) {
-                                                                if (rawDiff < 0) highlight = 'text-red-500';
-                                                                else if (rawDiff <= 1) highlight = 'text-orange-500';
-                                                              }
-                                                              const element = (
-                                                                <div key={bi} className="text-xs mt-1">
-                                                                  <span className={`${highlight} font-medium`}>
-                                                                    {dayLabel}{otherClass}{formatTime(otherTime)}
-                                                                    <span className="ml-1">{sign}{diff}</span>
-                                                                  </span>
-                                                                  {/* removed location display */}
-                                                                </div>
-                                                              );
-                                                              return { rawDiff, element };
-                                                            });
-                                                            // filter out invalid rawDiff
-                                                            const validInfos = infos.filter(info => Number.isFinite(info.rawDiff));
-                                                            // sort by descending rawDiff
-                                                            validInfos.sort((a, b) => b.rawDiff - a.rawDiff);
-                                                            // take top 3
-                                                            const sliced = validInfos.slice(0, 3).map(info => info.element);
-                                                            clusterCache.current[rid] = sliced;
-                                                            return sliced;
-                                                          })()}
+                                                          {getClusterElements(r, allRaces, clusterCache, DEBUG)}
                                                         </td>
                                                       )
                                                       })}
@@ -2058,92 +2052,8 @@ export default function Home() {
                                 <div className="text-xs">
                                   {formatTime(r['走破タイム'] || '')}{fin}
                                 </div>
-                                {/* 別クラスタイム表示 */}
-                                {clusterCache.current[rid] ?? (() => {
-                                  // find 1着 records within ±1 day, same location & distance, 除外: 自分自身
-                                  const baseDateObj = parseDateStr(date);
-                                  if (!baseDateObj) return null;
-                                  // Stepwise candidate filtering for debug
-                                  const firstFinish = allRaces.filter(x =>
-                                    toHalfWidth((x['着順'] || '').trim()) === '1'
-                                  );
-                                  if (DEBUG) console.debug('Debug 別クラスタイム Step1 finish=1 count:', firstFinish.length);
-
-                                  const dateFiltered = firstFinish.filter(x => {
-                                    const d = parseDateStr(x['日付(yyyy.mm.dd)'] || '');
-                                    return d && Math.abs(d.getTime() - baseDateObj.getTime()) <= 86400000;
-                                  });
-                                  if (DEBUG) console.debug('Debug 別クラスタイム Step2 date ±1d count:', dateFiltered.length);
-
-                                  const locFiltered = dateFiltered.filter(x => {
-                                    const la = (x['場所'] || x['場所_1'] || '').replace(/\s+/g, '');
-                                    const lb = (r['場所'] || r['場所_1'] || '').replace(/\s+/g, '');
-                                    return la === lb;
-                                  });
-                                  if (DEBUG) console.debug('Debug 別クラスタイム Step3 location match count:', locFiltered.length);
-
-                                  const distFiltered = locFiltered.filter(x => {
-                                    const a = (x['距離'] || '').replace(/\s+/g, '');
-                                    const b = (r['距離'] || '').replace(/\s+/g, '');
-                                    return a === b;
-                                  });
-                                  if (DEBUG) console.debug('Debug 別クラスタイム Step4 distance match count:', distFiltered.length);
-
-                                  const candidates = distFiltered.filter(x => {
-                                    const raw = (x['走破タイム'] || '').trim();
-                                    return raw !== '' && !isNaN(toSec(raw));
-                                  });
-                                  if (candidates.length === 0) {
-                                    if (DEBUG) console.warn(`別クラスタイムが見つかりません: ${date} ${r['距離']?.trim()}`);
-                                    clusterCache.current[rid] = [];
-                                    return [];
-                                  }
-                                  // build candidate info with rawDiff and element
-                                  const infos = candidates.map((c, bi) => {
-                                    const otherTime = (c['走破タイム'] || '').trim();
-                                    const otherClass = (c['クラス名'] || '').trim();
-                                    const diff = (toSec(r['走破タイム'] || '') - toSec(otherTime)).toFixed(1);
-                                    const rawDiff = parseFloat(diff);
-                                    const sign = diff.startsWith('-') ? '' : '+';
-                                    const xLoc = (c['場所'] || c['場所_1'] || '').trim();
-                                    // 日付差によるラベル
-                                    const d2 = parseDateStr(c['日付(yyyy.mm.dd)'] || '');
-                                    let dayLabel = '';
-                                    if (d2) {
-                                      const delta = Math.round((d2.getTime() - baseDateObj.getTime()) / 86400000);
-                                      if (delta === 0) dayLabel = '同日';
-                                      else if (delta === 1) dayLabel = '翌日';
-                                      else if (delta === -1) dayLabel = '前日';
-                                    }
-                                    // クラスランク比較と色付け
-                                    const currRank = classToRank(r['クラス名'] || '');
-                                    const otherRank = classToRank(otherClass);
-                                    let highlight = '';
-                                    if (otherRank > currRank) {
-                                      if (rawDiff < 0) highlight = 'text-red-500';
-                                      else if (rawDiff <= 1) highlight = 'text-orange-500';
-                                    }
-                                    const element = (
-                                      <div key={bi} className="text-xs mt-1">
-                                        <span className={`${highlight} font-medium`}>
-                                          {dayLabel}{otherClass}{formatTime(otherTime)}
-                                          <span className="ml-1">{sign}{diff}</span>
-                                        </span>
-                                        {/* removed location display */}
-                                      </div>
-                                    );
-                                    return { rawDiff, element };
-                                  });
-                                  // filter out invalid rawDiff
-                                  const validInfos = infos.filter(info => Number.isFinite(info.rawDiff));
-                                  // sort by descending rawDiff
-                                  validInfos.sort((a, b) => b.rawDiff - a.rawDiff);
-                                  // take top 3
-                                  const sliced = validInfos.slice(0, 3).map(info => info.element);
-                                  clusterCache.current[rid] = sliced;
-                                  return sliced;
-                                })()}
-                              </td>
+                                {getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                                </td>
                             )
                           })}
                           {searchResult.past.length < 5 &&
