@@ -1,6 +1,7 @@
 // app/components/EntryTable.tsx
 'use client';
 import React from 'react';
+import type { ClusterInfo } from '../page';
 import { levelToStars, classToRank, toHalfWidth, formatTime, toSec } from '../page'; // ★ util が別ファイル化されるまでは page.tsx から流用
 
 export type RecordRow = { [key: string]: string };
@@ -23,7 +24,7 @@ type Props = {
   favorites: Set<string>;
   setFavorites: React.Dispatch<React.SetStateAction<Set<string>>>;
   frameColor: Record<string, string>;
-  clusterRenderer: (r: RecordRow) => JSX.Element[];
+  clusterRenderer: (r: RecordRow) => ClusterInfo[];
   /** ラベル・競う指数バッジを表示するか */
   showLabels?: boolean;
 };
@@ -256,7 +257,26 @@ export default function EntryTable({
                     </div>
 
                     {/* 別クラスタイム */}
-                    {clusterRenderer(r)}
+                    {clusterRenderer(r).map((info, ci) => (
+                      <div
+                        key={ci}
+                        className={`text-xs mt-1 ${
+                          info.highlight === 'red'
+                            ? 'text-red-500'
+                            : info.highlight === 'orange'
+                            ? 'text-orange-500'
+                            : ''
+                        }`}
+                      >
+                        {info.dayLabel}
+                        {info.className}
+                        {info.time}
+                        <span className="ml-1">
+                          {info.diff >= 0 ? '+' : ''}
+                          {info.diff.toFixed(1)}
+                        </span>
+                      </div>
+                    ))}
                   </td>
                 );
               })}

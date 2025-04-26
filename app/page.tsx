@@ -8,6 +8,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import { Tab } from '@headlessui/react';
 import Chart from 'chart.js/auto';
+import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData';
+import type { RecordRow } from '../types/record';
 const LABELS = [
   { label: 'くるでしょ', count: 1 },
   { label: 'めっちゃきそう', count: 2 },
@@ -148,205 +150,6 @@ export function classToRank(cls: string): number {
 }
 
 
-// マージンスコアを 0-1 に線形マッピング (0.5→1.0, 1.0→0.8, 1.5→0.6)
-function marginScore(margin: number): number {
-  const raw = 1.2 - 0.4 * margin;
-  return Math.max(0, Math.min(1, raw));
-}
-
-// PCI-based pace category by surface & distance
-type PaceCat = '超ハイ'|'ハイ'|'ミドル'|'スロー'|'超スロー';
-function getPaceCat(surface: '芝'|'ダ', dist: number, pci: number): PaceCat {
-  if (surface === 'ダ' && dist <= 1600) {
-    if (pci <= 41) return '超ハイ';
-    if (pci <= 42) return 'ハイ';
-    if (pci >= 49) return '超スロー';
-    if (pci >= 48) return 'スロー';
-  }
-  if (surface === 'ダ' && dist >= 1700) {
-    if (pci <= 44) return '超ハイ';
-    if (pci <= 45) return 'ハイ';
-    if (pci >= 49) return '超スロー';
-    if (pci >= 48) return 'スロー';
-  }
-  if (surface === '芝' && dist >= 1700) {
-    if (pci <= 47.5) return '超ハイ';
-    if (pci <= 50) return 'ハイ';
-    if (pci >= 57) return '超スロー';
-    if (pci >= 56) return 'スロー';
-  }
-  if (surface === '芝' && dist <= 1600) {
-    if (pci <= 46) return '超ハイ';
-    if (pci <= 47) return 'ハイ';
-    if (pci >= 52) return '超スロー';
-    if (pci >= 50) return 'スロー';
-  }
-  return 'ミドル';
-}
-// pace factor multipliers for toughness
-const paceFactorMap: Record<PaceCat, number> = {
-  '超ハイ': 1.2,
-  'ハイ':    1.1,
-  'ミドル':  1.0,
-  'スロー':  0.9,
-  '超スロー':0.8,
-};
-
-// 重み設定（合計1.0）
-const WEIGHTS = {
-  star:     0.30,  // レースレベル（★）
-  cluster:  0.30,  // 別クラスタイム
-  passing:  0.20,  // 通過順位×着差×ペース因子
-  finish:   0.10,  // 着順
-  margin:   0.05,  // 着差
-  timeDiff: 0.05,  // 走破タイム差
-};
-
-// 走破タイム差スコア: ±3秒で0、差が小さいほど1に近づく
-function timeDiffScore(selfSec: number, clusterSecs: number[]): number {
-  if (!clusterSecs.length) return 0;
-  const best = Math.min(...clusterSecs);
-  const diff = selfSec - best;
-  const s = 1 - Math.min(Math.abs(diff) / 3, 1);
-  return Math.max(0, s);
-}
-
-// Compute Kiso score for a horse based on recent 3 past races (reuse your finalScore logic)
-/**
- * 別クラスタイムを計算（キャッシュ対応）
- */
-function getClusterElements(
-  r: RecordRow,
-  allRaces: RecordRow[],
-  clusterCache: React.MutableRefObject<Record<string, JSX.Element[]>>,
-  DEBUG = false
-): JSX.Element[] {
-  const rid = r['レースID(新/馬番無)']?.trim() || '';
-  if (clusterCache.current[rid]) return clusterCache.current[rid];
-
-  const dateStr = r['日付(yyyy.mm.dd)']?.trim() || '';
-  const baseDate = parseDateStr(dateStr);
-  if (!baseDate) { clusterCache.current[rid] = []; return []; }
-
-  const cand = allRaces
-    .filter(x => toHalfWidth((x['着順'] || '').trim()) === '1')
-    .filter(x => {
-      const d = parseDateStr(x['日付(yyyy.mm.dd)'] || '');
-      return d && Math.abs(d.getTime() - baseDate.getTime()) <= 86400000;
-    })
-    .filter(x =>
-      (x['場所'] || x['場所_1'] || '').replace(/\s+/g, '') ===
-      (r['場所'] || r['場所_1'] || '').replace(/\s+/g, '')
-    )
-    .filter(x =>
-      (x['距離'] || '').replace(/\s+/g, '') ===
-      (r['距離'] || '').replace(/\s+/g, '')
-    )
-    .filter(x => {
-      const raw = (x['走破タイム'] || '').trim();
-      return raw && !isNaN(toSec(raw));
-    });
-
-  if (cand.length === 0) { clusterCache.current[rid] = []; return []; }
-
-  const elems = cand.map((c, i) => {
-    const otherTime = (c['走破タイム'] || '').trim();
-    const diffRaw = toSec(r['走破タイム'] || '') - toSec(otherTime);
-    const diff = diffRaw.toFixed(1);
-    const sign = diffRaw >= 0 ? '+' : '';
-
-    // 日付ラベル
-    const d2 = parseDateStr(c['日付(yyyy.mm.dd)'] || '');
-    let day = '';
-    if (d2) {
-      const delta = Math.round((d2.getTime() - baseDate.getTime()) / 86400000);
-      day = delta === 0 ? '同日' : delta === 1 ? '翌日' : delta === -1 ? '前日' : '';
-    }
-
-    // ハイライト
-    const currRank  = classToRank(r['クラス名'] || '');
-    const otherRank = classToRank((c['クラス名'] || '').trim());
-    let hl = '';
-    if (otherRank > currRank) {
-      if (diffRaw < 0)       hl = 'text-red-500';
-      else if (diffRaw <= 1) hl = 'text-orange-500';
-    }
-
-    return {
-      rawDiff: diffRaw,
-      el: (
-        <div key={i} className="text-xs mt-1">
-          <span className={`${hl} font-medium`}>
-            {day}{c['クラス名']?.trim()}{formatTime(otherTime)}
-            <span className="ml-1">{sign}{diff}</span>
-          </span>
-        </div>
-      )
-    };
-  }).filter(x => Number.isFinite(x.rawDiff));
-
-  elems.sort((a,b) => b.rawDiff - a.rawDiff);
-  const out = elems.slice(0,3).map(x => x.el);
-
-  clusterCache.current[rid] = out;
-  return out;
-}
-function computeKisoScore(horse: HorseWithPast): number {
-  const recent = horse.past.slice(0, 3);
-  // replicate the trialScores logic
-  const trialScores = recent.map(r => {
-    // 1) レースレベル（★）
-    const starCount = levelToStars(r['レース印３'] || '');
-    const starBase = starCount / 5;
-    // ★3以上はやや加点、★2以下はやや減点
-    const starFactor = starCount >= 3 ? 1.1 : 0.9;
-    const starScore = Math.min(1, Math.max(0, starBase * starFactor));
-    // const starScore    = levelToStars(r['レース印３'] || '') / 5;
-    // 2) 別クラスタイム
-    const clusterScore = 0; 
-    // 3) 通過順位スコア
-    const passNums = [r['2角'], r['3角'], r['4角']]
-      .map(x => parseInt((x||'').replace(/[^\d]/g, ''), 10))
-      .filter(n => !isNaN(n));
-    const avgPass  = passNums.length
-      ? passNums.reduce((a,b) => a+b, 0) / passNums.length
-      : 99;
-    const fieldSize = parseInt(r['頭数'] || '1', 10);
-    const basePassScore = (fieldSize - avgPass + 1) / fieldSize;
-    const mScore   = marginScore(parseFloat(r['着差'] || '0'));
-    const paceCat  = getPaceCat(
-      (r['距離'] || '').trim().charAt(0) as '芝'|'ダ',
-      parseInt((r['距離'] || '').replace(/[^\d]/g, ''), 10) || 0,
-      parseFloat(r['PCI'] || '0')
-    );
-    const passFactor = paceFactorMap[paceCat];
-    const adjustedPassScore = basePassScore * mScore * passFactor;
-    // 4) 着順スコア
-    const finishPos = parseInt(toHalfWidth((r['着順'] || '').trim()), 10) || 99;
-    const finishScore = Math.max(0, 1.0 - (finishPos - 1) * 0.1);
-    // 5) 着差スコア
-    const marginScore_ = mScore;
-    // 6) 走破タイム差スコア
-    const selfSec = toSec(r['走破タイム'] || '');
-    const clusterSecs: number[] = [];
-    const timeScore = timeDiffScore(selfSec, clusterSecs);
-    // 合成スコア
-    const score =
-        WEIGHTS.star     * starScore
-      + WEIGHTS.cluster  * clusterScore
-      + WEIGHTS.passing  * adjustedPassScore
-      + WEIGHTS.finish   * finishScore
-      + WEIGHTS.margin   * marginScore_
-      + WEIGHTS.timeDiff * timeScore;
-    return score;
-  });
-  // Recency weights: more recent race is more important
-  const recencyWeights = [0.5, 0.3, 0.2];
-  const totalWeight = recencyWeights.slice(0, trialScores.length).reduce((a, b) => a + b, 0);
-  const baseAvg = trialScores.reduce((sum, score, idx) => sum + score * (recencyWeights[idx] || 0), 0) / totalWeight;
-  // For distribution we ignore condition/weight factors
-  return baseAvg;
-}
 
 // Distribution component
 function DistributionTab({ scores }: { scores: number[] }) {
@@ -422,7 +225,6 @@ function DistributionTab({ scores }: { scores: number[] }) {
   return <canvas ref={canvasRef} />;
 }
 
-type RecordRow = { [key: string]: string }
 
 type HorseWithPast = {
   entry: RecordRow
@@ -459,7 +261,7 @@ export default function Home() {
   const [frames, setFrames] = useState<string[][]>([]);
   const [frameNestedData, setFrameNestedData] =
     useState<Record<string, Record<string, Record<string, HorseWithPast[]>>>>({});
-  const clusterCache = useRef<Record<string, JSX.Element[]>>({});
+  const clusterCache = useRef<Record<string, ClusterInfo[]>>({});
   const [allScores, setAllScores] = useState<number[]>([]);
   const [p90, setP90] = useState<number>(0);
   const [p70, setP70] = useState<number>(0);
@@ -1031,7 +833,7 @@ export default function Home() {
                                             favorites={favorites}
                                             setFavorites={setFavorites}
                                             frameColor={frameColor}
-                                            clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                                            clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
                                           />
                                         </Tab.Panel>
                                       );
@@ -1149,7 +951,7 @@ export default function Home() {
                                               favorites={favorites}
                                               setFavorites={setFavorites}
                                               frameColor={frameBgStyle}
-                                              clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                                              clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
                                               showLabels={true}
                                             />
                                           </Tab.Panel>
@@ -1312,7 +1114,7 @@ export default function Home() {
                         favorites={favorites}
                         setFavorites={setFavorites}
                         frameColor={{}}     /* 枠色なし */
-                        clusterRenderer={(r) => getClusterElements(r, allRaces, clusterCache, DEBUG)}
+                        clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
                         showLabels={false}
                       />
                     </div>
