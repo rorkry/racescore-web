@@ -8,14 +8,207 @@ import React, { useState, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
 import { Tab } from '@headlessui/react';
 import Chart from 'chart.js/auto';
-import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData';
+import useSWR from 'swr';
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+import { getClusterData, ClusterInfo, computeKisoScore, scaleAndShapeScores } from '../utils/getClusterData';
+import type { CsvRaceRow } from '../types/csv';
+import type { Race }       from '../types/domain';
+import { rowToRace }       from '../utils/convert';
 import type { RecordRow } from '../types/record';
-const LABELS = [
-  { label: 'くるでしょ', count: 1 },
-  { label: 'めっちゃきそう', count: 2 },
-  { label: 'ちょっときそう', count: 3 },
-  { label: 'こなそう', count: 6 },
+import type { OddsRow } from '../types/odds';
+import { parseOdds } from '../utils/parseOdds';
+import { fetchOdds } from '@/utils/fetchOdds';
+import { fetchTrioOdds } from '@/lib/fetchTrio';
+import { calcSyntheticWinOdds as calcSynthetic } from '@/lib/calcSyntheticWinOdds';
+// スコア閾値方式（上から判定）
+const SCORE_THRESHOLDS = [
+  { label: 'くるでしょ',      min: 0.30 },
+  { label: 'めっちゃきそう',  min: 0.25 },
+  { label: 'ちょっときそう',  min: 0.15 },
+  { label: 'こなそう',        min: 0.08 },
 ];
+
+/* ------------------------------------------------------------------
+ * クラス別スコア閾値テーブル
+ *  rank: 8=G1, 7=G2, 6=G3, 5=OP/L, 4=3勝, 3=2勝, 2=1勝, 1=未勝利, 0=新馬
+ *  [S, A, B, C] の下限値 (inclusive)
+ * ------------------------------------------------------------------ */
+const THRESHOLD_MAP: Record<number, [number, number, number, number]> = {
+  8: [0.34, 0.28, 0.20, 0.12],  // G1
+  7: [0.32, 0.26, 0.18, 0.10],  // G2
+  6: [0.30, 0.24, 0.16, 0.10],  // G3
+  5: [0.28, 0.22, 0.15, 0.09],  // OP / L
+  4: [0.26, 0.20, 0.14, 0.08],  // 3勝クラス
+  3: [0.24, 0.18, 0.13, 0.08],  // 2勝クラス
+  2: [0.22, 0.17, 0.12, 0.07],  // 1勝クラス
+  1: [0.20, 0.15, 0.11, 0.07],  // 未勝利
+
+  0: [0.18, 0.14, 0.10, 0.06],  // 新馬
+};
+
+/** 開催地名称 or 開催コード → 2桁コード */
+const placeCode: Record<string, string> = {
+  // 日本語表記
+  '札幌': '01', '函館': '02', '福島': '03', '新潟': '04',
+  '東京': '05', '中山': '06', '中京': '07', '京都': '08',
+  '阪神': '09', '小倉': '10',
+  // すでにコードが入っていた場合もそのまま返す
+  '01': '01', '02': '02', '03': '03', '04': '04',
+  '05': '05', '06': '06', '07': '07', '08': '08',
+  '09': '09', '10': '10',
+};
+
+/** 開催地の文字列を 2桁コードに変換（未知なら '00'）
+ *   - 例) "新潟" → "04"
+ *        "04 新潟" → "04"
+ *        "1回新潟" → "04"
+ *        "05" → "05"
+ */
+const getPlaceCode = (raw: string): string => {
+  if (!raw) return '00';
+
+  // 1) 全角数字→半角数字へ
+  const half = raw.replace(/[０-９]/g, c =>
+    String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
+  );
+
+  // 2) 数字・回数・空白を取り除き、漢字だけ残す
+  const cleaned = half.replace(/\d|回|\s/g, '').trim(); // 例 "04 新潟"→"新潟"
+
+  // 3) 直接コード入力のケース ("04", "05", …)
+  if (/^\d{2}$/.test(half.trim())) return half.trim();
+
+  // 4) placeCode マップで照合
+  const code = placeCode[cleaned] ?? placeCode[half.trim()];
+  if (!code) {
+    // 未知開催地は '00' を返し、警告を出す
+    console.warn('⚠️ unknown place:', raw, '→', cleaned);
+    return '00';
+  }
+  return code;
+};
+
+/** YYYYMMDD + 開催地2桁 + レース番号2桁 を返す */
+const buildRaceKey = (dateCode: string, place: string, raceNo: string): string => {
+  const mmdd = dateCode.padStart(4, '0');
+  const code = getPlaceCode(place);
+  return `2025${mmdd}${code}${raceNo.padStart(2, '0')}`;
+};
+
+/** CSV から読み込んだ単勝オッズを初期値マップに変換 */
+function buildInitialOddsMap(
+  horses: HorseWithPast[],
+  raceKey: string,
+  oddsMap: Map<string, number>
+): Record<string, number> {
+  const map: Record<string, number> = {};
+  horses.forEach(h => {
+    const num = toHalfWidth(h.entry['馬番']?.trim() || '').padStart(2, '0');
+    const o = oddsMap.get(`${raceKey}_${num}`);
+    if (o != null) map[num] = o;
+  });
+  return map;
+}
+
+/* ------------------------------------------------------------------
+ * Utility: percentile & dynamic threshold generator
+ * ------------------------------------------------------------------ */
+// p (0–1) percentile of numeric array (linear interpolation)
+function percentile(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  return lo === hi
+    ? sorted[lo]
+    : sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+// Generate [S, A, B, C] thresholds from an array of scores
+//   S: top 1%  (p=0.99)
+//   A: top10%  (p=0.90)
+//   B: top30%  (p=0.70)
+//   C: top50%  (p=0.50)
+
+function makeThresholds(arr: number[]): [number, number, number, number] {
+  return [
+    percentile(arr, 0.99), // S  (上位 1%)
+    percentile(arr, 0.90), // A  (上位10%)
+    percentile(arr, 0.70), // B  (上位30%)
+    percentile(arr, 0.50), // C  (上位50%)
+  ];
+}
+
+/* ------------------------------------------------------------------
+ * Z‑score based labeling
+ *   - Always top 1 horse ⇒ 'くるでしょ'
+ *   - 次点 A 数 : 12頭以上=3, 8-11頭=2, 7頭以下=1
+ *   - z >= 0    ⇒ 'ちょっときそう'
+ *   - z >= -0.5 ⇒ 'こなそう'
+ *   - else      ⇒ 'きません'
+ * ------------------------------------------------------------------ */
+function assignLabelsByZ(scores: number[]): string[] {
+  const n = scores.length;
+  if (n === 0) return [];
+  const mean = scores.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
+
+  const sorted = scores
+    .map((s, i) => ({ s, i, z: (s - mean) / sd }))
+    .sort((a, b) => b.s - a.s);
+
+  // initial labels
+  const labels = Array<string>(n).fill('きません');
+
+  // Top‑1 ⇒ S
+  labels[sorted[0].i] = 'くるでしょ';
+
+  // A head count
+  let aCount = 1;
+  if (n >= 12) aCount = 3;
+  else if (n >= 8) aCount = 2;
+
+  for (let k = 1; k <= aCount && k < sorted.length; k++) {
+    labels[sorted[k].i] = 'めっちゃきそう';
+  }
+
+  // --- B / C by percentage of remaining horses --------------------
+  const rest = sorted.slice(aCount + 1);        // 未分類の残り
+  const totalRest = rest.length;
+  const bN = Math.ceil(totalRest * 0.30);       // 上位 30% → B
+  const cN = Math.ceil(totalRest * 0.30);       // 次の 30% → C
+
+  rest.forEach(({ i }, idx) => {
+    if (idx < bN)           labels[i] = 'ちょっときそう';
+    else if (idx < bN + cN) labels[i] = 'こなそう';
+    // 残りは 'きません' のまま
+  });
+  return labels;
+}
+
+/**
+ * クラスランクごとに異なる閾値でラベルを割り当てる
+ * @param scores  生スコア配列（同一レース）
+ * @param classRank classToRank() で得た 0–8 の値
+ */
+function assignLabelsByClass(
+  scores: number[],
+  classRank: number,
+  map: Record<number, [number, number, number, number]> = THRESHOLD_MAP
+): string[] {
+  const [sThr, aThr, bThr, cThr] =
+    map[classRank] ?? map[1];  // デフォ未勝利
+
+  return scores.map(s => {
+    if (s >= sThr) return 'くるでしょ';
+    if (s >= aThr) return 'めっちゃきそう';
+    if (s >= bThr) return 'ちょっときそう';
+    if (s >= cThr) return 'こなそう';
+    return 'きません';
+  });
+}
 const REMAIN_LABEL = 'きません';
 /**
  * スコア順でラベルを割り当てる
@@ -23,23 +216,88 @@ const REMAIN_LABEL = 'きません';
  * @returns {string[]} ラベル配列
  */
 function assignLabels(scores: number[]): string[] {
-  // スコアと元indexをペアに
-  const indexed = scores.map((score, i) => ({ score, i }));
-  // 降順ソート
-  indexed.sort((a, b) => b.score - a.score);
-  const result: string[] = new Array(scores.length).fill(REMAIN_LABEL);
-  let idx = 0;
-  for (const { label, count } of LABELS) {
-    for (let c = 0; c < count && idx < indexed.length; ++c, ++idx) {
-      result[indexed[idx].i] = label;
+  return scores.map(s => {
+    for (const { label, min } of SCORE_THRESHOLDS) {
+      if (s >= min) return label;
     }
-  }
-  // 残りは REMAIN_LABEL
-  return result;
+    return REMAIN_LABEL;
+  });
 }
 
 
 const DEBUG = false // デバッグログを無効化
+
+/** EntryTable の race 単位ラッパー – 3連単合成オッズ(予想単勝)を注入 */
+type RaceEntryProps = Omit<
+  React.ComponentProps<typeof EntryTable>,
+  'winOddsMap' | 'predicted'
+> & {
+  dateCode: string;
+  place: string;
+  raceNo: string;
+  raceKey: string;
+  syntheticOdds?: Record<string, number> | null;
+  initialOddsMap?: Record<string, number>;   // ★ 追加
+};
+
+function RaceEntryTable(props: RaceEntryProps) {
+  const {
+    raceKey,
+    syntheticOdds,
+    initialOddsMap = {},          // ★ 追加
+    dateCode,
+    place,
+    raceNo,
+    horses,
+    labels,
+    scores,
+    marks,
+    setMarks,
+    favorites,
+    setFavorites,
+    frameColor,
+    clusterRenderer,
+    showLabels,
+  } = props;
+
+  // --- 単勝を 5 分毎にポーリング ---
+  const { data } = useSWR<{ o1: Record<string, number> }>(
+    `/api/odds/${raceKey}`,
+    fetcher,
+    { refreshInterval: 5 * 60_000, keepPreviousData: true }
+  );
+
+  const winOddsMap = React.useMemo(() => {
+    const m: Record<string, number> = { ...initialOddsMap };   // ★ 変更
+    if (data?.o1) {
+      Object.entries(data.o1).forEach(([no, odd]) => {
+        m[no.padStart(2, '0')] = Number(odd);
+      });
+    }
+    return m;
+  }, [data, initialOddsMap]);
+
+  return (
+    <EntryTable
+      horses={horses}
+      dateCode={dateCode}
+      place={place}
+      raceNo={raceNo}
+      labels={labels}
+      scores={scores}
+      marks={marks}
+      setMarks={setMarks}
+      favorites={favorites}
+      setFavorites={setFavorites}
+      frameColor={frameColor}
+      clusterRenderer={clusterRenderer}
+      raceKey={raceKey}
+      showLabels={showLabels}
+      predicted={syntheticOdds ?? null}
+      winOddsMap={winOddsMap}
+    />
+  );
+}
 
 /* --- 枠番ごとの色(馬番セル用) --------------------------- */
 const frameColor: Record<string, string> = {
@@ -84,16 +342,7 @@ export function levelToStars(level: string): number {
   }
 }
 
-// p (0–1) パーセンタイルを返す (線形補間)
-function percentile(arr: number[], p: number): number {
-  if (arr.length === 0) return 0;
-  const sorted = arr.slice().sort((a, b) => a - b);
-  const idx = (sorted.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-}
+// 全角数字を半角に変換
 
 // 全角数字を半角に変換
 export function toHalfWidth(s: string): string {
@@ -133,20 +382,27 @@ export function toSec(t: string): number {
   return m * 60 + ss + d / 10;
 }
 
-// クラス名を数値ランクに変換: 新馬:0, 未勝利:1, 1勝:2, 2勝:3, 3勝:4, OP系:5, G3:6, G2:7, G1:8
 export function classToRank(cls: string): number {
-  const s = cls.trim();
-  if (s.includes('新馬')) return 0;
-  if (s.includes('未勝利')) return 1;
+  // 1) 全角→半角変換
+  let s = cls.replace(/[Ａ-Ｚ０-９]/g, ch =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+  )
+  // 2) ローマ数字 → 数字
+  s = s.replace(/Ⅰ/g, '1').replace(/Ⅱ/g, '2').replace(/Ⅲ/g, '3')
+  // 3) 大文字化 & 空白除去
+  s = s.toUpperCase().trim()
+
+  if (s.includes('新馬')) return 0
+  if (s.includes('未勝利')) return 1
   if (/^[123]勝/.test(s)) {
-    const num = parseInt(s.charAt(0), 10);
-    return isNaN(num) ? 1 : num + 1;  // 1勝→2,2勝→3,3勝→4
+    const num = parseInt(s.charAt(0), 10)
+    return isNaN(num) ? 1 : num + 1        // 1勝→2, 2勝→3, 3勝→4
   }
-  if (s.includes('OP') || s.includes('オープン')) return 5;
-  if (s.startsWith('G3')) return 6;
-  if (s.startsWith('G2')) return 7;
-  if (s.startsWith('G1')) return 8;
-  return 1; // 未勝利相当
+  if (s.includes('OP') || s.includes('オープン') || s.includes('L')) return 5
+  if (s.startsWith('G3') || s.includes('GⅢ') || s.includes('G3')) return 6
+  if (s.startsWith('G2') || s.includes('GⅡ') || s.includes('G2')) return 7
+  if (s.startsWith('G1') || s.includes('GⅠ') || s.includes('G1')) return 8
+  return -1                                // 不明
 }
 
 
@@ -227,13 +483,17 @@ function DistributionTab({ scores }: { scores: number[] }) {
 
 
 type HorseWithPast = {
-  entry: RecordRow
-  past: RecordRow[]
+  entry: RecordRow;
+  past: RecordRow[];
+  /** 単勝オッズ (取得できない場合は null) */
+  winOdds?: number | null;
 }
 
 export default function Home() {
   const [entries, setEntries] = useState<RecordRow[]>([])
   const [races, setRaces] = useState<RecordRow[]>([])
+  // 型変換後の Race[]（今後のロジックで使用予定）
+  const [typedRaces, setTypedRaces] = useState<Race[]>([]);
   const [nestedData, setNestedData] = useState<Record<string, Record<string, Record<string, HorseWithPast[]>>>>({})
   const [error, setError] = useState<string | null>(null)
   // 馬検索用 state
@@ -267,8 +527,48 @@ export default function Home() {
   const [p70, setP70] = useState<number>(0);
   const [p30, setP30] = useState<number>(0);
   const [p10, setP10] = useState<number>(0);
+  // --- オッズCSV ---
+  const [oddsData, setOddsData] = useState<OddsRow[]>([]);
+  const [oddsLoaded, setOddsLoaded] = useState(false);
+  // --- 三連単→合成単勝オッズ ---
+  const [syntheticMap, setSyntheticMap] =
+    useState<Record<string, Record<string, number>>>({});
+  const [synFetchedAt, setSynFetchedAt] =
+    useState<Record<string, number>>({});
+  // raceKey_馬番(半角) -> 単勝オッズ
+  const oddsMap = React.useMemo(() => {
+    const m = new Map<string, number>();
+    oddsData.forEach(o => {
+      if (!o.raceKey) return;
+      const num = toHalfWidth(String(o.horseNo ?? '').trim());
+      m.set(`${o.raceKey}_${num}`, o.win);
+    });
+    return m;
+  }, [oddsData]);
+  // --- 別クラスタイム表示ヘルパー ----------------------------
+  const renderClusterInfos = (infos: ClusterInfo[]) =>
+    infos.map((info, idx) => {
+      const color =
+        info.highlight === 'red'
+          ? 'text-red-500'
+          : info.highlight === 'orange'
+          ? 'text-orange-500'
+          : '';
+      const diffStr = info.diff > 0 ? `+${info.diff.toFixed(1)}` : info.diff.toFixed(1);
+      return (
+        <div key={idx} className={`text-xs mt-1 ${color}`}>
+          {info.dayLabel}
+          {info.className}
+          {info.time}
+          <span className="ml-1">{diffStr}</span>
+        </div>
+      );
+    });
   // 表示倍率 (0.5〜1.5)
   const [zoom, setZoom] = useState(1);
+  // クラス別パーセンタイルで生成した動的閾値マップ
+  const [dynThresholdMap, setDynThresholdMap] =
+    useState<Record<number, [number, number, number, number]>>(THRESHOLD_MAP);
   // グローバル分布パーセンタイル計算
   useEffect(() => {
     if (allScores.length === 0) return;
@@ -282,6 +582,93 @@ export default function Home() {
   const isEntryUploaded = entries.length > 0
   const isRaceUploaded  = Object.keys(nestedData).length > 0
   const isFrameUploaded = Object.keys(frameNestedData).length > 0;
+  const isOddsUploaded = oddsData.length > 0;
+
+  // 枠順確定CSVを読み込んだ後にオッズAPIを呼び出す
+  useEffect(() => {
+    if (!isFrameUploaded || oddsLoaded) return;
+
+    /* --- frameNestedData から raceKey 一覧を生成 -------------------- */
+    const allKeys: string[] = [];
+    Object.entries(frameNestedData).forEach(([dateCode, placeMap]) =>
+      Object.entries(placeMap).forEach(([place, raceMap]) =>
+        Object.keys(raceMap).forEach(raceNo => {
+          const mmdd = dateCode.padStart(4, '0');           // 426 → 0426
+          const key  = `2025${mmdd}${getPlaceCode(place)}${raceNo.padStart(2, '0')}`; // YYYYMMDDPPRR
+          allKeys.push(key);
+        })
+      )
+    );
+
+    /* --- raceKey ごとに並列 fetch。取れた分だけ state へ追加 ------- */
+    const uniqueKeys = [...new Set(allKeys)];
+    let remaining    = uniqueKeys.length;
+
+    // ロード開始を明示
+    setOddsLoaded(false);
+
+    uniqueKeys.forEach(raceKey => {
+      fetchOdds(raceKey)
+        .then(rows => {
+          if (rows.length) {
+            setOddsData(prev => {
+              const next = [...prev, ...rows];
+              console.log('[odds✓]', raceKey, 'rows', rows.length, 'total', next.length);
+              return next;
+            });
+          } else {
+            console.warn('⚠️ no odds rows for', raceKey);
+          }
+        })
+        .catch(err => console.warn('⚠️ fetchOdds failed', raceKey, err))
+        .finally(() => {
+          remaining -= 1;
+          if (remaining === 0) {
+            // すべての fetch が終わったタイミングでロード完了
+            setOddsLoaded(true);
+          }
+        });
+    });
+
+    /* --- Trio → 合成オッズもバックグラウンド取得 ------------------ */
+    uniqueKeys.forEach(raceKey => {
+      const prev = synFetchedAt[raceKey] ?? 0;
+      const thirtyMin = 30 * 60 * 1000;
+      if (Date.now() - prev < thirtyMin) return;          // 30分以内はスキップ
+
+      fetchTrioOdds(raceKey)
+        .then(json => {
+          if (!json || !json.o6) return;
+          // calcSyntheticWinOdds() から返るのは
+          //   { '01': 3.2, '02': 8.5, … }
+          // なのでオブジェクト→マップへそのまま変換する
+          const synObj = calcSynthetic(json.o6);        // { '01': 3.2, … }
+
+          // --- 0 や NaN を除外しつつキーそのままで取り込む ----------
+          const map: Record<string, number> = {};
+          Object.entries(synObj).forEach(([no, odd]) => {
+            const value = Number(odd);           // 合成単勝オッズ
+
+            // 無効な値は捨てる
+            if (!Number.isFinite(value) || value <= 0.5) return;
+
+            // synObj のキーは既に "01" 形式なのでそのまま使う
+            map[no] = value;
+          });
+
+          // ★ 空でも必ず raceKey を登録しておく（null 判定を防ぐ）
+          setSyntheticMap(prev => ({ ...prev, [raceKey]: map }));
+          setSynFetchedAt(prev => ({ ...prev, [raceKey]: Date.now() }));
+
+          if (Object.keys(map).length) {
+            console.log('[syn✓]', raceKey, 'pairs', Object.keys(map).length);
+          } else {
+            console.log('[syn–Ø]', raceKey, 'no valid synthetic odds');
+          }
+        })
+        .catch(err => console.warn('⚠️ fetchTrioOdds failed', raceKey, err));
+    });
+  }, [isFrameUploaded, oddsLoaded, frameNestedData, synFetchedAt]);
   // --- 枠順確定CSV アップロード（ヘッダーなし）---
   const handleFrameUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -338,6 +725,20 @@ export default function Home() {
     });
   };
 
+  // --- オッズCSV アップロード ---
+  const handleOddsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await parseOdds(file);
+      setOddsData(data);
+      localStorage.setItem('oddsData', JSON.stringify(data));
+      if (DEBUG) console.log('Parsed odds rows:', data.slice(0, 5), 'total:', data.length);
+    } catch (err) {
+      console.error('オッズCSV 解析エラー:', err);
+    }
+  };
+
   // 初回マウント時に localStorage からロード
   useEffect(() => {
     const stored = localStorage.getItem('favorites');
@@ -382,6 +783,18 @@ export default function Home() {
     }
   }, []);
 
+  // 初回マウント時に oddsData を localStorage からロード
+  useEffect(() => {
+    const saved = localStorage.getItem('oddsData');
+    if (saved) {
+      try {
+        setOddsData(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse stored oddsData:', e);
+      }
+    }
+  }, []);
+
 
   // nestedData から races 配列を再構築（再アップロード不要にする、allRacesは変更しない）
   useEffect(() => {
@@ -404,14 +817,66 @@ export default function Home() {
     const scores: number[] = [];
     Object.values(nestedData).forEach(placeMap =>
       Object.values(placeMap).forEach(raceMap =>
-        Object.values(raceMap).forEach(horses =>
-          horses.forEach(horse => {
-            scores.push(computeKisoScore(horse));
-          })
-        )
+        Object.values(raceMap).forEach(horses => {
+          const rawScores = horses.map(h => computeKisoScore(h));
+          scores.push(...rawScores);           // スケールせず生スコアを集計
+        })
       )
     );
     setAllScores(scores);
+  }, [nestedData]);
+
+  /* ------------------------------------------------------------------
+   * DEBUG: クラス別に「レース内最高スコア」を収集して表示
+   * ------------------------------------------------------------------ */
+  const classRaceMaxMap = React.useRef<Record<number, number[]>>({
+    0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: []
+  });
+  // 各クラスの「全馬スコア」を蓄積（パーセンタイル用）
+  const classHorseScoresMap = React.useRef<Record<number, number[]>>({
+    0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: []
+  });
+
+  React.useEffect(() => {
+    if (!Object.keys(nestedData).length) return;
+    // クリア
+    (Object.keys(classRaceMaxMap.current) as unknown as number[])
+      .forEach(k => {
+        classRaceMaxMap.current[k] = [];
+        classHorseScoresMap.current[k] = [];
+      });
+
+    Object.values(nestedData).forEach(placeMap =>
+      Object.values(placeMap).forEach(raceMap =>
+        Object.values(raceMap).forEach(horses => {
+          if (!horses.length) return;
+          const scores = horses.map(h => computeKisoScore(h));
+
+          // race‑max 用
+          const maxScore = Math.max(...scores);
+          const clsRank  = classToRank(horses[0].entry['クラス名'] || '');
+          if (clsRank >= 0) {
+            classRaceMaxMap.current[clsRank].push(maxScore);
+            // all horse scores
+            classHorseScoresMap.current[clsRank].push(...scores);
+          }
+        })
+      )
+    );
+
+    // Generate newMap from classHorseScoresMap
+    const newMap: Record<number, [number, number, number, number]> = { ...THRESHOLD_MAP };
+    (Object.keys(classHorseScoresMap.current) as unknown as number[]).forEach(rank => {
+      const arr = classHorseScoresMap.current[rank];
+      if (arr.length >= 5) {
+        // 5頭以上あればパーセンタイルで閾値を生成
+        newMap[rank] = makeThresholds(arr);
+      }
+    });
+    setDynThresholdMap(newMap);
+
+    console.log('【DEBUG】race-max:', classRaceMaxMap.current);
+    console.log('【DEBUG】horse-scores:', classHorseScoresMap.current);
   }, [nestedData]);
 
   // --- 追加: 枠順確定タブ専用のスコア分布計算 ---
@@ -422,11 +887,10 @@ export default function Home() {
     const scores: number[] = [];
     Object.values(frameNestedData).forEach(placeMap =>
       Object.values(placeMap).forEach(raceMap =>
-        Object.values(raceMap).forEach(horses =>
-          horses.forEach(horse => {
-            scores.push(computeKisoScore(horse));
-          })
-        )
+        Object.values(raceMap).forEach(horses => {
+          const rawScores = horses.map(h => computeKisoScore(h));
+          scores.push(...rawScores);           // 生スコアをそのまま集計
+        })
       )
     );
     setAllScores(scores);
@@ -496,7 +960,7 @@ export default function Home() {
     const file = e.target.files?.[0];
     if (file) {
       const headerCounts: Record<string, number> = {};
-      Papa.parse<RecordRow>(file, {
+      Papa.parse<CsvRaceRow>(file, {
         header: true,
         skipEmptyLines: true,
         transformHeader: (h, i) => {
@@ -522,17 +986,20 @@ export default function Home() {
           return name;
         },
         encoding: 'Shift_JIS',
-        complete: (result) => {
-          setRaces(result.data);
+        complete: ({ data }) => {
+          setRaces(data as unknown as RecordRow[]);  // 既存ロジック維持
+          // Csv → Domain 型変換
+          const domainRaces: Race[] = data.map(rowToRace);
+          setTypedRaces(domainRaces);
           // 1着馬データのみを抽出して allRaces として永続化
-          const winners = result.data.filter(r => {
+          const winners = (data as unknown as RecordRow[]).filter(r => {
             const pos = parseInt(toHalfWidth((r['着順'] || '').trim()), 10);
             return pos === 1;
           });
           setAllRaces(winners);
           localStorage.setItem('allRaces', JSON.stringify(winners));
           // racesはlocalStorageに保存しない（容量超過防止）
-          if (DEBUG) console.log('Parsed races:', result.data.slice(0, 5), 'total:', result.data.length);
+          if (DEBUG) console.log('Parsed races:', data.slice(0, 5), 'total:', data.length);
         },
       });
     }
@@ -715,6 +1182,14 @@ export default function Home() {
               <input type="file" accept=".csv" onChange={handleFrameUpload} />
             )}
           </div>
+          <div>
+            <p>📥 オッズCSV</p>
+            {isOddsUploaded ? (
+              <p className="text-green-600">✅ アップロード済み</p>
+            ) : (
+              <input type="file" accept=".csv" onChange={handleOddsUpload} />
+            )}
+          </div>
           <div className="mt-2">
             <button
               onClick={() => {
@@ -815,17 +1290,30 @@ export default function Home() {
                                   {Object.entries(raceMap)
                                     .filter(([, horses]) => horses.length > 0)
                                     .map(([raceNo, horses]) => {
+                                      const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
+                                      const initialOddsMap = buildInitialOddsMap(horses, raceKey, oddsMap);
+                                      const syntheticOdds = syntheticMap[raceKey] ?? null;
                                       // 直近3レースの評価スコアとラベルを計算
                                       // スコア順でラベルを割り当てる
-                                      const scores = horses.map(horse => computeKisoScore(horse));
-                                      const labels = assignLabels(scores);
+                                      // === スコア (0–1 正規化) ======================================
+                                      const rawScores = horses.map((horse, idx) => {
+                                        const sc = computeKisoScore(horse);
+                                        if (DEBUG) console.log(`[PAGE] rawScore [${dateCode}|${place}|${raceNo}] idx=${idx} ${horse.entry['馬名']}:`, sc);
+                                        return sc;
+                                      });
+                                      const scores = rawScores;   // 生スコア
+                                      const classRank = classToRank(horses[0]?.entry['クラス名'] || '');
+                                      if (DEBUG) console.log(`[PAGE] raw scores for ${dateCode}|${place}|${raceNo}:`, scores, 'classRank=', classRank);
+                                      const labels = assignLabelsByZ(scores);
                                       return (
                                         <Tab.Panel key={raceNo}>
-                                          <EntryTable
+                                          <RaceEntryTable
+                                            raceKey={raceKey}
                                             horses={horses}
                                             dateCode={dateCode}
                                             place={place}
                                             raceNo={raceNo}
+                                            initialOddsMap={initialOddsMap}
                                             labels={labels}
                                             scores={scores}         /* 追加 */
                                             marks={marks}
@@ -833,7 +1321,9 @@ export default function Home() {
                                             favorites={favorites}
                                             setFavorites={setFavorites}
                                             frameColor={frameColor}
-                                            clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
+                                            clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
+                                            syntheticOdds={syntheticOdds}
+                                            showLabels={true}
                                           />
                                         </Tab.Panel>
                                       );
@@ -851,8 +1341,12 @@ export default function Home() {
             </Tab.Panel>
 
             <Tab.Panel>
-              {Object.keys(frameNestedData).length === 0 ? (
+              {!Object.keys(frameNestedData).length ? (
                 <p className="text-gray-600">枠順確定CSVをアップロードしてください。</p>
+              ) : !isOddsUploaded ? (
+                <p className="text-red-600 font-semibold">
+                  オッズCSVが未アップロードです。オッズ列を表示するには先にアップロードしてください。
+                </p>
               ) : (
                 /* === 以下、出走予定馬パネルと同一ロジック === */
                 <Tab.Group>
@@ -926,24 +1420,33 @@ export default function Home() {
                                     {Object.entries(raceMap)
                                       .filter(([, horses]) => horses.length > 0)
                                       .map(([raceNo, horses]) => {
+                                        const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
+                                        const initialOddsMap = buildInitialOddsMap(horses, raceKey, oddsMap);
+                                        const syntheticOdds = syntheticMap[raceKey] ?? null;
                                         // 直近3レースの評価スコアとラベルを計算
                                         // スコア順でラベルを割り当てる
-                                        const scores = horses.map(horse => computeKisoScore(horse));
-                                        const labels = assignLabels(scores);
-                                        console.log(
-                                          '枠順', dateCode, place, raceNo,
-                                          'horses=', horses.length,
-                                          'scores=', scores.length,
-                                          'labels=', labels.length,
-                                          labels.slice(0, 5)
-                                        );
+                                        // === スコア (0–1 正規化) ======================================
+                                        const rawScores = horses.map((horse, idx) => {
+                                          const sc = computeKisoScore(horse);
+                                          if (DEBUG) console.log(
+                                            `[FRAME] rawScore [${dateCode}|${place}|${raceNo}] idx=${idx} ${horse.entry['馬名']}:`,
+                                            sc
+                                          );
+                                          return sc;
+                                        });
+                                        const scores = rawScores;   // 生スコア
+                                        const classRank = classToRank(horses[0]?.entry['クラス名'] || '');
+                                        if (DEBUG) console.log(`[FRAME] raw scores for ${dateCode}|${place}|${raceNo}:`, scores, 'classRank=', classRank);
+                                        const labels = assignLabelsByZ(scores);
                                         return (
                                           <Tab.Panel key={raceNo}>
-                                            <EntryTable
+                                            <RaceEntryTable
+                                              raceKey={raceKey}
                                               horses={horses}
                                               dateCode={dateCode}
                                               place={place}
                                               raceNo={raceNo}
+                                              initialOddsMap={initialOddsMap}
                                               labels={labels}
                                               scores={scores}         /* 追加 */
                                               marks={marks}
@@ -951,7 +1454,8 @@ export default function Home() {
                                               favorites={favorites}
                                               setFavorites={setFavorites}
                                               frameColor={frameBgStyle}
-                                              clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
+                                              clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
+                                              syntheticOdds={syntheticOdds}
                                               showLabels={true}
                                             />
                                           </Tab.Panel>
@@ -977,9 +1481,9 @@ export default function Home() {
                                               Number(b.entry['馬番'] || 0)
                                           );
                                           // ラベルを割り当て
-                                          const labels = assignLabels(
-                                            ordered.map(h => computeKisoScore(h))
-                                          );
+                                          const orderedScores = ordered.map(h => computeKisoScore(h));
+                                          const classRank = classToRank(ordered[0]?.entry['クラス名'] || '');
+                                          const labels = assignLabelsByZ(orderedScores);
                                           // 8頭ごとにチャンク化
                                           const chunks = [];
                                           for (let i = 0; i < ordered.length; i += 8) {
@@ -1097,8 +1601,10 @@ export default function Home() {
                 )}
                 {searchResult && (() => {
                   const horses = [searchResult];
-                  const scores = horses.map(h => computeKisoScore(h));
-                  const labels = assignLabels(scores);
+                  const rawScores = horses.map(h => computeKisoScore(h));
+                  const scores = rawScores;
+                  const classRank = classToRank(horses[0]?.entry['クラス名'] || '');
+                  const labels = assignLabelsByZ(scores);
 
                   return (
                     <div className="mt-4">
@@ -1114,8 +1620,11 @@ export default function Home() {
                         favorites={favorites}
                         setFavorites={setFavorites}
                         frameColor={{}}     /* 枠色なし */
-                        clusterRenderer={(r) => getClusterData(r, allRaces, clusterCache)}
+                        clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
                         showLabels={false}
+                        raceKey=""
+                        winOddsMap={{}}
+                        predicted={null}
                       />
                     </div>
                   );

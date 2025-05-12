@@ -1,10 +1,13 @@
 'use client';
 import React, { useState } from 'react';
 import Papa from 'papaparse';
+import { parseOdds } from '@/utils/parseOdds';
+import type { OddsRow } from '@/types/odds';
 
 export default function UploadForm() {
   const [entryData, setEntryData] = useState<any[]>([]);
   const [raceData, setRaceData] = useState<any[]>([]);
+  const [oddsData, setOddsData] = useState<OddsRow[]>([]);
 
   const handleEntryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,6 +33,18 @@ export default function UploadForm() {
         console.log('出馬表CSVデータ:', results.data);
       },
     });
+  };
+
+  const handleOddsFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const data = await parseOdds(file);
+      setOddsData(data);
+      console.log('オッズCSVデータ:', data);
+    } catch (err) {
+      console.error('オッズCSV 解析エラー:', err);
+    }
   };
 
   return (
@@ -60,6 +75,20 @@ export default function UploadForm() {
         {raceData.length > 0 && (
           <div className="text-sm text-gray-700 mt-1">
             {raceData.length} 件の出馬表データを読み込みました。
+          </div>
+        )}
+      </div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium mb-1">オッズCSV</label>
+        <input
+          type="file"
+          accept=".csv"
+          onChange={handleOddsFileChange}
+          className="block"
+        />
+        {oddsData.length > 0 && (
+          <div className="text-sm text-gray-700 mt-1">
+            {oddsData.length} 件のオッズデータを読み込みました。
           </div>
         )}
       </div>

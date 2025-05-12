@@ -1,44 +1,48 @@
-// app/components/RaceCard.tsx
 "use client";
 
 import React from "react";
 
-type RaceCardProps = {
-  raceName: string;
-  horses: {
-    name: string;
-    sex: string;
-    age: number;
-    weight: number;
-    score: string; // A~E
+type Props = {
+  horseName: string;
+  sex: string;
+  age: number;
+  weight: number;
+  pastRaces: {
+    date: string;
+    distance: string;
+    time: string;
+    level: string;
+    finish: string;
   }[];
 };
 
-const levelColors: Record<string, string> = {
-  A: "text-red-500",
-  B: "text-orange-500",
-  C: "text-gray-500",
-  D: "text-blue-500",
-  E: "text-teal-500",
-};
-
-export const RaceCard = ({ raceName, horses }: RaceCardProps) => {
+export default function RaceCard({
+  horseName,
+  sex,
+  age,
+  weight,
+  pastRaces,
+}: Props) {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-4 mb-6">
-      <h2 className="text-lg font-bold mb-3">{raceName}</h2>
-      <div className="grid grid-cols-1 gap-2">
-        {horses.map((horse, i) => (
-          <div key={i} className="flex justify-between items-center border p-2 rounded">
-            <div className="text-sm font-medium">
-              {horse.name} <span className="text-xs text-gray-500">({horse.sex}{horse.age})</span>
-            </div>
-            <div className="text-sm">{horse.weight}kg</div>
-            <div className={`text-sm font-bold ${levelColors[horse.score] || "text-gray-400"}`}>
-              {"★".repeat("EDCBA".indexOf(horse.score) + 1).padEnd(5, "☆")}
-            </div>
+    <div className="rounded-xl border p-4 shadow-sm mb-2 bg-white text-black">
+      <div className="font-bold text-lg">{horseName}</div>
+      <div className="text-sm text-gray-600 mb-2">
+        {sex}{age}・{weight}kg
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {pastRaces.map((race, i) => (
+          <div
+            key={i}
+            className="border rounded p-1 text-xs text-center bg-gray-50"
+          >
+            <div className="font-bold">{race.finish}</div>
+            <div>{race.date}</div>
+            <div>{race.distance}m</div>
+            <div>{race.time}</div>
+            <div>{race.level}</div>
           </div>
         ))}
       </div>
     </div>
   );
-};
+}

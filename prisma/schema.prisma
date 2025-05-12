@@ -1,0 +1,43 @@
+// ----------  Prisma + SQLite  ----------
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+generator client {
+  provider = "prisma-client-js"
+}
+
+/* ------ モデル（最小構成） ------ */
+model Race {
+  id       String   @id             // raceKey (YYYYMMDDPPRR)
+  date     DateTime
+  course   String
+  entries  Entry[]
+  trifectas Trifecta[]      // ★ 追加：Trifecta との逆リレーション
+}
+
+model Horse {
+  id       String   @id
+  name     String
+  sex      String?
+  entries  Entry[]
+}
+
+model Entry {
+  id       String   @id             // raceKey+馬番
+  raceId   String
+  horseId  String
+  winOdds  Float?
+  Race     Race     @relation(fields: [raceId],  references: [id])
+  Horse    Horse    @relation(fields: [horseId], references: [id])
+  @@index([raceId])
+}
+
+model Trifecta {
+  id       String   @id             // raceKey+組番
+  raceId   String
+  comb     String
+  odds     Float
+  Race     Race     @relation(fields: [raceId], references: [id])
+  @@index([raceId])
+}

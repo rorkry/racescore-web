@@ -10,13 +10,16 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.2",
+    "@prisma/client": "^6.7.0",
     "chart.js": "^4.4.9",
     "framer-motion": "^12.9.2",
     "lucide-react": "^0.503.0",
     "next": "15.3.1",
     "papaparse": "^5.5.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-textfit": "^1.1.1",
+    "swr": "^2.3.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -25,6 +28,7 @@
     "@types/react-dom": "^19",
     "eslint": "9.25.1",
     "eslint-config-next": "15.3.1",
+    "prisma": "^6.7.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
