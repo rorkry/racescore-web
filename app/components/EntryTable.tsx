@@ -107,16 +107,12 @@ export default function EntryTable({
   <tr>
     <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium w-auto">馬番</th>
     <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium">馬名</th>
-        {hasWinOdds && (
-          <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-right w-14">
-            単勝
-          </th>
-        )}
-        {hasPred && (
-          <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-right w-14">
-            合成単勝オッズ
-          </th>
-        )}
+        <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-right w-14">
+          単勝
+        </th>
+        <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-right w-14">
+          合成単勝オッズ
+        </th>
     <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-center w-[3rem]">
       印
     </th>
@@ -188,34 +184,27 @@ export default function EntryTable({
                 })()}
               </td>
 
-              {hasWinOdds && (
-                <td
-                  className={`px-1 py-1 border border-black text-center w-14 leading-tight ${
-                    winOddsMap[umaNo] != null && winOddsMap[umaNo] < 10
-                      ? 'text-red-600 font-semibold'
-                      : 'text-black'
-                  }`}
-                >
-                  {(() => {
-                    const v = winOddsMap[umaNo];
-                    return v != null ? v.toFixed(1) : '—';
-                  })()}
-                </td>
-              )}
-
-              {hasPred && (
-                <td className="px-1 py-1 border border-black text-center w-14 leading-tight text-amber-600">
-                  {(() => {
-                    // キー "01" と "1" のズレを吸収 (前ゼロ有無)
-                    const raw =
-                      predMap[umaNo] ??
-                      predMap[umaNo.replace(/^0+/, '')];
-
-                    const num = typeof raw === 'number' ? raw : Number(raw);
-                    return Number.isFinite(num) && num > 0.5 ? num.toFixed(1) : '—';
-                  })()}
-                </td>
-              )}
+              <td
+                className={`px-1 py-1 border border-black text-center w-14 leading-tight ${
+                  winOddsMap[umaNo] != null && winOddsMap[umaNo] < 10
+                    ? 'text-red-600 font-semibold'
+                    : 'text-black'
+                }`}
+              >
+                {(() => {
+                  const v = winOddsMap[umaNo];
+                  return v != null ? v.toFixed(1) : '—';
+                })()}
+              </td>
+              <td className="px-1 py-1 border border-black text-center w-14 leading-tight text-amber-600">
+                {(() => {
+                  const raw =
+                    predMap[umaNo] ??
+                    predMap[umaNo.replace(/^0+/, '')];
+                  const num = typeof raw === 'number' ? raw : Number(raw);
+                  return Number.isFinite(num) && num > 0.5 ? num.toFixed(1) : '—';
+                })()}
+              </td>
 
               {/* 印セル */}
               <td className="px-2 py-1 border border-black text-center w-[3rem] text-sm">

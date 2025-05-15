@@ -1,33 +1,36 @@
+// page.tsx – revised: duplicate imports removed / odds section hooked to new API & static CSV fallback
 // ラベル割当: 指定個数でスコア順にラベルを割り当てる
-'use client';
+'use client'
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import EntryTable from './components/EntryTable';
-import React, { useState, useEffect, useRef } from 'react';
-import Papa from 'papaparse';
-import { Tab } from '@headlessui/react';
-import Chart from 'chart.js/auto';
-import useSWR from 'swr';
+import React, { useState, useEffect, useRef } from 'react'
+import Papa from 'papaparse'
+import { Tab } from '@headlessui/react'
+import Chart from 'chart.js/auto'
+import useSWR from 'swr'
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
-import { getClusterData, ClusterInfo, computeKisoScore, scaleAndShapeScores } from '../utils/getClusterData';
-import type { CsvRaceRow } from '../types/csv';
-import type { Race }       from '../types/domain';
-import { rowToRace }       from '../utils/convert';
-import type { RecordRow } from '../types/record';
-import type { OddsRow } from '../types/odds';
-import { parseOdds } from '../utils/parseOdds';
-import { fetchOdds } from '@/utils/fetchOdds';
-import { fetchTrioOdds } from '@/lib/fetchTrio';
-import { calcSyntheticWinOdds as calcSynthetic } from '@/lib/calcSyntheticWinOdds';
+import EntryTable from './components/EntryTable'
+import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData'
+import type { CsvRaceRow } from '../types/csv'
+import type { Race } from '../types/domain'
+import { rowToRace } from '../utils/convert'
+import type { RecordRow } from '../types/record'
+import type { OddsRow } from '../types/odds'
+import { parseOdds } from '../utils/parseOdds'
+import { fetchOdds } from '@/utils/fetchOdds'
+import { fetchTrioOdds } from '@/lib/fetchTrio'
+import { calcSyntheticWinOdds as calcSynthetic } from '@/lib/calcSyntheticWinOdds'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
 // スコア閾値方式（上から判定）
 const SCORE_THRESHOLDS = [
-  { label: 'くるでしょ',      min: 0.30 },
-  { label: 'めっちゃきそう',  min: 0.25 },
-  { label: 'ちょっときそう',  min: 0.15 },
-  { label: 'こなそう',        min: 0.08 },
-];
+  { label: 'くるでしょ', min: 0.3 },
+  { label: 'めっちゃきそう', min: 0.25 },
+  { label: 'ちょっときそう', min: 0.15 },
+  { label: 'こなそう', min: 0.08 }
+]
 
 /* ------------------------------------------------------------------
  * クラス別スコア閾値テーブル
@@ -35,17 +38,17 @@ const SCORE_THRESHOLDS = [
  *  [S, A, B, C] の下限値 (inclusive)
  * ------------------------------------------------------------------ */
 const THRESHOLD_MAP: Record<number, [number, number, number, number]> = {
-  8: [0.34, 0.28, 0.20, 0.12],  // G1
-  7: [0.32, 0.26, 0.18, 0.10],  // G2
-  6: [0.30, 0.24, 0.16, 0.10],  // G3
-  5: [0.28, 0.22, 0.15, 0.09],  // OP / L
-  4: [0.26, 0.20, 0.14, 0.08],  // 3勝クラス
-  3: [0.24, 0.18, 0.13, 0.08],  // 2勝クラス
-  2: [0.22, 0.17, 0.12, 0.07],  // 1勝クラス
-  1: [0.20, 0.15, 0.11, 0.07],  // 未勝利
+  8: [0.34, 0.28, 0.2, 0.12],
+  7: [0.32, 0.26, 0.18, 0.1],
+  6: [0.3, 0.24, 0.16, 0.1],
+  5: [0.28, 0.22, 0.15, 0.09],
+  4: [0.26, 0.2, 0.14, 0.08],
+  3: [0.24, 0.18, 0.13, 0.08],
+  2: [0.22, 0.17, 0.12, 0.07],
+  1: [0.2, 0.15, 0.11, 0.07],
+  0: [0.18, 0.14, 0.1, 0.06]
+}
 
-  0: [0.18, 0.14, 0.10, 0.06],  // 新馬
-};
 
 /** 開催地名称 or 開催コード → 2桁コード */
 const placeCode: Record<string, string> = {

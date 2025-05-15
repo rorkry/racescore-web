@@ -1,5 +1,6 @@
 /**
  * 3連単オッズ（O6）→ 各馬の合成単勝オッズを計算する
+ * ※JRA の払戻表示は 100円当たりなので、確率変換時と最終オッズ算出時はいずれも「100 / 倍率」でスケールする。
  *
  * @param o6 "馬番2桁 × 3 (=6桁)" の 6 桁キー → オッズ
  *           例:  "010203": 123.4   // 01‐02‐03 (着順通り) の 123.4倍
@@ -22,7 +23,8 @@ export function calcSyntheticWinOdds(
       const firstNum = Number(first);
       if (firstNum < 1 || firstNum > 18) continue;    // 想定外の馬番は無視
 
-      const p = 1 / odd;                              // オッズ → 的中確率
+      // JRA の払戻金は「100円投票あたり」の倍率なので確率は 100 / 配当
+      const p = 100 / odd;
   
       probs[firstNum] += p;      // その馬が1着になる確率を足し込む
       counts[firstNum] += 1;   // その馬が1着として出現した回数
@@ -37,7 +39,8 @@ export function calcSyntheticWinOdds(
       // ① 出現回数が 3 組未満なら信頼できないとみなし undefined
       // ② 合成オッズが 200 倍超は実戦上あり得ないので undefined
       if (count >= 3 && prob > 0) {
-        const odd = +(1 / prob).toFixed(1);
+        // 合成単勝オッズ = 100円ベット基準で 100 / 確率
+        const odd = +(100 / prob).toFixed(1);
         if (odd <= 200) {
           result[i.toString().padStart(2, '0')] = odd;
         }

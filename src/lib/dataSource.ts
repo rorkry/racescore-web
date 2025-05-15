@@ -23,6 +23,27 @@ export type TrifectaRow = { comb: string; odds: number }
 // -------------------------
 // localStorage 実装
 // -------------------------
+
+// ---- WinPlace CSV fetch (static file) ---------------------------------
+const fetchWinPlaceCsv = async (raceKey: string): Promise<OddsRow[]> => {
+  try {
+    const url = `/${raceKey}-WinPlace.csv`
+    const txt = await fetch(url).then(r => (r.ok ? r.text() : ''))
+    if (!txt) return []
+
+    // simple CSV: first line is header
+    return txt
+      .trim()
+      .split('\n')
+      .slice(1)
+      .map(line => {
+        const [horseNo, win] = line.split(',')
+        return { horseNo: Number(horseNo), win: Number(win) }
+      })
+  } catch {
+    return []
+  }
+}
 const getRaceLS = async (raceKey: string): Promise<RaceRow | null> => {
   try {
     const all = localStorage.getItem('nestedData')
@@ -45,19 +66,26 @@ const getRaceLS = async (raceKey: string): Promise<RaceRow | null> => {
 }
 
 const getOddsLS = async (raceKey: string): Promise<OddsRow[]> => {
-  try {
-    const saved = localStorage.getItem('oddsData')
-    if (!saved) return []
-    const rows: OddsRow[] = JSON.parse(saved)
-    return rows.filter(r => r.raceKey === raceKey)
-  } catch {
-    return []
+  {
+    // ① try static CSV first
+    const fromCsv = await fetchWinPlaceCsv(raceKey)
+    if (fromCsv.length) return fromCsv
+
+    // ② fallback: legacy localStorage (for older snapshots)
+    try {
+      const saved = localStorage.getItem('oddsData')
+      if (!saved) return []
+      const rows: OddsRow[] = JSON.parse(saved)
+      return rows.filter(r => (r as any).raceKey === raceKey)
+    } catch {
+      return []
+    }
   }
 }
 
 const getTrifectaLS = async (raceKey: string): Promise<TrifectaRow[]> => {
   try {
-    const o6Dir = `${window.location.origin}/o6/${raceKey}.json`
+    const o6Dir = `/o6/${raceKey}.json`
     const res = await fetch(o6Dir)
     if (!res.ok) return []
     const json = await res.json()
