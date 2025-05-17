@@ -7,7 +7,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Papa from 'papaparse'
 import { Tab } from '@headlessui/react'
-import Chart from 'chart.js/auto'
 import useSWR from 'swr'
 
 import EntryTable from './components/EntryTable'
@@ -229,6 +228,8 @@ function assignLabels(scores: number[]): string[] {
 
 
 const DEBUG = false // デバッグログを無効化
+/** ネットワーク（オッズ系）エラーを console に出すか */
+const LOG_NETWORK_ERRORS = false;
 
 /** EntryTable の race 単位ラッパー – 3連単合成オッズ(予想単勝)を注入 */
 type RaceEntryProps = Omit<
@@ -413,70 +414,61 @@ export function classToRank(cls: string): number {
 // Distribution component
 function DistributionTab({ scores }: { scores: number[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const chartRef = useRef<Chart | null>(null);
+  const chartRef = useRef<any>(null);         // Chart instance (lazy‑loaded)
 
   useEffect(() => {
-    // 1) 有効な数値のみ抽出
-    const dataScores = scores.filter(s => typeof s === 'number' && Number.isFinite(s));
-    if (!canvasRef.current) return;
+    let cancelled = false;
 
-    // 既存チャート破棄
-    chartRef.current?.destroy();
+    const draw = async () => {
+      if (!canvasRef.current) return;
 
-    // 有効データがなければ何も描画せず終了
-    if (dataScores.length === 0) {
-      chartRef.current = null;
-      return;
-    }
+      // 必要になったときだけ Chart.js を読み込む
+      const { default: Chart } = await import('chart.js/auto');
+      if (cancelled || !canvasRef.current) return;
 
-    // 最小・最大を計算
-    const min = Math.min(...dataScores);
-    const max = Math.max(...dataScores);
-    const range = max - min;
-
-    // ビン数と幅
-    const bins = range === 0 ? 1 : 20;
-    const width = range === 0 ? 1 : range / bins;
-
-    // 各ビンの頻度を初期化
-    const counts = new Array(bins).fill(0);
-    dataScores.forEach(s => {
-      let idx = range === 0
-        ? 0
-        : Math.floor((s - min) / width);
-      idx = Math.min(bins - 1, Math.max(0, idx));
-      counts[idx]++;
-    });
-
-    // ラベル生成
-    const labels = new Array(bins).fill(0).map((_, i) =>
-      range === 0
-        ? min.toFixed(2)
-        : (min + i * width).toFixed(2)
-    );
-
-    // チャート生成
-    const ctx = canvasRef.current.getContext('2d')!;
-    chartRef.current = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{ label: '頭数', data: counts }]
-      },
-      options: {
-        scales: {
-          x: { title: { display: true, text: 'きそう指数' } },
-          y: { title: { display: true, text: '頻度' }, beginAtZero: true }
-        },
-        plugins: {
-          legend: { display: false }
-        },
-        animation: false
+      // 有効データ抽出
+      const dataScores = scores.filter(s => Number.isFinite(s));
+      chartRef.current?.destroy();
+      if (dataScores.length === 0) {
+        chartRef.current = null;
+        return;
       }
-    });
 
-    // クリーンアップ
+      const min   = Math.min(...dataScores);
+      const max   = Math.max(...dataScores);
+      const range = max - min;
+      const bins  = range === 0 ? 1 : 20;
+      const width = range === 0 ? 1 : range / bins;
+
+      const counts = new Array(bins).fill(0);
+      dataScores.forEach(s => {
+        let idx = range === 0 ? 0 : Math.floor((s - min) / width);
+        idx = Math.max(0, Math.min(bins - 1, idx));
+        counts[idx]++;
+      });
+
+      const labels = new Array(bins).fill(0).map((_, i) =>
+        range === 0 ? min.toFixed(2) : (min + i * width).toFixed(2)
+      );
+
+      const ctx = canvasRef.current.getContext('2d')!;
+      chartRef.current = new Chart(ctx, {
+        type: 'bar',
+        data: { labels, datasets: [{ label: '頭数', data: counts }] },
+        options: {
+          scales: {
+            x: { title: { display: true, text: 'きそう指数' } },
+            y: { title: { display: true, text: '頻度' }, beginAtZero: true }
+          },
+          plugins: { legend: { display: false } },
+          animation: false
+        }
+      });
+    };
+
+    draw();
     return () => {
+      cancelled = true;
       chartRef.current?.destroy();
     };
   }, [scores]);
@@ -538,6 +530,9 @@ export default function Home() {
     useState<Record<string, Record<string, number>>>({});
   const [synFetchedAt, setSynFetchedAt] =
     useState<Record<string, number>>({});
+  // --- fetch failure caches (avoid endless 500 loops) ---
+  const failedOddsRef = useRef<Set<string>>(new Set());
+  const failedTrioRef = useRef<Set<string>>(new Set());
   // raceKey_馬番(半角) -> 単勝オッズ
   const oddsMap = React.useMemo(() => {
     const m = new Map<string, number>();
@@ -611,6 +606,14 @@ export default function Home() {
     setOddsLoaded(false);
 
     uniqueKeys.forEach(raceKey => {
+      // 既にCSVに存在 or 永続失敗(500) はスキップ
+      if (
+        oddsData.some(r => r.raceKey === raceKey) ||
+        failedOddsRef.current.has(raceKey)
+      ) {
+        remaining -= 1;        // スキップ分も完了扱いに
+        return;
+      }
       fetchOdds(raceKey)
         .then(rows => {
           if (rows.length) {
@@ -621,9 +624,15 @@ export default function Home() {
             });
           } else {
             console.warn('⚠️ no odds rows for', raceKey);
+            failedOddsRef.current.add(raceKey);     // mark permanently failed
           }
         })
-        .catch(err => console.warn('⚠️ fetchOdds failed', raceKey, err))
+        .catch(err => {
+          failedOddsRef.current.add(raceKey);       // mark permanently failed
+          if (LOG_NETWORK_ERRORS) {
+            console.warn('⚠️ fetchOdds failed', raceKey, err);
+          }
+        })
         .finally(() => {
           remaining -= 1;
           if (remaining === 0) {
@@ -637,17 +646,21 @@ export default function Home() {
     uniqueKeys.forEach(raceKey => {
       const prev = synFetchedAt[raceKey] ?? 0;
       const thirtyMin = 30 * 60 * 1000;
+      if (failedTrioRef.current.has(raceKey)) return;     // permanent 500 failure
       if (Date.now() - prev < thirtyMin) return;          // 30分以内はスキップ
 
       fetchTrioOdds(raceKey)
         .then(json => {
-          if (!json || !json.o6) return;
+          if (!json || !json.o6) {
+            failedTrioRef.current.add(raceKey);        // no data → skip next time
+            return;
+          }
           // calcSyntheticWinOdds() から返るのは
           //   { '01': 3.2, '02': 8.5, … }
           // なのでオブジェクト→マップへそのまま変換する
           const synObj = calcSynthetic(json.o6);        // { '01': 3.2, … }
 
-          // --- 0 や NaN を除外しつつキーそのままで取り込む ----------
+          // --- 0 や NaN を除外しつつキーそのまま取り込む ----------
           const map: Record<string, number> = {};
           Object.entries(synObj).forEach(([no, odd]) => {
             const value = Number(odd);           // 合成単勝オッズ
@@ -669,18 +682,25 @@ export default function Home() {
             console.log('[syn–Ø]', raceKey, 'no valid synthetic odds');
           }
         })
-        .catch(err => console.warn('⚠️ fetchTrioOdds failed', raceKey, err));
+        .catch(err => {
+          failedTrioRef.current.add(raceKey);        // mark permanently failed
+          if (LOG_NETWORK_ERRORS) {
+            console.warn('⚠️ fetchTrioOdds failed', raceKey, err);
+          }
+        });
     });
-  }, [isFrameUploaded, oddsLoaded, frameNestedData, synFetchedAt]);
+  }, [isFrameUploaded, oddsLoaded, frameNestedData, synFetchedAt, oddsData]);
   // --- 枠順確定CSV アップロード（ヘッダーなし）---
-  const handleFrameUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFrameUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    Papa.parse<string[]>(file, {
+    // --- 文字列へ読み込み（Shift_JIS → UTF‑8 変換を含む） ---
+    const text = await readFileAsText(file);
+
+    Papa.parse<string[]>(text, {
       header: false,
       skipEmptyLines: true,
-      encoding: 'Shift_JIS',
       complete: ({ data }) => {
         const rows = data as string[][];
 
@@ -732,15 +752,127 @@ export default function Home() {
   const handleOddsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     try {
-      const data = await parseOdds(file);
-      setOddsData(data);
-      localStorage.setItem('oddsData', JSON.stringify(data));
-      if (DEBUG) console.log('Parsed odds rows:', data.slice(0, 5), 'total:', data.length);
+      // --- SJIS → UTF‑8 文字列へ変換（PC/スマホ共通） ---
+      const text = await readFileAsText(file);
+
+      /** 与えられた列名の候補を大/小文字区別なく探して値を返す */
+      const pick = (obj: any, candidates: string[]): any => {
+        for (const key of Object.keys(obj)) {
+          const lower = key.toLowerCase();
+          if (candidates.some(c => c.toLowerCase() === lower)) {
+            return obj[key];
+          }
+        }
+        return undefined;
+      };
+
+      // ヘッダー有無を問わず解析する
+      const parsed = Papa.parse(text, { skipEmptyLines: true });
+
+      // 1行目がヘッダー行の場合は header:true で再パース
+      const firstRow = parsed.data[0] as string[];
+      const hasHeader =
+        Array.isArray(firstRow) &&
+        firstRow.some(cell =>
+          ['racekey', 'race_key', '馬番', 'horseno', 'win', '単勝'].includes(
+            String(cell).toLowerCase(),
+          ),
+        );
+
+      const results = hasHeader
+        ? Papa.parse<Record<string, string | number>>(text, {
+            header: true,
+            skipEmptyLines: true,
+            dynamicTyping: true,
+          }).data
+        : (parsed.data as string[][]).map((row: string[]) => ({
+            RaceKey: row[0],
+            HorseNo: row[1],
+            Win: row[2],
+          }));
+
+      const rows: OddsRow[] = results.flatMap((r: any) => {
+        const rk  = String(
+          pick(r, ['raceKey', 'race_key', 'RACEKEY', 'レースキー']) ?? '',
+        ).trim();
+        const no  = String(
+          pick(r, ['horseNo', 'horse_no', 'HORSENO', '馬番']) ?? '',
+        ).trim();
+        const win = Number(
+          pick(r, ['win', '単勝', 'WIN', 'odds', 'ODDS']) ?? NaN,
+        );
+
+        if (!rk || !no || !Number.isFinite(win)) return [];
+        return [{ raceKey: rk, horseNo: no, win }];
+      });
+
+      if (!rows.length) {
+        alert(
+          'オッズCSVを解析できませんでした。\n列名(raceKey/horseNo/win) またはフォーマットを確認してください。',
+        );
+        return;
+      }
+
+      setOddsData(rows);
+      localStorage.setItem('oddsData', JSON.stringify(rows));
+
+      if (DEBUG) {
+        console.log(
+          `[ODDS] parsed rows ${rows.length} (example):`,
+          rows.slice(0, 5),
+        );
+      }
     } catch (err) {
       console.error('オッズCSV 解析エラー:', err);
+      alert(
+        'オッズCSVの読み込みに失敗しました。\nファイルと文字コード(Shift_JIS/UTF-8)を確認してください。',
+      );
     }
   };
+
+  /**
+   * ファイル → 文字列
+   * iOS Safari の TextDecoder('shift_jis') 未対応対策として
+   * FileReader.readAsText(…, 'Shift_JIS') を優先し、
+   * 失敗したら UTF‑8 へフォールバックする。
+   */
+  function readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      // --- 成功 ---
+      reader.onload = () => {
+        resolve(typeof reader.result === 'string' ? reader.result : '');
+      };
+
+      // --- 失敗 → UTF‑8 フォールバック ---
+      reader.onerror = () => {
+        console.warn('Shift_JIS decode failed, retrying as UTF‑8…');
+        const fr = new FileReader();
+        fr.onload = () => {
+          resolve(typeof fr.result === 'string' ? fr.result : '');
+        };
+        fr.onerror = () =>
+          reject(
+            new Error(
+              fr.error?.message || 'File read failed (both Shift_JIS & UTF‑8)',
+            ),
+          );
+        fr.readAsText(file, 'UTF-8');
+      };
+
+      // まず Shift_JIS でチャレンジ
+      try {
+        reader.readAsText(file, 'Shift_JIS');
+      } catch (e) {
+        // 標準外ブラウザで例外になる場合も同じく UTF‑8 へ
+        console.warn('readAsText with Shift_JIS threw, retrying as UTF‑8…');
+        reader.onerror?.(e as ProgressEvent<FileReader>);
+      }
+    });
+  }
 
   // 初回マウント時に localStorage からロード
   useEffect(() => {
@@ -1127,11 +1259,39 @@ export default function Home() {
 
   return (
     <main className="p-4 md:p-8 bg-gray-50 min-h-screen text-gray-800">
-      <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0', width: `${100/zoom}%` }}>
+      <div
+        className="overflow-x-auto origin-top-left [transform:scale(0.85)] w-[117.65%] md:w-auto md:[transform:scale(var(--zoom))]"
+        style={{ '--zoom': String(zoom) } as React.CSSProperties}
+      >
       <Tab.Group>
         {/* ヘッダーとタブ */}
         <div className="flex justify-between items-center mb-4 bg-gradient-to-r from-gray-900 to-gray-800 shadow-sm rounded-xl px-4 py-2">
           <h1 className="text-xl font-bold text-white">俺の出馬表（馬名＆過去５走）</h1>
+          {/* 🩺 DEV: localStorage quick check */}
+          {process.env.NODE_ENV !== 'production' && (
+            <button
+              onClick={() => {
+                const entries = JSON.parse(localStorage.getItem('entries') || 'null');
+                const nested  = JSON.parse(localStorage.getItem('nestedData') || 'null');
+                console.log('[DEBUG] localStorage entries:', entries);
+                console.log('[DEBUG] localStorage nestedData:', nested);
+                alert(
+                  [
+                    `entries: ${Array.isArray(entries) ? entries.length : 'none'}`,
+                    `nestedData keys: ${
+                      nested && typeof nested === 'object'
+                        ? Object.keys(nested).length
+                        : 'none'
+                    }`
+                  ].join('\n')
+                );
+              }}
+              className="ml-2 px-2 py-1 border border-white text-white text-xs rounded hover:bg-white hover:text-gray-900 transition"
+              title="localStorage check"
+            >
+              🩺
+            </button>
+          )}
           <Tab.List className="flex space-x-2">
             {['出走予定馬', '枠順確定後', '馬検索', '分布'].map(label => (
               <Tab key={label} className={({ selected }) =>
@@ -1346,11 +1506,13 @@ export default function Home() {
             <Tab.Panel>
               {!Object.keys(frameNestedData).length ? (
                 <p className="text-gray-600">枠順確定CSVをアップロードしてください。</p>
-              ) : !isOddsUploaded ? (
-                <p className="text-red-600 font-semibold">
-                  オッズCSVが未アップロードです。オッズ列を表示するには先にアップロードしてください。
-                </p>
               ) : (
+                <>
+                  {!isOddsUploaded && (
+                    <p className="text-red-600 font-semibold">
+                      オッズCSVが未アップロードです。オッズ列は空欄表示になります。
+                    </p>
+                  )}
                 /* === 以下、出走予定馬パネルと同一ロジック === */
                 <Tab.Group>
                   {/* 日付タブ */}
@@ -1579,6 +1741,7 @@ export default function Home() {
                     ))}
                   </Tab.Panels>
                 </Tab.Group>
+                </>
               )}
             </Tab.Panel>
 
