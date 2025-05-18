@@ -101,12 +101,12 @@ export default function EntryTable({
     (syntheticFromHook && syntheticFromHook.length > 0);
 
   return (
-    <div className="overflow-auto bg-white rounded-xl shadow-md">
-      <table className="w-full table-auto text-left border-collapse border border-black text-xs">
+    <div className="relative overflow-x-auto bg-white rounded-xl shadow-md">
+      <table className="min-w-max table-auto text-left border-collapse border border-black text-xs">
       <thead>
   <tr>
-    <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium w-auto">馬番</th>
-    <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium">馬名</th>
+    <th className="sticky left-0 z-20 bg-gray-100 text-black text-sm font-medium w-8 px-3 py-2 border border-black text-center">馬番</th>
+    <th className="sticky left-8 z-10 bg-gray-100 text-black text-sm font-medium min-w-[10rem] px-3 py-2 border border-black">馬名</th>
         <th className="px-3 py-2 border border-black bg-gray-100 text-black text-sm font-medium text-right w-14">
           単勝
         </th>
@@ -136,7 +136,7 @@ export default function EntryTable({
             <tr key={idx} className="odd:bg-white even:bg-gray-50">
               {/* 馬番セル */}
               <td
-                className={`w-auto px-2 py-1 border border-black text-center align-middle ${
+                className={`sticky left-0 z-20 bg-white w-auto px-2 py-1 border border-black text-center align-middle ${
                   frameColor[horse.entry['枠番'] ?? ''] ?? 'bg-gray-300 text-black'
                 } text-sm`}
               >
@@ -144,7 +144,7 @@ export default function EntryTable({
               </td>
 
               {/* 馬名セル */}
-              <td className="relative px-3 py-1 border border-black text-black align-top whitespace-nowrap text-sm">
+              <td className="sticky left-8 z-10 bg-white relative min-w-[10rem] px-3 py-1 border border-black text-black align-top whitespace-nowrap text-sm">
                 <div className="font-bold text-base">
                   {horse.entry['馬名']}
                 </div>

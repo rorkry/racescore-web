@@ -485,6 +485,20 @@ type HorseWithPast = {
 }
 
 export default function Home() {
+  /** レースタブの基底スタイル（背景のみ切り替え、文字色は固定） */
+  const getRaceTabClass = (selected: boolean) =>
+    selected
+      ? 'px-3 py-2 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow whitespace-nowrap text-sm'
+      : 'px-3 py-2 rounded-t-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors whitespace-nowrap text-sm';
+
+  /** 馬場+距離の文字色だけを馬場種別で出し分け */
+  const getSurfaceTextClass = (surface: string, selected: boolean) => {
+    const isTurf = surface.includes('芝');
+    const isDirt = surface.includes('ダ');
+    if (isTurf)  return selected ? 'text-green-700' : 'text-green-600';
+    if (isDirt)  return selected ? 'text-amber-800' : 'text-amber-700';
+    return selected ? 'text-gray-700' : 'text-gray-500';
+  };
   const [entries, setEntries] = useState<RecordRow[]>([])
   const [races, setRaces] = useState<RecordRow[]>([])
   // 型変換後の Race[]（今後のロジックで使用予定）
@@ -564,6 +578,8 @@ export default function Home() {
     });
   // 表示倍率 (0.5〜1.5)
   const [zoom, setZoom] = useState(1);
+  // 現在選択中のタブ (0: 出走予定馬, 1: 枠順確定後, 2: 馬検索, 3: 分布)
+  const [activeTab, setActiveTab] = useState(0);
   // クラス別パーセンタイルで生成した動的閾値マップ
   const [dynThresholdMap, setDynThresholdMap] =
     useState<Record<number, [number, number, number, number]>>(THRESHOLD_MAP);
@@ -1263,7 +1279,7 @@ export default function Home() {
         className="overflow-x-auto origin-top-left [transform:scale(0.85)] w-[117.65%] md:w-auto md:[transform:scale(var(--zoom))]"
         style={{ '--zoom': String(zoom) } as React.CSSProperties}
       >
-      <Tab.Group>
+      <Tab.Group selectedIndex={activeTab} onChange={setActiveTab}>
         {/* ヘッダーとタブ */}
         <div className="flex justify-between items-center mb-4 bg-gradient-to-r from-gray-900 to-gray-800 shadow-sm rounded-xl px-4 py-2">
           <h1 className="text-xl font-bold text-white">俺の出馬表（馬名＆過去５走）</h1>
@@ -1321,37 +1337,41 @@ export default function Home() {
 
         {/* CSV アップロード & 実行ボタン */}
         <div className="space-y-4">
-          <div>
-            <p>📥 出走予定馬CSV</p>
-            {isEntryUploaded ? (
-              <p className="text-green-600">✅ アップロード済み</p>
-            ) : (
-              <input type="file" accept=".csv" onChange={handleEntryUpload} />
+          <div className="flex flex-col md:flex-row md:flex-wrap md:gap-6">
+            {activeTab === 0 && (
+              <div>
+                <p>📥 出走予定馬CSV</p>
+                {isEntryUploaded ? (
+                  <p className="text-green-600">✅ アップロード済み</p>
+                ) : (
+                  <input type="file" accept=".csv" onChange={handleEntryUpload} />
+                )}
+              </div>
             )}
-          </div>
-          <div>
-            <p>📥 馬データCSV（出馬表CSV）</p>
-            {isRaceUploaded ? (
-              <p className="text-green-600">✅ アップロード済み</p>
-            ) : (
-              <input type="file" accept=".csv" onChange={handleRaceUpload} />
-            )}
-          </div>
-          <div>
-            <p>📥 枠順確定CSV</p>
-            {isFrameUploaded ? (
-              <p className="text-green-600">✅ アップロード済み</p>
-            ) : (
-              <input type="file" accept=".csv" onChange={handleFrameUpload} />
-            )}
-          </div>
-          <div>
-            <p>📥 オッズCSV</p>
-            {isOddsUploaded ? (
-              <p className="text-green-600">✅ アップロード済み</p>
-            ) : (
-              <input type="file" accept=".csv" onChange={handleOddsUpload} />
-            )}
+            <div>
+              <p>📥 馬データCSV（出馬表CSV）</p>
+              {isRaceUploaded ? (
+                <p className="text-green-600">✅ アップロード済み</p>
+              ) : (
+                <input type="file" accept=".csv" onChange={handleRaceUpload} />
+              )}
+            </div>
+            <div>
+              <p>📥 枠順確定CSV</p>
+              {isFrameUploaded ? (
+                <p className="text-green-600">✅ アップロード済み</p>
+              ) : (
+                <input type="file" accept=".csv" onChange={handleFrameUpload} />
+              )}
+            </div>
+            <div>
+              <p>📥 オッズCSV</p>
+              {isOddsUploaded ? (
+                <p className="text-green-600">✅ アップロード済み</p>
+              ) : (
+                <input type="file" accept=".csv" onChange={handleOddsUpload} />
+              )}
+            </div>
           </div>
           <div className="mt-2">
             <button
@@ -1366,25 +1386,27 @@ export default function Home() {
               CSV更新（再アップロード）
             </button>
           </div>
-          <div>
-            <button
-              onClick={() => {
-                setError(null)
-                try {
-                  filterData()
-                } catch (e: any) {
-                  console.error(e)
-                  setError(e.message)
-                }
-              }}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-            >
-              ▶️ 過去レースを抽出
-            </button>
-            {error && (
-              <div className="mt-2 text-red-600 font-medium">{error}</div>
-            )}
-          </div>
+          {activeTab === 0 && (
+            <div>
+              <button
+                onClick={() => {
+                  setError(null);
+                  try {
+                    filterData();
+                  } catch (e: any) {
+                    console.error(e);
+                    setError(e.message);
+                  }
+                }}
+                className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                ▶️ 過去レースを抽出
+              </button>
+              {error && (
+                <div className="mt-2 text-red-600 font-medium">{error}</div>
+              )}
+            </div>
+          )}
 
           {/* メインコンテンツ */}
           <Tab.Panels className="mt-4">
@@ -1433,17 +1455,28 @@ export default function Home() {
                                   {Object.entries(raceMap)
                                     .filter(([, horses]) => horses.length > 0)
                                     .map(([raceNo, horses]) => (
-                                      <Tab key={raceNo} className={({ selected }) =>
-                                        selected
-                                          ? 'px-3 py-2 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow whitespace-nowrap text-sm'
-                                          : 'px-3 py-2 rounded-t-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors whitespace-nowrap text-sm'
-                                      }>
-                                        <div className="flex flex-col items-center space-y-1">
-                                          <span className="whitespace-nowrap text-sm">{raceNo}R {horses[0].entry['レース名']?.trim()}</span>
-                                          <span className="whitespace-nowrap text-xs text-gray-500">
-                                            {horses[0].entry['馬場']?.trim()}{horses[0].entry['距離']?.trim()}m
-                                          </span>
-                                        </div>
+                                      <Tab
+                                        key={raceNo}
+                                        className={({ selected }) =>
+                                          getRaceTabClass(selected)
+                                        }
+                                      >
+                                        {({ selected }) => (
+                                          <div className="flex flex-col items-center space-y-1">
+                                            <span className="whitespace-nowrap text-sm">
+                                              {raceNo}R {horses[0].entry['レース名']?.trim()}
+                                            </span>
+                                            <span
+                                              className={`whitespace-nowrap text-xs ${getSurfaceTextClass(
+                                                horses[0].entry['馬場']?.trim() || '',
+                                                selected,
+                                              )}`}
+                                            >
+                                              {horses[0].entry['馬場']?.trim()}
+                                              {horses[0].entry['距離']?.trim()}m
+                                            </span>
+                                          </div>
+                                        )}
                                       </Tab>
                                   ))}
                                 </Tab.List>
@@ -1565,17 +1598,28 @@ export default function Home() {
                                     {Object.entries(raceMap)
                                       .filter(([, horses]) => horses.length > 0)
                                       .map(([raceNo, horses]) => (
-                                        <Tab key={raceNo} className={({ selected }) =>
-                                          selected
-                                            ? 'px-3 py-2 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow whitespace-nowrap text-sm'
-                                            : 'px-3 py-2 rounded-t-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors whitespace-nowrap text-sm'
-                                        }>
-                                          <div className="flex flex-col items-center space-y-1">
-                                            <span className="whitespace-nowrap text-sm">{raceNo}R {horses[0].entry['レース名']?.trim()}</span>
-                                            <span className="whitespace-nowrap text-xs text-gray-500">
-                                              {horses[0].entry['馬場']?.trim()}{horses[0].entry['距離']?.trim()}m
-                                            </span>
-                                          </div>
+                                        <Tab
+                                          key={raceNo}
+                                          className={({ selected }) =>
+                                            getRaceTabClass(selected)
+                                          }
+                                        >
+                                          {({ selected }) => (
+                                            <div className="flex flex-col items-center space-y-1">
+                                              <span className="whitespace-nowrap text-sm">
+                                                {raceNo}R {horses[0].entry['レース名']?.trim()}
+                                              </span>
+                                              <span
+                                                className={`whitespace-nowrap text-xs ${getSurfaceTextClass(
+                                                  horses[0].entry['馬場']?.trim() || '',
+                                                  selected,
+                                                )}`}
+                                              >
+                                                {horses[0].entry['馬場']?.trim()}
+                                                {horses[0].entry['距離']?.trim()}m
+                                              </span>
+                                            </div>
+                                          )}
                                         </Tab>
                                     ))}
                                   </Tab.List>
