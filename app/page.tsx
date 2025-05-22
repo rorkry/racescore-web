@@ -5,11 +5,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import React, { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import { Tab } from '@headlessui/react'
 import useSWR from 'swr'
 
 import EntryTable from './components/EntryTable'
+import DateSelector from './components/DateSelector'
 import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData'
 import type { CsvRaceRow } from '../types/csv'
 import type { Race } from '../types/domain'
@@ -151,7 +153,7 @@ function makeThresholds(arr: number[]): [number, number, number, number] {
  *   - z >= -0.5 ⇒ 'こなそう'
  *   - else      ⇒ 'きません'
  * ------------------------------------------------------------------ */
-function assignLabelsByZ(scores: number[]): string[] {
+export function assignLabelsByZ(scores: number[]): string[] {
   const n = scores.length;
   if (n === 0) return [];
   const mean = scores.reduce((a, b) => a + b, 0) / n;
@@ -536,6 +538,28 @@ export default function Home() {
   const [p70, setP70] = useState<number>(0);
   const [p30, setP30] = useState<number>(0);
   const [p10, setP10] = useState<number>(0);
+
+  // --- 過去開催日一覧（API から取得） ----------------------------
+  const { data: ymdList } = useSWR<string[]>('/api/ymd-list', fetcher);
+  const [selectedYmd, setSelectedYmd] = useState<string>('');
+  const router = useRouter();
+
+  // 日付が選択されたら state を更新しつつ /races/[ymd] へ遷移
+  const handleSelectYmd = (ymd: string) => {
+    setSelectedYmd(ymd);
+    router.push(`/races/${ymd}`);
+  };
+
+  /* --- 📅 DateSelector 選択に応じて表示対象の日付キーを絞る --- */
+  const dateKeys =
+    selectedYmd && nestedData[selectedYmd]
+      ? [selectedYmd]
+      : Object.keys(nestedData);
+
+  const frameDateKeys =
+    selectedYmd && frameNestedData[selectedYmd]
+      ? [selectedYmd]
+      : Object.keys(frameNestedData);
   // --- オッズCSV ---
   const [oddsData, setOddsData] = useState<OddsRow[]>([]);
   const [oddsLoaded, setOddsLoaded] = useState(false);
@@ -935,6 +959,12 @@ export default function Home() {
   }, []);
 
   // 初回マウント時に oddsData を localStorage からロード
+  // 開催日一覧が取得できたら最初の日を自動選択
+  useEffect(() => {
+    if (!selectedYmd && Array.isArray(ymdList) && ymdList.length) {
+      setSelectedYmd(ymdList[0]);
+    }
+  }, [ymdList, selectedYmd]);
   useEffect(() => {
     const saved = localStorage.getItem('oddsData');
     if (saved) {
@@ -1335,6 +1365,17 @@ export default function Home() {
           >+</button>
         </div>
 
+        {/* 開催日セレクター */}
+        {ymdList && (
+          <div className="mb-4">
+            <DateSelector
+              dates={ymdList}
+              selected={selectedYmd}
+              onChange={handleSelectYmd}
+            />
+          </div>
+        )}
+
         {/* CSV アップロード & 実行ボタン */}
         <div className="space-y-4">
           <div className="flex flex-col md:flex-row md:flex-wrap md:gap-6">
@@ -1416,7 +1457,7 @@ export default function Home() {
               <Tab.Group>
                 {/* 日付タブ */}
                 <Tab.List className="flex space-x-2 overflow-x-auto">
-                  {Object.keys(nestedData).map(dateCode => (
+                  {dateKeys.map(dateCode => (
                     <Tab key={dateCode} className={({ selected }) =>
                       selected
                         ? 'px-3 py-1 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow'
@@ -1431,8 +1472,10 @@ export default function Home() {
                 </Tab.List>
                 <Tab.Panels className="mt-4">
                   {/* 開催地タブ・レースタブ・馬表をネスト */}
-                  {Object.entries(nestedData).map(([dateCode, placeMap]) => (
-                    <Tab.Panel key={dateCode}>
+                  {dateKeys.map(dateCode => {
+                    const placeMap = nestedData[dateCode] || {};
+                    return (
+                      <Tab.Panel key={dateCode}>
                       <Tab.Group>
                         {/* 開催地タブ */}
                         <Tab.List className="flex space-x-2 overflow-x-auto">
@@ -1530,8 +1573,9 @@ export default function Home() {
                           ))}
                         </Tab.Panels>
                       </Tab.Group>
-                    </Tab.Panel>
-                  ))}
+                      </Tab.Panel>
+                    );
+                  })}
                 </Tab.Panels>
               </Tab.Group>
             </Tab.Panel>
@@ -1549,23 +1593,17 @@ export default function Home() {
                 /* === 以下、出走予定馬パネルと同一ロジック === */
                 <Tab.Group>
                   {/* 日付タブ */}
-                  <Tab.List className="flex space-x-2 overflow-x-auto">
-                    {Object.keys(frameNestedData).map(dateCode => (
-                      <Tab key={dateCode} className={({ selected }) =>
-                        selected
-                          ? 'px-3 py-1 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow'
-                          : 'px-3 py-1 rounded-t-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors'
-                      }>
-                        {dateCode.length >= 3
-                          ? `${dateCode.slice(0, dateCode.length - 2)}月${dateCode.slice(-2)}日`
-                          : dateCode}
-                      </Tab>
-                    ))}
-                  </Tab.List>
+                  <DateSelector
+                    dates={ymdList}
+                    selected={selectedYmd}
+                    onChange={handleSelectYmd}
+                  />
                   <Tab.Panels className="mt-4">
                     {/* 開催地タブ・レースタブ・馬表をネスト */}
-                    {Object.entries(frameNestedData).map(([dateCode, placeMap]) => (
-                      <Tab.Panel key={dateCode}>
+                    {frameDateKeys.map(dateCode => {
+                      const placeMap = frameNestedData[dateCode] || {};
+                      return (
+                        <Tab.Panel key={dateCode}>
                         <Tab.Group>
                           {/* 開催地タブ */}
                           <Tab.List className="flex space-x-2 overflow-x-auto">
@@ -1781,8 +1819,9 @@ export default function Home() {
                             </Tab.Panel>
                           </Tab.Panels>
                         </Tab.Group>
-                      </Tab.Panel>
-                    ))}
+                        </Tab.Panel>
+                      );
+                    })}
                   </Tab.Panels>
                 </Tab.Group>
                 </>
