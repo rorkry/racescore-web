@@ -32,5 +32,10 @@
 - [x] データベース初期化処理を追加（CREATE TABLE）
 - [x] app/api/odds/[raceKey]/route.tsを作成（DBから直接取得）
 - [x] その他のAPIルートの外部サーバーfetchを削除（既に完了）
-- [ ] 動作確認（npm run dev）
+- [x] 動作確認（npm run dev）
+- [x] GitHubへのプッシュ
+
+## 新規タスク（2024-12-18 オッズデータ削除）
+- [x] app/api/odds/[raceKey]/route.tsを削除
+- [x] lib/db.tsからoddsテーブルの定義を削除
 - [ ] GitHubへのプッシュ

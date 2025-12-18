@@ -35,17 +35,6 @@ function initDb(database: Database.Database) {
       PRIMARY KEY (raceKey, comb)
     )
   `);
-
-  // odds テーブル
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS odds (
-      raceKey TEXT,
-      horseNo INTEGER,
-      win REAL,
-      place REAL,
-      PRIMARY KEY (raceKey, horseNo)
-    )
-  `);
 }
 
 /** どの場所から呼んでも同じ DB インスタンスを返す */
