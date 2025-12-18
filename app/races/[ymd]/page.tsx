@@ -44,19 +44,19 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
           </h2>
 
           <div className="flex flex-wrap gap-2">
-            {races.map(no => (
-              <button
-                key={no}
-                onClick={() =>
-                  router.push(
-                    `/races/${ymd}/${course}/${String(no).padStart(2, '0')}`
-                  )
-                }
-                className="px-3 py-1 border rounded hover:bg-gray-100"
-              >
-                {no}R
-              </button>
-            ))}
+            {races.map(no => {
+              // raceKey: YYYYMMDD + 2桁course + 2桁raceNo
+              const raceKey = `${ymd}${course.padStart(2, '0')}${String(no).padStart(2, '0')}`;
+              return (
+                <button
+                  key={no}
+                  onClick={() => router.push(`/race/${raceKey}`)}
+                  className="px-3 py-1 border rounded hover:bg-gray-100"
+                >
+                  {no}R
+                </button>
+              );
+            })}
           </div>
         </section>
       ))}
