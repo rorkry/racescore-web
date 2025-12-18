@@ -1272,14 +1272,12 @@ export default function Home() {
                                       // レース情報を取得
                                       const className = horses[0].entry['クラス名'] || horses[0].entry.classname || '';
                                       const distance = horses[0].entry['距離'] || horses[0].entry.distance || '';
-                                      // 芝ダート区分を抽出
-                                      const surfaceMatch = distance.match(/(芝|ダ)/); 
-                                      const surface = surfaceMatch ? surfaceMatch[1] : '';
+                                      const surfaceType = horses[0].entry['芝ダート'] || horses[0].entry.surface || '';
                                       // 距離数値を抽出
                                       const distanceMatch = distance.match(/(\d+)/);
                                       const distanceNum = distanceMatch ? distanceMatch[1] : '';
                                       
-                                      const raceTitle = `${place}${raceNo}R ${className} ${surface}${distanceNum}m`;
+                                      const raceTitle = `${place}${raceNo}R ${className} ${surfaceType}${distanceNum}m`;
                                       
                                       // 枠番色を取得する関数
                                       const getFrameColor = (horseNo) => {
@@ -1313,9 +1311,10 @@ export default function Home() {
                                           <table style="width: 100%; border-collapse: collapse;">
                                             <thead>
                                               <tr style="background-color: #1e3a8a; color: white;">
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">馬番</th>
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 30px;">枠</th>
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">馬番</th>
                                                 <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">競うスコア</th>
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">競うスコア</th>
                                               </tr>
                                             </thead>
                                             <tbody>
@@ -1329,9 +1328,10 @@ export default function Home() {
                                                 
                                                 return `
                                                   <tr>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; color: ${frameColor.text}; font-size: 18px; font-weight: bold;">${horseNo}</td>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">${horseName}</td>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; width: 30px;"></td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 60px;">${horseNo}</td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 20px; font-weight: bold;">${horseName}</td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 100px;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                   </tr>
                                                 `;
                                               }).join('')}
@@ -1647,14 +1647,12 @@ export default function Home() {
                                         // レース情報を取得
                                         const className = horses[0].entry['クラス名'] || horses[0].entry.classname || '';
                                         const distance = horses[0].entry['距離'] || horses[0].entry.distance || '';
-                                        // 芝ダート区分を抽出
-                                        const surfaceMatch = distance.match(/(芝|ダ)/); 
-                                        const surface = surfaceMatch ? surfaceMatch[1] : '';
+                                        const surfaceType = horses[0].entry['芝ダート'] || horses[0].entry.surface || '';
                                         // 距離数値を抽出
                                         const distanceMatch = distance.match(/(\d+)/);
                                         const distanceNum = distanceMatch ? distanceMatch[1] : '';
                                         
-                                        const raceTitle = `${place}${raceNo}R ${className} ${surface}${distanceNum}m`;
+                                        const raceTitle = `${place}${raceNo}R ${className} ${surfaceType}${distanceNum}m`;
                                         
                                         // 枠番色を取得する関数
                                         const getFrameColor = (horseNo) => {
@@ -1688,9 +1686,10 @@ export default function Home() {
                                             <table style="width: 100%; border-collapse: collapse;">
                                               <thead>
                                                 <tr style="background-color: #1e3a8a; color: white;">
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">馬番</th>
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 30px;">枠</th>
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">馬番</th>
                                                   <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">競うスコア</th>
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">競うスコア</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
@@ -1704,9 +1703,10 @@ export default function Home() {
                                                   
                                                   return `
                                                     <tr>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; color: ${frameColor.text}; font-size: 18px; font-weight: bold;">${horseNo}</td>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">${horseName}</td>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; width: 30px;"></td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 60px;">${horseNo}</td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 20px; font-weight: bold;">${horseName}</td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 100px;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                     </tr>
                                                   `;
                                                 }).join('')}
