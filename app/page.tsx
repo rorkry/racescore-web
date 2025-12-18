@@ -1269,36 +1269,69 @@ export default function Home() {
                                       tempDiv.style.backgroundColor = 'white';
                                       tempDiv.style.padding = '20px';
                                       
-                                      const raceTitle = `${place}${raceNo}R ${horses[0].entry['レース名']?.trim() || ''} ${horses[0].entry['距離']?.trim() || ''}`;
+                                      // レース情報を取得
+                                      const className = horses[0].entry['クラス名'] || horses[0].entry.classname || '';
+                                      const distance = horses[0].entry['距離'] || horses[0].entry.distance || '';
+                                      // 芝ダート区分を抽出
+                                      const surfaceMatch = distance.match(/(芝|ダ)/); 
+                                      const surface = surfaceMatch ? surfaceMatch[1] : '';
+                                      // 距離数値を抽出
+                                      const distanceMatch = distance.match(/(\d+)/);
+                                      const distanceNum = distanceMatch ? distanceMatch[1] : '';
+                                      
+                                      const raceTitle = `${place}${raceNo}R ${className} ${surface}${distanceNum}m`;
+                                      
+                                      // 枠番色を取得する関数
+                                      const getFrameColor = (horseNo) => {
+                                        const num = parseInt(horseNo, 10);
+                                        const frame = Math.ceil(num / 2);
+                                        const colors = {
+                                          1: { bg: '#ffffff', text: '#000000' }, // 白
+                                          2: { bg: '#000000', text: '#ffffff' }, // 黒
+                                          3: { bg: '#ff0000', text: '#ffffff' }, // 赤
+                                          4: { bg: '#0000ff', text: '#ffffff' }, // 青
+                                          5: { bg: '#ffff00', text: '#000000' }, // 黄
+                                          6: { bg: '#00ff00', text: '#000000' }, // 緑
+                                          7: { bg: '#ff8c00', text: '#ffffff' }, // オレンジ
+                                          8: { bg: '#ff69b4', text: '#ffffff' }  // ピンク
+                                        };
+                                        return colors[frame] || { bg: '#cccccc', text: '#000000' };
+                                      };
+                                      
+                                      // スコアに応じた色を取得
+                                      const getScoreColor = (rank, totalHorses) => {
+                                        if (rank === 0) return '#ff4444'; // 1位：赤
+                                        if (rank === 1) return '#ff8844'; // 2位：オレンジ
+                                        if (rank === 2) return '#ffcc44'; // 3位：黄
+                                        if (rank < totalHorses / 2) return '#88dd88'; // 上位：緑
+                                        return '#dddddd'; // 下位：灰色
+                                      };
                                       
                                       tempDiv.innerHTML = `
                                         <div style="font-family: 'Noto Sans JP', sans-serif;">
-                                          <h2 style="font-size: 20px; margin-bottom: 10px;">${raceTitle}</h2>
+                                          <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #1e3a8a;">${raceTitle}</h2>
                                           <table style="width: 100%; border-collapse: collapse;">
                                             <thead>
-                                              <tr style="background-color: #6b7280; color: white;">
-                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬番</th>
-                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬名</th>
-                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">予測勝率</th>
+                                              <tr style="background-color: #1e3a8a; color: white;">
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">馬番</th>
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
+                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">競うスコア</th>
                                               </tr>
                                             </thead>
                                             <tbody>
                                               ${sortedHorses.map((item, rank) => {
                                                 const { horse, score } = item;
-                                                const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                const horseNo = parseInt(String(horse.entry.horseNo || horse.entry.馬番 || ''), 10).toString();
                                                 const horseName = horse.entry.horseName || horse.entry.馬名 || '';
                                                 
-                                                // ランクに応じて背景色を変更
-                                                let bgColor = 'white';
-                                                if (rank === 0) bgColor = '#fee2e2'; // 赤系（1位）
-                                                else if (rank === 1) bgColor = '#fed7aa'; // オレンジ系（2位）
-                                                else if (rank === 2) bgColor = '#fef3c7'; // 黄色系（3位）
+                                                const frameColor = getFrameColor(horseNo);
+                                                const scoreColor = getScoreColor(rank, sortedHorses.length);
                                                 
                                                 return `
-                                                  <tr style="background-color: ${bgColor};">
-                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseNo}</td>
-                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseName}</td>
-                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                  <tr>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; color: ${frameColor.text}; font-size: 18px; font-weight: bold;">${horseNo}</td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">${horseName}</td>
+                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                   </tr>
                                                 `;
                                               }).join('')}
@@ -1611,36 +1644,69 @@ export default function Home() {
                                         tempDiv.style.backgroundColor = 'white';
                                         tempDiv.style.padding = '20px';
                                         
-                                        const raceTitle = `${place}${raceNo}R ${horses[0].entry['レース名']?.trim() || ''} ${horses[0].entry['距離']?.trim() || ''}`;
+                                        // レース情報を取得
+                                        const className = horses[0].entry['クラス名'] || horses[0].entry.classname || '';
+                                        const distance = horses[0].entry['距離'] || horses[0].entry.distance || '';
+                                        // 芝ダート区分を抽出
+                                        const surfaceMatch = distance.match(/(芝|ダ)/); 
+                                        const surface = surfaceMatch ? surfaceMatch[1] : '';
+                                        // 距離数値を抽出
+                                        const distanceMatch = distance.match(/(\d+)/);
+                                        const distanceNum = distanceMatch ? distanceMatch[1] : '';
+                                        
+                                        const raceTitle = `${place}${raceNo}R ${className} ${surface}${distanceNum}m`;
+                                        
+                                        // 枠番色を取得する関数
+                                        const getFrameColor = (horseNo) => {
+                                          const num = parseInt(horseNo, 10);
+                                          const frame = Math.ceil(num / 2);
+                                          const colors = {
+                                            1: { bg: '#ffffff', text: '#000000' }, // 白
+                                            2: { bg: '#000000', text: '#ffffff' }, // 黒
+                                            3: { bg: '#ff0000', text: '#ffffff' }, // 赤
+                                            4: { bg: '#0000ff', text: '#ffffff' }, // 青
+                                            5: { bg: '#ffff00', text: '#000000' }, // 黄
+                                            6: { bg: '#00ff00', text: '#000000' }, // 緑
+                                            7: { bg: '#ff8c00', text: '#ffffff' }, // オレンジ
+                                            8: { bg: '#ff69b4', text: '#ffffff' }  // ピンク
+                                          };
+                                          return colors[frame] || { bg: '#cccccc', text: '#000000' };
+                                        };
+                                        
+                                        // スコアに応じた色を取得
+                                        const getScoreColor = (rank, totalHorses) => {
+                                          if (rank === 0) return '#ff4444'; // 1位：赤
+                                          if (rank === 1) return '#ff8844'; // 2位：オレンジ
+                                          if (rank === 2) return '#ffcc44'; // 3位：黄
+                                          if (rank < totalHorses / 2) return '#88dd88'; // 上位：緑
+                                          return '#dddddd'; // 下位：灰色
+                                        };
                                         
                                         tempDiv.innerHTML = `
                                           <div style="font-family: 'Noto Sans JP', sans-serif;">
-                                            <h2 style="font-size: 20px; margin-bottom: 10px;">${raceTitle}</h2>
+                                            <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #1e3a8a;">${raceTitle}</h2>
                                             <table style="width: 100%; border-collapse: collapse;">
                                               <thead>
-                                                <tr style="background-color: #6b7280; color: white;">
-                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬番</th>
-                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬名</th>
-                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">予測勝率</th>
+                                                <tr style="background-color: #1e3a8a; color: white;">
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">馬番</th>
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
+                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold;">競うスコア</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
                                                 ${sortedHorses.map((item, rank) => {
                                                   const { horse, score } = item;
-                                                  const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                  const horseNo = parseInt(String(horse.entry.horseNo || horse.entry.馬番 || ''), 10).toString();
                                                   const horseName = horse.entry.horseName || horse.entry.馬名 || '';
                                                   
-                                                  // ランクに応じて背景色を変更
-                                                  let bgColor = 'white';
-                                                  if (rank === 0) bgColor = '#fee2e2'; // 赤系（1位）
-                                                  else if (rank === 1) bgColor = '#fed7aa'; // オレンジ系（2位）
-                                                  else if (rank === 2) bgColor = '#fef3c7'; // 黄色系（3位）
+                                                  const frameColor = getFrameColor(horseNo);
+                                                  const scoreColor = getScoreColor(rank, sortedHorses.length);
                                                   
                                                   return `
-                                                    <tr style="background-color: ${bgColor};">
-                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseNo}</td>
-                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseName}</td>
-                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                    <tr>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; color: ${frameColor.text}; font-size: 18px; font-weight: bold;">${horseNo}</td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">${horseName}</td>
+                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                     </tr>
                                                   `;
                                                 }).join('')}
