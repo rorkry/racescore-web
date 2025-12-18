@@ -1311,27 +1311,35 @@ export default function Home() {
                                           <table style="width: 100%; border-collapse: collapse;">
                                             <thead>
                                               <tr style="background-color: #1e3a8a; color: white;">
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 30px;">枠</th>
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">馬番</th>
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                                                <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">競うスコア</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 25px;">枠</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 50px;">馬番</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 14px; font-weight: bold;">馬名</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 100px;">騎手</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 60px;">斤量</th>
+                                                <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 13px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
                                               </tr>
                                             </thead>
                                             <tbody>
                                               ${sortedHorses.map((item, rank) => {
                                                 const { horse, score } = item;
                                                 const horseNo = parseInt(String(horse.entry.horseNo || horse.entry.馬番 || ''), 10).toString();
-                                                const horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                let horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                // 馬名から先頭の記号を削除
+                                                horseName = horseName.replace(/^[\$\*☆★]+/, '');
+                                                const jockey = horse.entry.jockey || horse.entry.騎手 || '';
+                                                const weight = horse.entry.weight || horse.entry.斤量 || '';
                                                 
                                                 const frameColor = getFrameColor(horseNo);
                                                 const scoreColor = getScoreColor(rank, sortedHorses.length);
                                                 
                                                 return `
                                                   <tr>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; width: 30px;"></td>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 60px;">${horseNo}</td>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 20px; font-weight: bold;">${horseName}</td>
-                                                    <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 100px;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horseNo}</td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
+                                                    <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                   </tr>
                                                 `;
                                               }).join('')}
@@ -1686,27 +1694,35 @@ export default function Home() {
                                             <table style="width: 100%; border-collapse: collapse;">
                                               <thead>
                                                 <tr style="background-color: #1e3a8a; color: white;">
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 30px;">枠</th>
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">馬番</th>
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                                                  <th style="border: 3px solid #000; padding: 12px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">競うスコア</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 25px;">枠</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 50px;">馬番</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 14px; font-weight: bold;">馬名</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 100px;">騎手</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 60px;">斤量</th>
+                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 13px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
                                                 ${sortedHorses.map((item, rank) => {
                                                   const { horse, score } = item;
                                                   const horseNo = parseInt(String(horse.entry.horseNo || horse.entry.馬番 || ''), 10).toString();
-                                                  const horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                  let horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                  // 馬名から先頭の記号を削除
+                                                  horseName = horseName.replace(/^[\$\*☆★]+/, '');
+                                                  const jockey = horse.entry.jockey || horse.entry.騎手 || '';
+                                                  const weight = horse.entry.weight || horse.entry.斤量 || '';
                                                   
                                                   const frameColor = getFrameColor(horseNo);
                                                   const scoreColor = getScoreColor(rank, sortedHorses.length);
                                                   
                                                   return `
                                                     <tr>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${frameColor.bg}; width: 30px;"></td>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 60px;">${horseNo}</td>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: left; font-size: 20px; font-weight: bold;">${horseName}</td>
-                                                      <td style="border: 3px solid #000; padding: 12px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 100px;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horseNo}</td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
+                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                     </tr>
                                                   `;
                                                 }).join('')}
