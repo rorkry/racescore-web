@@ -28,6 +28,6 @@
 - [x] README.md の更新
 
 ## GitHub & デプロイ
-- [ ] GitHub へのプッシュ
+- [x] GitHub へのプッシュ
 - [ ] Vercel との連携設定
 - [ ] デプロイ確認
