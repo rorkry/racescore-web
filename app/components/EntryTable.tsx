@@ -3,7 +3,7 @@
 import { useSyntheticWinOdds } from '@/hooks/useSyntheticWinOdds';
 import React from 'react';
 import type { RecordRow } from '../../types/record';
-import { getClusterData, levelToStars } from '../../utils/getClusterData';
+import { getClusterData } from '../../utils/getClusterData';
 
 export type HorseWithPast = {
   entry: RecordRow;
@@ -18,18 +18,49 @@ type Props = {
   raceNo: string;
   labels: string[];
   scores: number[];
-  winOddsMap: Record<string, number>;
+  winOddsMap?: Record<string, number>;
   predicted?: Record<string, number | null>;
   marks: Record<string, Record<string, string>>;
   setMarks: React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>;
   favorites: Set<string>;
   setFavorites: React.Dispatch<React.SetStateAction<Set<string>>>;
-  frameColor: Record<string, string>;
-  clusterRenderer: (r: RecordRow) => JSX.Element[];
+  frameColor?: Record<string, string>;
+  clusterRenderer?: (r: RecordRow) => JSX.Element[];
   showLabels?: boolean;
   largeCells?: boolean;
   raceKey: string;
   allRaces?: RecordRow[];
+  frameNumbers?: Record<string, number>;
+};
+
+const FRAME_COLORS: Record<number, string> = {
+  1: '#ffffff',
+  2: '#000000',
+  3: '#ff0000',
+  4: '#0000ff',
+  5: '#ffff00',
+  6: '#00aa00',
+  7: '#ff8800',
+  8: '#ff69b4',
+};
+
+const FRAME_TEXT_COLORS: Record<number, string> = {
+  1: '#000000',
+  2: '#ffffff',
+  3: '#ffffff',
+  4: '#ffffff',
+  5: '#000000',
+  6: '#ffffff',
+  7: '#ffffff',
+  8: '#ffffff',
+};
+
+const INDEX_COLORS: Record<string, { bg: string; text: string }> = {
+  'くるでしょ': { bg: '#dc2626', text: '#ffffff' },
+  'めっちゃきそう': { bg: '#f97316', text: '#ffffff' },
+  'ちょっときそう': { bg: '#3b82f6', text: '#ffffff' },
+  'こなそう': { bg: '#93c5fd', text: '#000000' },
+  'きません': { bg: '#d1d5db', text: '#000000' },
 };
 
 export default function EntryTable({
@@ -45,44 +76,18 @@ export default function EntryTable({
   setMarks,
   favorites,
   setFavorites,
-  frameColor,
+  frameColor = {},
   clusterRenderer,
   showLabels = true,
   largeCells = false,
   raceKey,
   allRaces = [],
+  frameNumbers = {},
 }: Props) {
-  // 3連単→合成単勝オッズを取得
   const { data: syntheticFromHook } = useSyntheticWinOdds(raceKey);
 
-  const mergedPredicted: Record<string, number | null> = React.useMemo(() => {
-    if (predicted && Object.keys(predicted).length > 0) return predicted;
-    if (!syntheticFromHook || syntheticFromHook.length === 0) return {};
-    const m: Record<string, number> = {};
-    syntheticFromHook.forEach(({ horseNo, odds }) => {
-      if (Number.isFinite(odds) && odds > 0.5) {
-        const key = String(horseNo).padStart(2, '0');
-        m[key] = odds;
-      }
-    });
-    return m;
-  }, [predicted, syntheticFromHook]);
-
-  const predMap: Record<string, number> = React.useMemo(() => {
-    const src = (mergedPredicted ?? {}) as Record<string, number | string | null>;
-    const m: Record<string, number> = {};
-    Object.entries(src).forEach(([no, raw]) => {
-      const n = typeof raw === 'number' ? raw : Number(raw);
-      if (!Number.isFinite(n) || n <= 0.5) return;
-      const padded = no.padStart(2, '0');
-      const unpadded = padded.replace(/^0+/, '');
-      m[padded] = n;
-      m[unpadded] = n;
-    });
-    return m;
-  }, [mergedPredicted]);
-
   const cacheRef = React.useRef<Record<string, any>>({});
+  const [selectedTab, setSelectedTab] = React.useState<Record<string, number>>({});
 
   const handleMarkClick = (horseNo: string, mark: string) => {
     setMarks((prev) => {
@@ -105,8 +110,42 @@ export default function EntryTable({
     });
   };
 
-  const hasWinOdds = Object.keys(winOddsMap).length > 0;
-  const hasPred = Object.keys(predMap).length > 0;
+  const getFrameColor = (horseNo: string): { bg: string; text: string } => {
+    const frameNum = frameNumbers[horseNo];
+    if (frameNum && FRAME_COLORS[frameNum]) {
+      return {
+        bg: FRAME_COLORS[frameNum],
+        text: FRAME_TEXT_COLORS[frameNum],
+      };
+    }
+    return { bg: '#ffffff', text: '#000000' };
+  };
+
+  const formatPastRace = (race: RecordRow, index: number) => {
+    const date = race['日付(yyyy.mm.dd)'] || race.date || '';
+    const place = race.place || race.場所 || '';
+    const distance = race.distance || race.距離 || '';
+    const surface = distance.includes('ダ') ? 'ダ' : '芝';
+    const className = race.classname || race['クラス名'] || '';
+    const popularity = race.popularity || race.人気 || '';
+    const finish = race.finish || race.着順 || '';
+    const time = race.time || race['走破タイム'] || '';
+    const timeDiff = race.timeDiff || '';
+
+    const dayLabel = ['1走前', '2走前', '3走前', '4走前', '5走前'][index] || '';
+
+    return (
+      <div style={{ fontSize: '0.75rem', lineHeight: '1.3' }}>
+        <div style={{ fontWeight: 600, marginBottom: '2px' }}>
+          {dayLabel} {surface}{distance}
+        </div>
+        <div>{className} {popularity}人気 {finish}着</div>
+        <div style={{ color: '#666' }}>
+          {time} {timeDiff ? `(${timeDiff})` : ''}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="w-full overflow-x-auto bg-white dark:bg-gray-900">
@@ -119,7 +158,7 @@ export default function EntryTable({
         .entry-table th,
         .entry-table td {
           border: 1px solid #ddd;
-          padding: 4px 6px;
+          padding: 6px 4px;
           text-align: center;
         }
         .entry-table th {
@@ -148,65 +187,84 @@ export default function EntryTable({
         .horse-name {
           text-align: left;
           font-weight: 500;
+          position: relative;
         }
-        .mark-btn {
-          padding: 2px 4px;
-          margin: 1px;
+        .horse-favorite {
+          position: absolute;
+          right: 2px;
+          top: 2px;
+          font-size: 0.9rem;
+          cursor: pointer;
+          background: none;
+          border: none;
+          padding: 0;
+          line-height: 1;
+        }
+        .mark-tabs {
+          display: flex;
+          gap: 2px;
+          justify-content: center;
+        }
+        .mark-tab {
+          padding: 4px 6px;
           border: 1px solid #ccc;
           border-radius: 3px;
           cursor: pointer;
-          font-size: 0.7rem;
+          font-size: 0.75rem;
           background: white;
           transition: all 0.2s;
+          font-weight: 600;
         }
-        .mark-btn:hover {
+        .mark-tab:hover {
           background-color: #e5e7eb;
         }
-        .mark-btn.active {
+        .mark-tab.active {
           background-color: #1f2937;
           color: white;
           border-color: #1f2937;
         }
-        .cluster-info {
-          font-size: 0.7rem;
-          color: #666;
-          line-height: 1.2;
-        }
-        .dark .cluster-info {
-          color: #9ca3af;
-        }
-        .pci-value {
-          font-weight: 600;
-        }
-        .pci-high {
-          color: #dc2626;
-        }
-        .pci-low {
-          color: #2563eb;
-        }
-        .passing-order {
-          font-weight: 500;
-        }
-        .passing-order.highlight {
-          background-color: #fef3c7;
-          color: #92400e;
-        }
-        .dark .passing-order.highlight {
-          background-color: #78350f;
-          color: #fcd34d;
-        }
-        .score-badge {
+        .index-badge {
           display: inline-block;
           padding: 2px 6px;
           border-radius: 3px;
           font-size: 0.7rem;
           font-weight: 600;
-          background-color: #dbeafe;
-          color: #1e40af;
+          white-space: nowrap;
         }
-        .dark .score-badge {
-          background-color: #1e3a8a;
-          color: #93c5fd;
+        .past-race-tabs {
+          display: flex;
+          gap: 2px;
+          margin-bottom: 4px;
+          border-bottom: 1px solid #ddd;
+        }
+        .past-race-tab {
+          padding: 4px 6px;
+          border: 1px solid #ddd;
+          border-bottom: none;
+          border-radius: 3px 3px 0 0;
+          cursor: pointer;
+          font-size: 0.7rem;
+          background: #f3f4f6;
+          transition: all 0.2s;
+        }
+        .past-race-tab.active {
+          background: white;
+          border-color: #ddd;
+          font-weight: 600;
+        }
+        .past-race-content {
+          padding: 4px;
+          min-height: 60px;
+        }
+        .dark .past-race-tabs {
+          border-bottom-color: #4b5563;
+        }
+        .dark .past-race-tab {
+          background: #374151;
+          border-color: #4b5563;
+        }
+        .dark .past-race-tab.active {
+          background: #1f2937;
         }
       `}</style>
 
@@ -215,106 +273,63 @@ export default function EntryTable({
           <tr>
             <th>馬番</th>
             <th>馬名</th>
+            <th>印</th>
             <th>騎手</th>
             <th>斤量</th>
-            {hasWinOdds && <th>オッズ</th>}
-            {hasPred && <th>合成</th>}
             {showLabels && <th>指数</th>}
             <th>過去5走</th>
-            <th>印</th>
-            <th>★</th>
           </tr>
         </thead>
         <tbody>
           {horses.map((horse, idx) => {
             const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+            const horseNoDisplay = parseInt(horseNo, 10).toString();
             const horseName = String(horse.entry.horseName || horse.entry.馬名 || '');
             const jockey = String(horse.entry.jockey || horse.entry.騎手 || '');
             const weight = String(horse.entry.weight || horse.entry.斤量 || '');
             const currentMark = marks[horseNo]?.[raceKey] || '';
             const isFavorite = favorites.has(horseNo);
-            const score = scores[idx] || 0;
             const scoreLabel = labels[idx] || '';
 
-            const winOdds = winOddsMap[horseNo] || winOddsMap[horseNo.replace(/^0+/, '')];
-            const predOdds = predMap[horseNo];
+            const frameColorStyle = getFrameColor(horseNo);
 
-            // クラスタータイム情報を取得
-            const clusterData = horse.past.length > 0
-              ? getClusterData(horse.past[0], allRaces, cacheRef)
-              : [];
+            const tabIndex = selectedTab[horseNo] || 0;
 
             return (
               <tr key={horseNo}>
-                <td className="font-bold">{horseNo}</td>
-                <td className="horse-name">{horseName}</td>
-                <td>{jockey}</td>
-                <td>{weight}</td>
-                {hasWinOdds && (
-                  <td className={winOdds ? 'font-semibold' : ''}>
-                    {winOdds ? winOdds.toFixed(1) : '-'}
-                  </td>
-                )}
-                {hasPred && (
-                  <td className={predOdds ? 'font-semibold text-blue-600 dark:text-blue-400' : ''}>
-                    {predOdds ? predOdds.toFixed(1) : '-'}
-                  </td>
-                )}
-                {showLabels && (
-                  <td>
-                    {scoreLabel && (
-                      <span className="score-badge">{scoreLabel}</span>
-                    )}
-                    {score > 0 && (
-                      <div className="text-xs mt-1">{score.toFixed(2)}</div>
-                    )}
-                  </td>
-                )}
-                <td className="cluster-info">
-                  {horse.past.slice(0, 3).map((race, i) => {
-                    const cluster = clusterData[i];
-                    const pci = race.PCI || race.PCI || '';
-                    const passingOrder = race['2角'] || race['2角'] || '';
-
-                    return (
-                      <div key={i} style={{ marginBottom: '4px' }}>
-                        {cluster && (
-                          <div>
-                            <span className="pci-value">
-                              {cluster.dayLabel}
-                              {cluster.className}
-                            </span>
-                            <br />
-                            <span className={cluster.highlight === 'red' ? 'pci-high' : ''}>
-                              {cluster.time}
-                            </span>
-                            {cluster.diff !== 0 && (
-                              <span className={cluster.diff < 0 ? 'pci-low' : 'pci-high'}>
-                                {cluster.diff > 0 ? '+' : ''}{cluster.diff.toFixed(1)}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {pci && (
-                          <div>
-                            PCI: <span className="pci-value">{pci}</span>
-                          </div>
-                        )}
-                        {passingOrder && (
-                          <div>
-                            2角: <span className="passing-order">{passingOrder}</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <td
+                  style={{
+                    backgroundColor: frameColorStyle.bg,
+                    color: frameColorStyle.text,
+                    fontWeight: 'bold',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  {horseNoDisplay}
+                </td>
+                <td className="horse-name">
+                  {horseName}
+                  <button
+                    className="horse-favorite"
+                    onClick={() => handleFavoriteClick(horseNo)}
+                    style={{
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      background: 'none',
+                      border: 'none',
+                      padding: '0 2px',
+                      lineHeight: '1',
+                    }}
+                  >
+                    {isFavorite ? '★' : '☆'}
+                  </button>
                 </td>
                 <td>
-                  <div style={{ display: 'flex', gap: '2px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <div className="mark-tabs">
                     {['◎', '○', '▲', '△', '×'].map((mark) => (
                       <button
                         key={mark}
-                        className={`mark-btn ${currentMark === mark ? 'active' : ''}`}
+                        className={`mark-tab ${currentMark === mark ? 'active' : ''}`}
                         onClick={() => handleMarkClick(horseNo, mark)}
                       >
                         {mark}
@@ -322,19 +337,40 @@ export default function EntryTable({
                     ))}
                   </div>
                 </td>
-                <td>
-                  <button
-                    onClick={() => handleFavoriteClick(horseNo)}
-                    style={{
-                      fontSize: '1.2rem',
-                      cursor: 'pointer',
-                      background: 'none',
-                      border: 'none',
-                      padding: '4px',
-                    }}
-                  >
-                    {isFavorite ? '★' : '☆'}
-                  </button>
+                <td style={{ fontSize: '0.85rem' }}>{jockey}</td>
+                <td style={{ fontSize: '0.85rem' }}>{weight}</td>
+                {showLabels && (
+                  <td>
+                    {scoreLabel && (
+                      <div
+                        className="index-badge"
+                        style={{
+                          backgroundColor: INDEX_COLORS[scoreLabel]?.bg || '#d1d5db',
+                          color: INDEX_COLORS[scoreLabel]?.text || '#000000',
+                        }}
+                      >
+                        {scoreLabel}
+                      </div>
+                    )}
+                  </td>
+                )}
+                <td style={{ padding: '4px', textAlign: 'left' }}>
+                  <div className="past-race-tabs">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <button
+                        key={i}
+                        className={`past-race-tab ${tabIndex === i ? 'active' : ''}`}
+                        onClick={() => setSelectedTab({ ...selectedTab, [horseNo]: i })}
+                      >
+                        {i + 1}走前
+                      </button>
+                    ))}
+                  </div>
+                  <div className="past-race-content">
+                    {horse.past[tabIndex]
+                      ? formatPastRace(horse.past[tabIndex], tabIndex)
+                      : '情報なし'}
+                  </div>
                 </td>
               </tr>
             );
