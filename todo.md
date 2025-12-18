@@ -24,5 +24,13 @@
 - [x] プロキシ設定の削除（next.config.ts）
 - [x] 不要なAPIルート（trio）の外部サーバーフォールバック削除
 - [x] Metadataの警告修正（generateViewport使用）
+- [x] 動作確認（npm run dev）
+- [x] GitHubへのプッシュ
+
+## 新規タスク（2024-12-18 Windows対応）
+- [x] lib/db.tsのreadonly: trueオプションを削除
+- [x] データベース初期化処理を追加（CREATE TABLE）
+- [x] app/api/odds/[raceKey]/route.tsを作成（DBから直接取得）
+- [x] その他のAPIルートの外部サーバーfetchを削除（既に完了）
 - [ ] 動作確認（npm run dev）
 - [ ] GitHubへのプッシュ
