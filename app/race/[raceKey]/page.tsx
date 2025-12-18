@@ -3,7 +3,7 @@
 import { use as usePromise } from 'react';
 import useSWR from 'swr';
 import EntryTable from '@/app/components/EntryTable';
-import { assignLabelsByZ } from '@/app/page';
+import { assignLabelsByZ } from '@/utils/labels';
 import { computeKisoScore } from '@/utils/getClusterData';
 import type { RecordRow } from '@/types/record';
 import { useRouter } from 'next/navigation';
@@ -40,7 +40,6 @@ export default function RacePage({ params }: Props) {
   const ymd = raceKey.slice(0, 8);
   const course = raceKey.slice(8, 10);
   const raceNo = raceKey.slice(10, 12);
-  const dateCode = ymd.slice(4, 6) + ymd.slice(6);
 
   // 競馬場コード → 表示名
   const COURSE_NAME: Record<string, string> = {
@@ -77,21 +76,15 @@ export default function RacePage({ params }: Props) {
 
       <EntryTable
         horses={horses}
-        dateCode={dateCode}
-        place={course}
-        raceNo={raceNo}
         labels={labels}
         scores={scores}
         marks={{}}
         setMarks={() => {}}
         favorites={new Set()}
         setFavorites={() => {}}
-        frameColor={{}}
-        clusterRenderer={() => null}
         showLabels
         raceKey={raceKey}
-        winOddsMap={{}}
-        predicted={null}
+        frameNumbers={{}}
       />
     </main>
   );

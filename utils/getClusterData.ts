@@ -1,4 +1,3 @@
-import React from 'react';
 import type { RecordRow } from '../types/record';
 
 /* ------------------------------------------------------------------ */
@@ -114,6 +113,21 @@ export function toSec(t: string): number {
 
   return NaN; // パターン不一致
 }
+
+/** タイム文字列をフォーマット（例: "1.53.8"） */
+function formatTime(timeStr: string): string {
+  const sec = toSec(timeStr);
+  if (isNaN(sec)) return timeStr;
+  const mins = Math.floor(sec / 60);
+  const secs = (sec % 60).toFixed(1);
+  return `${mins}.${secs.padStart(4, '0')}`;
+}
+
+// --- 距離表記を正規化: "芝1600", "芝1600m", "ダ 1200" → "芝1600", "ダ1200"
+function normalizeDist(raw: string): string {
+  return raw.replace(/\s+/g, '').replace(/m/gi, '');
+}
+
 /* === ★ 旧ロジックユーティリティ (module‑level) ここまで ============ */
 
 /* ------------------------------------------------------------------ */
@@ -127,11 +141,6 @@ function GET(row: RecordRow, ...keys: string[]): string {
     }
   }
   return '';
-}
-
-// --- 距離表記を正規化: "芝1600", "芝1600m", "ダ 1200" → "芝1600", "ダ1200"
-function normalizeDist(raw: string): string {
-  return raw.replace(/\s+/g, '').replace(/m/gi, '');
 }
 
 /** 別クラスタタイム 1 件分の情報 */
@@ -155,49 +164,10 @@ export function getClusterData(
   cacheRef: React.MutableRefObject<Record<string, ClusterInfo[]>>
 ): ClusterInfo[] {
   const rid = GET(r, 'raceId', 'レースID(新/馬番無)', 'レースID').trim();
-
-  /* === ユーティリティ関数（page.tsx から暫定コピー） === */
-  const toHalfWidth = (str: string) =>
-    str.replace(/[！-～]/g, s =>
-      String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
-
-  /** 走破タイム文字列 → 秒
-   *  - "1:34.5"   → 94.5
-   *  - "2.10.4"   → 130.4
-   *  - "2104"     → 130.4
-   */
-  const toSec = (t: string): number => {
-    const s = toHalfWidth(t.trim());
-
-    // Pattern 1: "m:ss.s" or "mm:ss.s"
-    let m = s.match(/^(\d+):(\d{2}\.\d)$/);
-    if (m) {
-      return parseInt(m[1], 10) * 60 + parseFloat(m[2]);
-    }
-
-    // Pattern 2: "m.ss.s" or "mm.ss.s" (e.g., "2.10.4")
-    m = s.match(/^(\d+)\.(\d{2})\.(\d)$/);
-    if (m) {
-      return parseInt(m[1], 10) * 60 + parseInt(m[2], 10) + parseInt(m[3], 10) / 10;
-    }
-
-    // Pattern 3: pure digits "mmssd" / "msssd" (e.g., "2104" → 2:10.4)
-    if (/^\d{4,5}$/.test(s)) {
-      const digits = s.split('').map(Number);
-      const tenths = digits.pop()!;                        // 最後の 1 桁 = 0.1 秒
-      const secs   = parseInt(digits.splice(-2).join(''), 10); // 後ろ 2 桁 = 秒
-      const mins   = parseInt(digits.join('') || '0', 10);     // 残り = 分
-      return mins * 60 + secs + tenths / 10;
-    }
-
-    return NaN; // パターン不一致
-  };
-
-  const formatTime = (t: string) => t;   // ここでは元文字列で十分
+  if (cacheRef.current[rid]) return cacheRef.current[rid];
 
   /**
-   * 日付文字列を Date へ変換
-   * - 余分な空白・全角数字を半角へ
+   * 日付文字列 → Date オブジェクト
    * - 区切りが `. / -` でも OK
    * - `YYYYMMDD`, `YYMMDD` も許容
    */
@@ -234,91 +204,6 @@ export function getClusterData(
     const idx = classOrder.findIndex(re => re.test(cls));
     return idx !== -1 ? idx : -1;
   };
-  /* === ★ 旧ロジック用ユーティリティ =============================== */
-
-  /** レースレベル (全角/半角 A–E) → ★1–5 */
-  function levelToStars(level: string): number {
-    if (!level) return 0;
-    let ch = level.trim().charAt(0);
-    const code = ch.charCodeAt(0);
-    // 全角Ａ～Ｅ → 半角A–E
-    if (code >= 0xff21 && code <= 0xff25) {
-      ch = String.fromCharCode(code - 0xfee0);
-    }
-    switch (ch.toUpperCase()) {
-      case 'A': return 5;
-      case 'B': return 4;
-      case 'C': return 3;
-      case 'D': return 2;
-      case 'E': return 1;
-      default:  return 0;
-    }
-  }
-
-  /** 着差スコア: 0差→1、+3秒以上→0 */
-  function marginScore(marginSec: number): number {
-    const raw = 1.2 - 0.4 * marginSec;
-    return Math.max(0, Math.min(1, raw));
-  }
-
-  /** ペースカテゴリ */
-  type PaceCat = '超ハイ'|'ハイ'|'ミドル'|'スロー'|'超スロー';
-  function getPaceCat(surface: '芝'|'ダ', dist: number, pci: number): PaceCat {
-    if (surface === 'ダ' && dist <= 1600) {
-      if (pci <= 41) return '超ハイ';
-      if (pci <= 42) return 'ハイ';
-      if (pci >= 49) return '超スロー';
-      if (pci >= 48) return 'スロー';
-    }
-    if (surface === 'ダ' && dist >= 1700) {
-      if (pci <= 44) return '超ハイ';
-      if (pci <= 45) return 'ハイ';
-      if (pci >= 49) return '超スロー';
-      if (pci >= 48) return 'スロー';
-    }
-    if (surface === '芝' && dist >= 1700) {
-      if (pci <= 47.5) return '超ハイ';
-      if (pci <= 50)  return 'ハイ';
-      if (pci >= 57)  return '超スロー';
-      if (pci >= 56)  return 'スロー';
-    }
-    if (surface === '芝' && dist <= 1600) {
-      if (pci <= 46) return '超ハイ';
-      if (pci <= 47) return 'ハイ';
-      if (pci >= 52) return '超スロー';
-      if (pci >= 50) return 'スロー';
-    }
-    return 'ミドル';
-  }
-
-  /** ペースカテゴリ → 補正係数 */
-  const paceFactorMap: Record<PaceCat, number> = {
-    '超ハイ': 1.2,
-    'ハイ':    1.1,
-    'ミドル':  1.0,
-    'スロー':  0.9,
-    '超スロー':0.8,
-  };
-
-  /** 指標合成の重み（合計1.0） */
-  const WEIGHTS = {
-    star:     0.28,  // ★レベル
-    cluster:  0.10,  // クラスタタイム
-    passing:  0.28,  // 通過順位 × ペース
-    finish:   0.05,  // 着順
-    margin:   0.10,  // 着差
-    timeDiff: 0.09,  // レース内タイム差
-  };
-
-  /** 走破タイム差スコア: 差0→1、±3秒→0 */
-  function timeDiffScore(selfSec: number, clusterSecs: number[]): number {
-    if (!clusterSecs.length) return 0;
-    const best = Math.min(...clusterSecs);
-    const diff = selfSec - best;
-    const s = 1 - Math.min(Math.abs(diff) / 3, 1);
-    return Math.max(0, s);
-  }
-  /* === 旧ロジックユーティリティここまで =========================== */
 
   const baseDate = parseDateStr(GET(r, 'date', '日付(yyyy.mm.dd)', '日付').trim());
   if (!baseDate) { cacheRef.current[rid] = []; return []; }
@@ -372,13 +257,10 @@ export function getClusterData(
     const currRank  = classToRank(GET(r, 'クラス名'));
     const otherClassName = GET(c, 'クラス名').trim();
     const otherRank = classToRank(otherClassName);
-    // [DEBUG getCluster] 自馬クラス=..., 他馬クラス=..., diff=...
     let highlight: ClusterInfo['highlight'] = '';
     if (otherRank > currRank) {
       highlight = diff < 0 ? 'red' : diff <= 1 ? 'orange' : '';
     }
-
-    // DEBUG getClusterData detail: rid=..., currRank=..., otherRank=..., diff=..., highlight=...
 
     return {
       dayLabel,
@@ -394,120 +276,90 @@ export function getClusterData(
   cacheRef.current[rid] = result;
   return result;
 }
+
 /* ------------------------------------------------------------------ */
-/*  きそう指数 計算の簡易バージョン                                   */
-/*  （元のロジックを簡略化：直近3走の着順でスコアリング）             */
+/*  競うスコア計算（巻き返し指数ベース、加算式）                       */
 /* ------------------------------------------------------------------ */
 
 /**
- * 半角変換ユーティリティ（上部にもあるが単体利用用に再宣言）
- */
-const _toHalfWidth = (str: string) =>
-  str.replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-     .replace(/　/g, ' ');
-
-/**
- * 馬 1 頭の “きそう指数” を返す。
+ * 馬 1 頭の "競うスコア" を返す（最大100点）
  * @param horse 過去走配列と現在出走情報
- * @returns 0〜1 のスコア（高いほど期待）
+ * @returns 0〜100 のスコア（高いほど期待）
  */
 export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow }): number {
-  const recent = horse.past.slice(0, 3);          // 直近3走
-  const recencyWeights = [0.5, 0.3, 0.2];         // ≒指数半減
+  const recent = horse.past.slice(0, 5);  // 直近5走
 
-  const trialScores = recent.map((r, idx) => {
-    /* --- ① レースレベル（★） ---------------------------------- */
-    const starCount   = levelToStars(GET(r, 'rating3', 'レース印３'));
-    const starBase    = starCount / 5;
-    const starFactor  = starCount >= 3 ? 1.1 : 0.9;
-    const starScore   = Math.min(1, Math.max(0, starBase * starFactor));
+  // 巻き返し指数を取得（0～10の範囲）
+  const comeback1 = parseFloat(GET(recent[0] || {}, 'comeback', '指数') || '0');
+  const comeback2 = parseFloat(GET(recent[1] || {}, 'comeback', '指数') || '0');
+  const comeback3 = parseFloat(GET(recent[2] || {}, 'comeback', '指数') || '0');
 
-    /* --- ⑦ 走破タイム差スコア ---------------------------------- */
-    const selfSec = toSec(GET(r,'time','走破タイム'));
-    /* --- ② 別クラスタタイム ------------------------------------ */
-    /*  同一 surface+distance の他レース（直近3走内）で最速走破タイムとの差を評価
-     *  diff ≤ 0   → 1.0
-     *  diff 0.5s → 0.5
-     *  diff ≥ 1s → 0   （timeDiffScore が処理）
-     */
-    const surf = (GET(r,'surface','距離').trim().charAt(0) as '芝'|'ダ') || '芝';
-    const dist = normalizeDist(GET(r,'distance','距離'));
-    const selfSecC = selfSec;  // selfSec は後段で算出するので先に placeholder
-    // 集合をつくる: 同じ surface+distance かつ秒数が取れるもの
-    const clusterSecs = recent
-      .filter(x =>
-        (GET(x,'surface','距離').trim().charAt(0) as '芝'|'ダ') === surf &&
-        normalizeDist(GET(x,'distance','距離')) === dist
-      )
-      .map(x => toSec(GET(x,'time','走破タイム')))
-      .filter(sec => !isNaN(sec) && sec > 0);
-    const clusterScore = timeDiffScore(selfSecC, clusterSecs);
+  // 巻き返し指数スコア（65点満点）
+  const comebackScore = 
+    (comeback1 / 10) * 50 +  // 前走: 50点
+    (comeback2 / 10) * 10 +  // 2走前: 10点
+    (comeback3 / 10) * 5;    // 3走前: 5点
 
-    /* --- ③ 通過順位スコア -------------------------------------- */
-    // --- 通過順位 配列を生成（corner2, corner3, corner4） ---
-const passNums = ['corner2', 'corner3', 'corner4']
-  .map(k => {
-    const raw = toHalfWidth(GET(r, k).trim());   // 全角→半角
-    const m = raw.match(/^\d+/);                 // 先頭の数字だけ抜く
-    return m ? parseInt(m[0], 10) : NaN;
-  })
-  .filter(n => !isNaN(n));
+  // 着順スコア（10点満点）
+  const fin1 = parseInt(toHalfWidth(GET(recent[0] || {}, 'finish', '着順').trim()), 10) || 99;
+  const finishScore = Math.max(0, 10 - (fin1 - 1) * 1);
 
-    const fieldSize = parseInt(GET(r, 'fieldSize', '頭数') || '1', 10);
+  // 着差スコア（10点満点）
+  const margin1 = parseFloat(GET(recent[0] || {}, 'margin', '着差') || '0');
+  const marginScoreVal = Math.max(0, 10 - margin1 * 3);
 
-// passNums が空なら「最後尾と同等」とみなす (負値を防ぐ)
-const avgPass = passNums.length
-  ? passNums.reduce((a, b) => a + b, 0) / passNums.length
-  : fieldSize;    // 欠損 → 後方評価だが 0 以上に抑える
+  // クラスタタイムスコア（8点満点）
+  // 簡易実装: 前走のクラスタタイム差が小さいほど高評価
+  const clusterScore = 4; // 仮実装（後で詳細化可能）
 
-// 0〜1 にクリップ（マイナス防止）
-const basePassScore = Math.max(
-  0,
-  (fieldSize - avgPass + 1) / fieldSize
-);
+  // 通過順位×ペーススコア（7点満点）
+  const passNums = ['corner2', 'corner3', 'corner4']
+    .map(k => {
+      const raw = toHalfWidth(GET(recent[0] || {}, k, k).trim());
+      const m = raw.match(/^\d+/);
+      return m ? parseInt(m[0], 10) : NaN;
+    })
+    .filter(n => !isNaN(n));
+  
+  const fieldSize = parseInt(GET(recent[0] || {}, 'fieldSize', '頭数') || '1', 10);
+  const avgPass = passNums.length
+    ? passNums.reduce((a, b) => a + b, 0) / passNums.length
+    : fieldSize;
+  
+  const basePassScore = Math.max(0, (fieldSize - avgPass + 1) / fieldSize);
+  const surf = (GET(recent[0] || {}, 'surface', '距離').trim().charAt(0) as '芝'|'ダ') || '芝';
+  const dist = parseInt(GET(recent[0] || {}, 'distance', '距離').replace(/[^\d]/g, '') || '0', 10);
+  const pci = parseFloat(GET(recent[0] || {}, 'pci', 'PCI') || '0');
+  const paceCat = getPaceCat(surf, dist, pci);
+  const passFactor = paceFactorMap[paceCat];
+  const passScore = basePassScore * passFactor * 7;
 
-    /* --- ④ 着差・ペース補正 ------------------------------------ */
-    const mScore = marginScore(parseFloat(GET(r,'margin','着差') || '0'));
-    const paceCat = getPaceCat(
-      (GET(r,'surface','距離').trim().charAt(0) as '芝'|'ダ') || '芝',
-      parseInt(GET(r,'distance','距離').replace(/[^\d]/g,'') || '0', 10),
-      parseFloat(GET(r,'pci','PCI') || '0')
-    );
-    const passFactor = paceFactorMap[paceCat];
-    const adjustedPassScore = basePassScore * mScore * passFactor;
-
-    /* --- ⑤ 着順スコア ------------------------------------------ */
-    const fin = parseInt(_toHalfWidth(GET(r,'finish','着順').trim()), 10) || 99;
-    const finishScore = Math.max(0, 1 - (fin - 1) * 0.1);
-
-    /* --- ⑥ 着差スコア ------------------------------------------ */
-    const marginScore_ = mScore;
-
-    /* --- ⑦ 走破タイム差スコア ---------------------------------- */
-    const timeScore = timeDiffScore(selfSec, []);   // clusterSecs 未導入のため空配列
-
-    /* --- ⑧ 合成 ------------------------------------------------ */
-    // 着順ペナルティ: 3着以内 = 1.0、4着=0.85、5着=0.85²…
-    const finishPenalty = Math.pow(0.85, Math.max(fin - 3, 0));
-    const baseScore =
-        WEIGHTS.star     * starScore
-      + WEIGHTS.cluster  * clusterScore
-      + WEIGHTS.passing  * adjustedPassScore
-      + WEIGHTS.finish   * finishScore
-      + WEIGHTS.margin   * marginScore_
-      + WEIGHTS.timeDiff * timeScore;
-    const score = baseScore * finishPenalty;
-
-    return score * (recencyWeights[idx] || 0.1);   // recency weight掛け
-  });
-
-  const totalRecW = recencyWeights.slice(0, trialScores.length)
-                     .reduce((a,b)=>a+b,0);
-  const total = trialScores.reduce((a,b)=>a+b,0) / (totalRecW || 1);
-  return +total.toFixed(3);
+  // 合計スコア（最大100点）
+  const totalScore = comebackScore + finishScore + marginScoreVal + clusterScore + passScore;
+  
+  return Math.min(100, Math.max(0, +totalScore.toFixed(1)));
 }
 
- 
+/**
+ * 競うスコアに基づいて印を自動割り当て
+ * @param scores 各馬のスコア配列
+ * @returns 印の配列（◎○▲☆△または空文字）
+ */
+export function assignMarks(scores: number[]): string[] {
+  const indexed = scores.map((score, idx) => ({ score, idx }));
+  indexed.sort((a, b) => b.score - a.score);  // 降順
+
+  const marks = new Array(scores.length).fill('');
+  
+  if (indexed[0]) marks[indexed[0].idx] = '◎';  // 1位
+  if (indexed[1]) marks[indexed[1].idx] = '○';  // 2位
+  if (indexed[2]) marks[indexed[2].idx] = '▲';  // 3位
+  if (indexed[3]) marks[indexed[3].idx] = '☆';  // 4位
+  if (indexed[4]) marks[indexed[4].idx] = '△';  // 5位
+
+  return marks;
+}
+
 /* ------------------------------------------------------------------
  * 共通ヘルパー: rawScores を
  *   ① min‑max 正規化 → ② x² で右肩下がりに圧縮

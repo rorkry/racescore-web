@@ -8,20 +8,19 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 import { Tab } from '@headlessui/react'
-import useSWR from 'swr'
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 import EntryTable from './components/EntryTable'
 import DateSelector from './components/DateSelector'
 import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData'
+import { assignLabelsByZ } from '../utils/labels'
+import { levelToStars, toHalfWidth, formatTime, toSec, classToRank } from '../utils/helpers'
 import type { CsvRaceRow } from '../types/csv'
 import type { Race } from '../types/domain'
 import { rowToRace } from '../utils/convert'
 import type { RecordRow } from '../types/record'
-import type { OddsRow } from '../types/odds'
-import { parseOdds } from '../utils/parseOdds'
-import { fetchOdds } from '@/utils/fetchOdds'
-import { fetchTrioOdds } from '@/lib/fetchTrio'
-import { calcSyntheticWinOdds as calcSynthetic } from '@/lib/calcSyntheticWinOdds'
+
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
@@ -100,20 +99,7 @@ const buildRaceKey = (dateCode: string, place: string, raceNo: string): string =
   return `2025${mmdd}${code}${raceNo.padStart(2, '0')}`;
 };
 
-/** CSV から読み込んだ単勝オッズを初期値マップに変換 */
-function buildInitialOddsMap(
-  horses: HorseWithPast[],
-  raceKey: string,
-  oddsMap: Map<string, number>
-): Record<string, number> {
-  const map: Record<string, number> = {};
-  horses.forEach(h => {
-    const num = toHalfWidth(h.entry['馬番']?.trim() || '').padStart(2, '0');
-    const o = oddsMap.get(`${raceKey}_${num}`);
-    if (o != null) map[num] = o;
-  });
-  return map;
-}
+
 
 /* ------------------------------------------------------------------
  * Utility: percentile & dynamic threshold generator
@@ -145,52 +131,7 @@ function makeThresholds(arr: number[]): [number, number, number, number] {
   ];
 }
 
-/* ------------------------------------------------------------------
- * Z‑score based labeling
- *   - Always top 1 horse ⇒ 'くるでしょ'
- *   - 次点 A 数 : 12頭以上=3, 8-11頭=2, 7頭以下=1
- *   - z >= 0    ⇒ 'ちょっときそう'
- *   - z >= -0.5 ⇒ 'こなそう'
- *   - else      ⇒ 'きません'
- * ------------------------------------------------------------------ */
-export function assignLabelsByZ(scores: number[]): string[] {
-  const n = scores.length;
-  if (n === 0) return [];
-  const mean = scores.reduce((a, b) => a + b, 0) / n;
-  const sd = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
 
-  const sorted = scores
-    .map((s, i) => ({ s, i, z: (s - mean) / sd }))
-    .sort((a, b) => b.s - a.s);
-
-  // initial labels
-  const labels = Array<string>(n).fill('きません');
-
-  // Top‑1 ⇒ S
-  labels[sorted[0].i] = 'くるでしょ';
-
-  // A head count
-  let aCount = 1;
-  if (n >= 12) aCount = 3;
-  else if (n >= 8) aCount = 2;
-
-  for (let k = 1; k <= aCount && k < sorted.length; k++) {
-    labels[sorted[k].i] = 'めっちゃきそう';
-  }
-
-  // --- B / C by percentage of remaining horses --------------------
-  const rest = sorted.slice(aCount + 1);        // 未分類の残り
-  const totalRest = rest.length;
-  const bN = Math.ceil(totalRest * 0.30);       // 上位 30% → B
-  const cN = Math.ceil(totalRest * 0.30);       // 次の 30% → C
-
-  rest.forEach(({ i }, idx) => {
-    if (idx < bN)           labels[i] = 'ちょっときそう';
-    else if (idx < bN + cN) labels[i] = 'こなそう';
-    // 残りは 'きません' のまま
-  });
-  return labels;
-}
 
 /**
  * クラスランクごとに異なる閾値でラベルを割り当てる
@@ -233,7 +174,7 @@ const DEBUG = false // デバッグログを無効化
 /** ネットワーク（オッズ系）エラーを console に出すか */
 const LOG_NETWORK_ERRORS = false;
 
-/** EntryTable の race 単位ラッパー – 3連単合成オッズ(予想単勝)を注入 */
+/** EntryTable の race 単位ラッパー */
 type RaceEntryProps = Omit<
   React.ComponentProps<typeof EntryTable>,
   'winOddsMap' | 'predicted'
@@ -242,18 +183,11 @@ type RaceEntryProps = Omit<
   place: string;
   raceNo: string;
   raceKey: string;
-  syntheticOdds?: Record<string, number> | null;
-  initialOddsMap?: Record<string, number>;   // ★ 追加
 };
 
 function RaceEntryTable(props: RaceEntryProps) {
   const {
     raceKey,
-    syntheticOdds,
-    initialOddsMap = {},          // ★ 追加
-    dateCode,
-    place,
-    raceNo,
     horses,
     labels,
     scores,
@@ -261,46 +195,22 @@ function RaceEntryTable(props: RaceEntryProps) {
     setMarks,
     favorites,
     setFavorites,
-    frameColor,
-    clusterRenderer,
     showLabels,
+    frameNumbers,
   } = props;
-
-  // --- 単勝を 5 分毎にポーリング ---
-  const { data } = useSWR<{ o1: Record<string, number> }>(
-    `/api/odds/${raceKey}`,
-    fetcher,
-    { refreshInterval: 5 * 60_000, keepPreviousData: true }
-  );
-
-  const winOddsMap = React.useMemo(() => {
-    const m: Record<string, number> = { ...initialOddsMap };   // ★ 変更
-    if (data?.o1) {
-      Object.entries(data.o1).forEach(([no, odd]) => {
-        m[no.padStart(2, '0')] = Number(odd);
-      });
-    }
-    return m;
-  }, [data, initialOddsMap]);
 
   return (
     <EntryTable
       horses={horses}
-      dateCode={dateCode}
-      place={place}
-      raceNo={raceNo}
       labels={labels}
       scores={scores}
       marks={marks}
       setMarks={setMarks}
       favorites={favorites}
       setFavorites={setFavorites}
-      frameColor={frameColor}
-      clusterRenderer={clusterRenderer}
       raceKey={raceKey}
       showLabels={showLabels}
-      predicted={syntheticOdds ?? null}
-      winOddsMap={winOddsMap}
+      frameNumbers={frameNumbers || {}}
     />
   );
 }
@@ -330,46 +240,10 @@ const frameBgStyle: Record<string, string> = {
 
 
 // 全角 A～E を半角に変換し、A→5★、…、E→1★
-export function levelToStars(level: string): number {
-  if (!level) return 0
-  let ch = level.trim().charAt(0)
-  const code = ch.charCodeAt(0)
-  // 全角Ａ～Ｅ (U+FF21–FF25) → 半角A–E
-  if (code >= 0xFF21 && code <= 0xFF25) {
-    ch = String.fromCharCode(code - 0xFEE0)
-  }
-  switch (ch) {
-    case 'A': return 5
-    case 'B': return 4
-    case 'C': return 3
-    case 'D': return 2
-    case 'E': return 1
-    default:  return 0
-  }
-}
 
-// 全角数字を半角に変換
-
-// 全角数字を半角に変換
-export function toHalfWidth(s: string): string {
-  return s.replace(/[０-９]/g, c =>
-    String.fromCharCode(c.charCodeAt(0) - 0xFEE0)
-  );
-}
-
-// 全角／半角スペースを全削除して馬名照合キーを作る
+// "全角／半角スペースを全削除して馬名照合キーを作る
 const normalizeName = (name: string = '') =>
   name.replace(/\u3000/g, '').replace(/\s/g, '');
-
-// "1085" → "1.08.5"
-export function formatTime(t: string): string {
-  if (!t) return ''
-  const str = t.toString().padStart(4, '0')
-  const m  = str.slice(0,1)
-  const ss = str.slice(1,3)
-  const d  = str.slice(3)
-  return `${m}.${ss}.${d}`
-}
 
 // "yyyy.mm.dd"形式を Date に変換
 function parseDateStr(str: string): Date | null {
@@ -379,37 +253,7 @@ function parseDateStr(str: string): Date | null {
   return new Date(parts[0], parts[1] - 1, parts[2]);
 }
 
-// "mssd" を秒数に変換 (例: "2104" → 130.4 秒)
-export function toSec(t: string): number {
-  const str = t.padStart(4, '0');
-  const m = parseInt(str.slice(0,1), 10);
-  const ss = parseInt(str.slice(1,3), 10);
-  const d = parseInt(str.slice(3), 10);
-  return m * 60 + ss + d / 10;
-}
 
-export function classToRank(cls: string): number {
-  // 1) 全角→半角変換
-  let s = cls.replace(/[Ａ-Ｚ０-９]/g, ch =>
-    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
-  )
-  // 2) ローマ数字 → 数字
-  s = s.replace(/Ⅰ/g, '1').replace(/Ⅱ/g, '2').replace(/Ⅲ/g, '3')
-  // 3) 大文字化 & 空白除去
-  s = s.toUpperCase().trim()
-
-  if (s.includes('新馬')) return 0
-  if (s.includes('未勝利')) return 1
-  if (/^[123]勝/.test(s)) {
-    const num = parseInt(s.charAt(0), 10)
-    return isNaN(num) ? 1 : num + 1        // 1勝→2, 2勝→3, 3勝→4
-  }
-  if (s.includes('OP') || s.includes('オープン') || s.includes('L')) return 5
-  if (s.startsWith('G3') || s.includes('GⅢ') || s.includes('G3')) return 6
-  if (s.startsWith('G2') || s.includes('GⅡ') || s.includes('G2')) return 7
-  if (s.startsWith('G1') || s.includes('GⅠ') || s.includes('G1')) return 8
-  return -1                                // 不明
-}
 
 
 
@@ -482,8 +326,6 @@ function DistributionTab({ scores }: { scores: number[] }) {
 type HorseWithPast = {
   entry: RecordRow;
   past: RecordRow[];
-  /** 単勝オッズ (取得できない場合は null) */
-  winOdds?: number | null;
 }
 
 export default function Home() {
@@ -540,7 +382,7 @@ export default function Home() {
   const [p10, setP10] = useState<number>(0);
 
   // --- 過去開催日一覧（API から取得） ----------------------------
-  const { data: ymdList } = useSWR<string[]>('/api/ymd-list', fetcher);
+  const ymdList: string[] = [];
   const [selectedYmd, setSelectedYmd] = useState<string>('');
   const router = useRouter();
 
@@ -560,27 +402,6 @@ export default function Home() {
     selectedYmd && frameNestedData[selectedYmd]
       ? [selectedYmd]
       : Object.keys(frameNestedData);
-  // --- オッズCSV ---
-  const [oddsData, setOddsData] = useState<OddsRow[]>([]);
-  const [oddsLoaded, setOddsLoaded] = useState(false);
-  // --- 三連単→合成単勝オッズ ---
-  const [syntheticMap, setSyntheticMap] =
-    useState<Record<string, Record<string, number>>>({});
-  const [synFetchedAt, setSynFetchedAt] =
-    useState<Record<string, number>>({});
-  // --- fetch failure caches (avoid endless 500 loops) ---
-  const failedOddsRef = useRef<Set<string>>(new Set());
-  const failedTrioRef = useRef<Set<string>>(new Set());
-  // raceKey_馬番(半角) -> 単勝オッズ
-  const oddsMap = React.useMemo(() => {
-    const m = new Map<string, number>();
-    oddsData.forEach(o => {
-      if (!o.raceKey) return;
-      const num = toHalfWidth(String(o.horseNo ?? '').trim());
-      m.set(`${o.raceKey}_${num}`, o.win);
-    });
-    return m;
-  }, [oddsData]);
   // --- 別クラスタイム表示ヘルパー ----------------------------
   const renderClusterInfos = (infos: ClusterInfo[]) =>
     infos.map((info, idx) => {
@@ -602,7 +423,7 @@ export default function Home() {
     });
   // 表示倍率 (0.5〜1.5)
   const [zoom, setZoom] = useState(1);
-  // 現在選択中のタブ (0: 出走予定馬, 1: 枠順確定後, 2: 馬検索, 3: 分布)
+  // 現在選択中のタブ (0: 出走予定馬, 1: 枠順確定後, 2: 馬検索, 3: 分布, 4: 競う指数)
   const [activeTab, setActiveTab] = useState(0);
   // クラス別パーセンタイルで生成した動的閾値マップ
   const [dynThresholdMap, setDynThresholdMap] =
@@ -620,116 +441,9 @@ export default function Home() {
   const isEntryUploaded = entries.length > 0
   const isRaceUploaded  = Object.keys(nestedData).length > 0
   const isFrameUploaded = Object.keys(frameNestedData).length > 0;
-  const isOddsUploaded = oddsData.length > 0;
 
-  // 枠順確定CSVを読み込んだ後にオッズAPIを呼び出す
-  useEffect(() => {
-    if (!isFrameUploaded || oddsLoaded) return;
 
-    /* --- frameNestedData から raceKey 一覧を生成 -------------------- */
-    const allKeys: string[] = [];
-    Object.entries(frameNestedData).forEach(([dateCode, placeMap]) =>
-      Object.entries(placeMap).forEach(([place, raceMap]) =>
-        Object.keys(raceMap).forEach(raceNo => {
-          const mmdd = dateCode.padStart(4, '0');           // 426 → 0426
-          const key  = `2025${mmdd}${getPlaceCode(place)}${raceNo.padStart(2, '0')}`; // YYYYMMDDPPRR
-          allKeys.push(key);
-        })
-      )
-    );
 
-    /* --- raceKey ごとに並列 fetch。取れた分だけ state へ追加 ------- */
-    const uniqueKeys = [...new Set(allKeys)];
-    let remaining    = uniqueKeys.length;
-
-    // ロード開始を明示
-    setOddsLoaded(false);
-
-    uniqueKeys.forEach(raceKey => {
-      // 既にCSVに存在 or 永続失敗(500) はスキップ
-      if (
-        oddsData.some(r => r.raceKey === raceKey) ||
-        failedOddsRef.current.has(raceKey)
-      ) {
-        remaining -= 1;        // スキップ分も完了扱いに
-        return;
-      }
-      fetchOdds(raceKey)
-        .then(rows => {
-          if (rows.length) {
-            setOddsData(prev => {
-              const next = [...prev, ...rows];
-              console.log('[odds✓]', raceKey, 'rows', rows.length, 'total', next.length);
-              return next;
-            });
-          } else {
-            console.warn('⚠️ no odds rows for', raceKey);
-            failedOddsRef.current.add(raceKey);     // mark permanently failed
-          }
-        })
-        .catch(err => {
-          failedOddsRef.current.add(raceKey);       // mark permanently failed
-          if (LOG_NETWORK_ERRORS) {
-            console.warn('⚠️ fetchOdds failed', raceKey, err);
-          }
-        })
-        .finally(() => {
-          remaining -= 1;
-          if (remaining === 0) {
-            // すべての fetch が終わったタイミングでロード完了
-            setOddsLoaded(true);
-          }
-        });
-    });
-
-    /* --- Trio → 合成オッズもバックグラウンド取得 ------------------ */
-    uniqueKeys.forEach(raceKey => {
-      const prev = synFetchedAt[raceKey] ?? 0;
-      const thirtyMin = 30 * 60 * 1000;
-      if (failedTrioRef.current.has(raceKey)) return;     // permanent 500 failure
-      if (Date.now() - prev < thirtyMin) return;          // 30分以内はスキップ
-
-      fetchTrioOdds(raceKey)
-        .then(json => {
-          if (!json || !json.o6) {
-            failedTrioRef.current.add(raceKey);        // no data → skip next time
-            return;
-          }
-          // calcSyntheticWinOdds() から返るのは
-          //   { '01': 3.2, '02': 8.5, … }
-          // なのでオブジェクト→マップへそのまま変換する
-          const synObj = calcSynthetic(json.o6);        // { '01': 3.2, … }
-
-          // --- 0 や NaN を除外しつつキーそのまま取り込む ----------
-          const map: Record<string, number> = {};
-          Object.entries(synObj).forEach(([no, odd]) => {
-            const value = Number(odd);           // 合成単勝オッズ
-
-            // 無効な値は捨てる
-            if (!Number.isFinite(value) || value <= 0.5) return;
-
-            // synObj のキーは既に "01" 形式なのでそのまま使う
-            map[no] = value;
-          });
-
-          // ★ 空でも必ず raceKey を登録しておく（null 判定を防ぐ）
-          setSyntheticMap(prev => ({ ...prev, [raceKey]: map }));
-          setSynFetchedAt(prev => ({ ...prev, [raceKey]: Date.now() }));
-
-          if (Object.keys(map).length) {
-            console.log('[syn✓]', raceKey, 'pairs', Object.keys(map).length);
-          } else {
-            console.log('[syn–Ø]', raceKey, 'no valid synthetic odds');
-          }
-        })
-        .catch(err => {
-          failedTrioRef.current.add(raceKey);        // mark permanently failed
-          if (LOG_NETWORK_ERRORS) {
-            console.warn('⚠️ fetchTrioOdds failed', raceKey, err);
-          }
-        });
-    });
-  }, [isFrameUploaded, oddsLoaded, frameNestedData, synFetchedAt, oddsData]);
   // --- 枠順確定CSV アップロード（ヘッダーなし）---
   const handleFrameUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -788,89 +502,7 @@ export default function Home() {
     });
   };
 
-  // --- オッズCSV アップロード ---
-  const handleOddsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    try {
-      // --- SJIS → UTF‑8 文字列へ変換（PC/スマホ共通） ---
-      const text = await readFileAsText(file);
-
-      /** 与えられた列名の候補を大/小文字区別なく探して値を返す */
-      const pick = (obj: any, candidates: string[]): any => {
-        for (const key of Object.keys(obj)) {
-          const lower = key.toLowerCase();
-          if (candidates.some(c => c.toLowerCase() === lower)) {
-            return obj[key];
-          }
-        }
-        return undefined;
-      };
-
-      // ヘッダー有無を問わず解析する
-      const parsed = Papa.parse(text, { skipEmptyLines: true });
-
-      // 1行目がヘッダー行の場合は header:true で再パース
-      const firstRow = parsed.data[0] as string[];
-      const hasHeader =
-        Array.isArray(firstRow) &&
-        firstRow.some(cell =>
-          ['racekey', 'race_key', '馬番', 'horseno', 'win', '単勝'].includes(
-            String(cell).toLowerCase(),
-          ),
-        );
-
-      const results = hasHeader
-        ? Papa.parse<Record<string, string | number>>(text, {
-            header: true,
-            skipEmptyLines: true,
-            dynamicTyping: true,
-          }).data
-        : (parsed.data as string[][]).map((row: string[]) => ({
-            RaceKey: row[0],
-            HorseNo: row[1],
-            Win: row[2],
-          }));
-
-      const rows: OddsRow[] = results.flatMap((r: any) => {
-        const rk  = String(
-          pick(r, ['raceKey', 'race_key', 'RACEKEY', 'レースキー']) ?? '',
-        ).trim();
-        const no  = String(
-          pick(r, ['horseNo', 'horse_no', 'HORSENO', '馬番']) ?? '',
-        ).trim();
-        const win = Number(
-          pick(r, ['win', '単勝', 'WIN', 'odds', 'ODDS']) ?? NaN,
-        );
-
-        if (!rk || !no || !Number.isFinite(win)) return [];
-        return [{ raceKey: rk, horseNo: no, win }];
-      });
-
-      if (!rows.length) {
-        alert(
-          'オッズCSVを解析できませんでした。\n列名(raceKey/horseNo/win) またはフォーマットを確認してください。',
-        );
-        return;
-      }
-
-      setOddsData(rows);
-      localStorage.setItem('oddsData', JSON.stringify(rows));
-
-      if (DEBUG) {
-        console.log(
-          `[ODDS] parsed rows ${rows.length} (example):`,
-          rows.slice(0, 5),
-        );
-      }
-    } catch (err) {
-      console.error('オッズCSV 解析エラー:', err);
-      alert(
-        'オッズCSVの読み込みに失敗しました。\nファイルと文字コード(Shift_JIS/UTF-8)を確認してください。',
-      );
-    }
-  };
 
   /**
    * ファイル → 文字列
@@ -958,23 +590,12 @@ export default function Home() {
     }
   }, []);
 
-  // 初回マウント時に oddsData を localStorage からロード
   // 開催日一覧が取得できたら最初の日を自動選択
   useEffect(() => {
     if (!selectedYmd && Array.isArray(ymdList) && ymdList.length) {
       setSelectedYmd(ymdList[0]);
     }
   }, [ymdList, selectedYmd]);
-  useEffect(() => {
-    const saved = localStorage.getItem('oddsData');
-    if (saved) {
-      try {
-        setOddsData(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse stored oddsData:', e);
-      }
-    }
-  }, []);
 
 
   // nestedData から races 配列を再構築（再アップロード不要にする、allRacesは変更しない）
@@ -1339,7 +960,7 @@ export default function Home() {
             </button>
           )}
           <Tab.List className="flex space-x-2">
-            {['出走予定馬', '枠順確定後', '馬検索', '分布'].map(label => (
+            {['出走予定馬', '枠順確定後', '馬検索', '分布', '競う指数'].map(label => (
               <Tab key={label} className={({ selected }) =>
                 selected
                   ? 'px-4 py-2 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow'
@@ -1369,7 +990,7 @@ export default function Home() {
         {ymdList && (
           <div className="mb-4">
             <DateSelector
-              dates={ymdList}
+              dates={ymdList || []}
               selected={selectedYmd}
               onChange={handleSelectYmd}
             />
@@ -1405,14 +1026,7 @@ export default function Home() {
                 <input type="file" accept=".csv" onChange={handleFrameUpload} />
               )}
             </div>
-            <div>
-              <p>📥 オッズCSV</p>
-              {isOddsUploaded ? (
-                <p className="text-green-600">✅ アップロード済み</p>
-              ) : (
-                <input type="file" accept=".csv" onChange={handleOddsUpload} />
-              )}
-            </div>
+
           </div>
           <div className="mt-2">
             <button
@@ -1530,8 +1144,7 @@ export default function Home() {
                                     .filter(([, horses]) => horses.length > 0)
                                     .map(([raceNo, horses]) => {
                                       const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
-                                      const initialOddsMap = buildInitialOddsMap(horses, raceKey, oddsMap);
-                                      const syntheticOdds = syntheticMap[raceKey] ?? null;
+
                                       // 直近3レースの評価スコアとラベルを計算
                                       // スコア順でラベルを割り当てる
                                       // === スコア (0–1 正規化) ======================================
@@ -1552,16 +1165,15 @@ export default function Home() {
                                             dateCode={dateCode}
                                             place={place}
                                             raceNo={raceNo}
-                                            initialOddsMap={initialOddsMap}
+
                                             labels={labels}
                                             scores={scores}         /* 追加 */
                                             marks={marks}
                                             setMarks={setMarks}
                                             favorites={favorites}
                                             setFavorites={setFavorites}
-                                            frameColor={frameColor}
-                                            clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
-                                            syntheticOdds={syntheticOdds}
+
+
                                             showLabels={true}
                                           />
                                         </Tab.Panel>
@@ -1585,16 +1197,11 @@ export default function Home() {
                 <p className="text-gray-600">枠順確定CSVをアップロードしてください。</p>
               ) : (
                 <>
-                  {!isOddsUploaded && (
-                    <p className="text-red-600 font-semibold">
-                      オッズCSVが未アップロードです。オッズ列は空欄表示になります。
-                    </p>
-                  )}
-                /* === 以下、出走予定馬パネルと同一ロジック === */
+                {/* === 以下、出走予定馬パネルと同一ロジック === */}
                 <Tab.Group>
                   {/* 日付タブ */}
                   <DateSelector
-                    dates={ymdList}
+                    dates={ymdList || []}
                     selected={selectedYmd}
                     onChange={handleSelectYmd}
                   />
@@ -1630,6 +1237,101 @@ export default function Home() {
                           <Tab.Panels className="mt-4">
                             {Object.entries(placeMap).map(([place, raceMap]) => (
                               <Tab.Panel key={place}>
+                                {/* 開催地ごとのPDFダウンロードボタン */}
+                                <button
+                                  onClick={async () => {
+                                    const doc = new jsPDF();
+                                    let isFirstPage = true;
+
+                                    // この開催地の全レースをループ
+                                    const raceEntries = Object.entries(raceMap).filter(([, horses]) => horses.length > 0);
+                                    
+                                    for (const [raceNo, horses] of raceEntries) {
+                                      if (!isFirstPage) {
+                                        doc.addPage();
+                                      }
+                                      isFirstPage = false;
+
+                                      // 競うスコアを計算
+                                      const rawScores = horses.map((horse) => computeKisoScore(horse));
+                                      const scores = rawScores.map(s => isNaN(s) ? 0 : s);
+
+                                      // スコア順にソート
+                                      const sortedHorses = horses
+                                        .map((horse, idx) => ({ horse, score: scores[idx], idx }))
+                                        .sort((a, b) => b.score - a.score);
+
+                                      // 一時的なHTMLテーブルを作成
+                                      const tempDiv = document.createElement('div');
+                                      tempDiv.style.position = 'absolute';
+                                      tempDiv.style.left = '-9999px';
+                                      tempDiv.style.width = '800px';
+                                      tempDiv.style.backgroundColor = 'white';
+                                      tempDiv.style.padding = '20px';
+                                      
+                                      const raceTitle = `${place}${raceNo}R ${horses[0].entry['レース名']?.trim() || ''} ${horses[0].entry['距離']?.trim() || ''}`;
+                                      
+                                      tempDiv.innerHTML = `
+                                        <div style="font-family: 'Noto Sans JP', sans-serif;">
+                                          <h2 style="font-size: 20px; margin-bottom: 10px;">${raceTitle}</h2>
+                                          <table style="width: 100%; border-collapse: collapse;">
+                                            <thead>
+                                              <tr style="background-color: #6b7280; color: white;">
+                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬番</th>
+                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬名</th>
+                                                <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">予測勝率</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              ${sortedHorses.map((item, rank) => {
+                                                const { horse, score } = item;
+                                                const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                const horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                
+                                                // ランクに応じて背景色を変更
+                                                let bgColor = 'white';
+                                                if (rank === 0) bgColor = '#fee2e2'; // 赤系（1位）
+                                                else if (rank === 1) bgColor = '#fed7aa'; // オレンジ系（2位）
+                                                else if (rank === 2) bgColor = '#fef3c7'; // 黄色系（3位）
+                                                
+                                                return `
+                                                  <tr style="background-color: ${bgColor};">
+                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseNo}</td>
+                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseName}</td>
+                                                    <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                  </tr>
+                                                `;
+                                              }).join('')}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      `;
+                                      
+                                      document.body.appendChild(tempDiv);
+                                      
+                                      // html2canvasでHTMLをCanvasに変換
+                                      const canvas = await html2canvas(tempDiv, {
+                                        scale: 2,
+                                        useCORS: true,
+                                        logging: false
+                                      });
+                                      
+                                      document.body.removeChild(tempDiv);
+                                      
+                                      // CanvasをPDFに追加
+                                      const imgData = canvas.toDataURL('image/png');
+                                      const imgWidth = 190;
+                                      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                                      doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                                    }
+
+                                    // PDFをダウンロード
+                                    doc.save(`${dateCode}_${place}.pdf`);
+                                  }}
+                                  className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                  {place}の全レースをPDFでダウンロード
+                                </button>
                                 <Tab.Group>
                                   {/* レース番号タブ */}
                                   <Tab.List className="flex space-x-2 overflow-x-auto mt-2">
@@ -1668,8 +1370,6 @@ export default function Home() {
                                       .filter(([, horses]) => horses.length > 0)
                                       .map(([raceNo, horses]) => {
                                         const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
-                                        const initialOddsMap = buildInitialOddsMap(horses, raceKey, oddsMap);
-                                        const syntheticOdds = syntheticMap[raceKey] ?? null;
                                         // 直近3レースの評価スコアとラベルを計算
                                         // スコア順でラベルを割り当てる
                                         // === スコア (0–1 正規化) ======================================
@@ -1693,16 +1393,15 @@ export default function Home() {
                                               dateCode={dateCode}
                                               place={place}
                                               raceNo={raceNo}
-                                              initialOddsMap={initialOddsMap}
+  
                                               labels={labels}
                                               scores={scores}         /* 追加 */
                                               marks={marks}
                                               setMarks={setMarks}
                                               favorites={favorites}
                                               setFavorites={setFavorites}
-                                              frameColor={frameBgStyle}
-                                              clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
-                                              syntheticOdds={syntheticOdds}
+
+  
                                               showLabels={true}
                                             />
                                           </Tab.Panel>
@@ -1759,41 +1458,6 @@ export default function Home() {
                                                     </td>
                                                     <td className="relative px-2 py-1 border border-black text-black whitespace-nowrap">
                                                       <div className="text-xs font-bold">{horse.entry['馬名']}</div>
-                                                      {/* ラベル表示 */}
-                                                      {(() => {
-                                                        switch (label) {
-                                                          case 'くるでしょ':
-                                                            return (
-                                                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-red-500 text-white text-xs font-semibold">
-                                                                {label}
-                                                              </span>
-                                                            );
-                                                          case 'めっちゃきそう':
-                                                            return (
-                                                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-pink-100 text-pink-600 text-xs font-semibold">
-                                                                {label}
-                                                              </span>
-                                                            );
-                                                          case 'ちょっときそう':
-                                                            return (
-                                                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-orange-100 text-orange-500 text-xs font-semibold">
-                                                                {label}
-                                                              </span>
-                                                            );
-                                                          case 'こなそう':
-                                                            return (
-                                                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-xs font-semibold">
-                                                                {label}
-                                                              </span>
-                                                            );
-                                                          default:
-                                                            return (
-                                                              <span className="inline-block mt-1 px-2 py-0.5 rounded bg-gray-100 text-gray-600 text-xs font-semibold">
-                                                                {label}
-                                                              </span>
-                                                            );
-                                                        }
-                                                      })()}
                                                     </td>
                                                   </React.Fragment>
                                                 );
@@ -1859,21 +1523,15 @@ export default function Home() {
                     <div className="mt-4">
                       <EntryTable
                         horses={horses}
-                        dateCode="検索"
-                        place="-"
-                        raceNo="-"
                         labels={labels}
                         scores={scores}
                         marks={marks}
                         setMarks={setMarks}
                         favorites={favorites}
                         setFavorites={setFavorites}
-                        frameColor={{}}     /* 枠色なし */
-                        clusterRenderer={(r) => renderClusterInfos(getClusterData(r, allRaces, clusterCache))}
                         showLabels={false}
                         raceKey=""
-                        winOddsMap={{}}
-                        predicted={null}
+                        frameNumbers={{}}
                       />
                     </div>
                   );
@@ -1886,6 +1544,325 @@ export default function Home() {
                 <DistributionTab scores={allScores} />
               </div>
             </Tab.Panel>
+            {/* 競う指数タブ */}
+            <Tab.Panel>
+              <div className="p-4">
+                <h2 className="text-xl font-bold mb-4">競う指数（簡易馬柱）</h2>
+                {!Object.keys(frameNestedData).length ? (
+                  <p className="text-gray-600">枠順確定CSVをアップロードしてください。</p>
+                ) : (
+                  <Tab.Group>
+                    {/* 日付タブ */}
+                    <DateSelector
+                      dates={ymdList || []}
+                      selected={selectedYmd}
+                      onChange={handleSelectYmd}
+                    />
+                    <Tab.Panels className="mt-4">
+                      {frameDateKeys.map(dateCode => {
+                        const placeMap = frameNestedData[dateCode] || {};
+                        return (
+                          <Tab.Panel key={dateCode}>
+                          <Tab.Group>
+                            {/* 開催地タブ */}
+                            <Tab.List className="flex space-x-2 overflow-x-auto">
+                            {Object.keys(placeMap).map(place => (
+                              <Tab key={place} className={({ selected }) =>
+                                selected
+                                  ? 'px-3 py-1 rounded-t-lg bg-gray-300 text-blue-700 font-semibold shadow'
+                                  : 'px-3 py-1 rounded-t-lg bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors'
+                              }>
+                                  {place}
+                                </Tab>
+                              ))}
+                            </Tab.List>
+                            <Tab.Panels className="mt-4">
+                              {Object.entries(placeMap).map(([place, raceMap]) => (
+                                <Tab.Panel key={place}>
+                                  {/* 開催地ごとのPDFダウンロードボタン */}
+                                  <button
+                                    onClick={async () => {
+                                      const doc = new jsPDF();
+                                      let isFirstPage = true;
+
+                                      // この開催地の全レースをループ
+                                      const raceEntries = Object.entries(raceMap).filter(([, horses]) => horses.length > 0);
+                                      
+                                      for (const [raceNo, horses] of raceEntries) {
+                                        if (!isFirstPage) {
+                                          doc.addPage();
+                                        }
+                                        isFirstPage = false;
+
+                                        // 競うスコアを計算
+                                        const rawScores = horses.map((horse) => computeKisoScore(horse));
+                                        const scores = rawScores.map(s => isNaN(s) ? 0 : s);
+
+                                        // スコア順にソート
+                                        const sortedHorses = horses
+                                          .map((horse, idx) => ({ horse, score: scores[idx], idx }))
+                                          .sort((a, b) => b.score - a.score);
+
+                                        // 一時的なHTMLテーブルを作成
+                                        const tempDiv = document.createElement('div');
+                                        tempDiv.style.position = 'absolute';
+                                        tempDiv.style.left = '-9999px';
+                                        tempDiv.style.width = '800px';
+                                        tempDiv.style.backgroundColor = 'white';
+                                        tempDiv.style.padding = '20px';
+                                        
+                                        const raceTitle = `${place}${raceNo}R ${horses[0].entry['レース名']?.trim() || ''} ${horses[0].entry['距離']?.trim() || ''}`;
+                                        
+                                        tempDiv.innerHTML = `
+                                          <div style="font-family: 'Noto Sans JP', sans-serif;">
+                                            <h2 style="font-size: 20px; margin-bottom: 10px;">${raceTitle}</h2>
+                                            <table style="width: 100%; border-collapse: collapse;">
+                                              <thead>
+                                                <tr style="background-color: #6b7280; color: white;">
+                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬番</th>
+                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">馬名</th>
+                                                  <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">予測勝率</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                ${sortedHorses.map((item, rank) => {
+                                                  const { horse, score } = item;
+                                                  const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                  const horseName = horse.entry.horseName || horse.entry.馬名 || '';
+                                                  
+                                                  // ランクに応じて背景色を変更
+                                                  let bgColor = 'white';
+                                                  if (rank === 0) bgColor = '#fee2e2'; // 赤系（1位）
+                                                  else if (rank === 1) bgColor = '#fed7aa'; // オレンジ系（2位）
+                                                  else if (rank === 2) bgColor = '#fef3c7'; // 黄色系（3位）
+                                                  
+                                                  return `
+                                                    <tr style="background-color: ${bgColor};">
+                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseNo}</td>
+                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${horseName}</td>
+                                                      <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                    </tr>
+                                                  `;
+                                                }).join('')}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        `;
+                                        
+                                        document.body.appendChild(tempDiv);
+                                        
+                                        // html2canvasでHTMLをCanvasに変換
+                                        const canvas = await html2canvas(tempDiv, {
+                                          scale: 2,
+                                          useCORS: true,
+                                          logging: false
+                                        });
+                                        
+                                        document.body.removeChild(tempDiv);
+                                        
+                                        // CanvasをPDFに追加
+                                        const imgData = canvas.toDataURL('image/png');
+                                        const imgWidth = 190;
+                                        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                                        doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                                      }
+
+                                      // PDFをダウンロード
+                                      doc.save(`${dateCode}_${place}.pdf`);
+                                    }}
+                                    className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                  >
+                                    {place}の全レースをPDFでダウンロード
+                                  </button>
+                                  <Tab.Group>
+                                    {/* レース番号タブ */}
+                                    <Tab.List className="flex space-x-2 overflow-x-auto mt-2">
+                                      {Object.entries(raceMap)
+                                        .filter(([, horses]) => horses.length > 0)
+                                        .map(([raceNo, horses]) => (
+                                          <Tab
+                                            key={raceNo}
+                                            className={({ selected }) =>
+                                              getRaceTabClass(selected)
+                                            }
+                                          >
+                                            {({ selected }) => (
+                                              <div className="flex flex-col items-center space-y-1">
+                                                <span className="whitespace-nowrap text-sm">
+                                                  {raceNo}R {horses[0].entry['レース名']?.trim()}
+                                                </span>
+                                                <span className={`text-xs ${getSurfaceTextClass(horses[0].entry['距離'] || '', selected)}`}>
+                                                  {horses[0].entry['距離']?.trim() || ''}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </Tab>
+                                        ))}
+                                    </Tab.List>
+                                    <Tab.Panels className="mt-4">
+                                      {Object.entries(raceMap)
+                                        .filter(([, horses]) => horses.length > 0)
+                                        .map(([raceNo, horses]) => {
+                                          const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
+
+                                          // 競うスコアを計算
+                                          const rawScores = horses.map((horse, idx) => {
+                                            const sc = computeKisoScore(horse);
+                                            return sc;
+                                          });
+                                          const scores = rawScores;
+                                          const labels = assignLabelsByZ(scores);
+
+                                          // スコア順にソート
+                                          const sortedHorses = horses
+                                            .map((horse, idx) => ({ horse, score: scores[idx], idx }))
+                                            .sort((a, b) => b.score - a.score);
+
+                                          return (
+                                            <Tab.Panel key={raceNo}>
+                                              <div className="bg-white p-4 rounded shadow">
+                                                <h3 className="text-lg font-bold mb-2">
+                                                  {raceNo}R {horses[0].entry['レース名']?.trim()} {horses[0].entry['距離']?.trim()}
+                                                </h3>
+                                                <table className="w-full border-collapse border-2 border-gray-400">
+                                                  <thead>
+                                                    <tr style={{ backgroundColor: '#87CEEB' }} className="text-white font-bold">
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">馬番</th>
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">印</th>
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">得点</th>
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">馬名</th>
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">騎手</th>
+                                                      <th className="border-2 border-gray-400 px-3 py-2 text-center text-lg">得点順</th>
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {sortedHorses.map((item, rank) => {
+                                                      const { horse, score, idx } = item;
+                                                      const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                      const horseNoInt = parseInt(horseNo, 10);
+                                                      const horseNoDisplay = horseNoInt.toString();
+                                                      const horseName = String(horse.entry.horseName || horse.entry.馬名 || '');
+                                                      const jockey = String(horse.entry.jockey || horse.entry.騎手 || '');
+                                                      const mark = ['\u25ce', '\u25cb', '\u25b2', '\u2606', '\u25b3'][rank] || '';
+
+                                                      // 枠番に基づく背景色（1-8枠）
+                                                      const waku = Math.ceil(horseNoInt / 2);
+                                                      const wakuColors = [
+                                                        '#FFFFFF', // 0 (使わない)
+                                                        '#FFFFFF', // 1枠 白
+                                                        '#000000', // 2枠 黒
+                                                        '#FF0000', // 3枠 赤
+                                                        '#0000FF', // 4枠 青
+                                                        '#FFFF00', // 5枠 黄
+                                                        '#00FF00', // 6枠 緑
+                                                        '#FFA500', // 7枠 オレンジ
+                                                        '#FFC0CB'  // 8枠 ピンク
+                                                      ];
+                                                      const wakuBg = wakuColors[waku] || '#FFFFFF';
+                                                      const wakuTextColor = (waku === 2 || waku === 4 || waku === 6) ? 'white' : 'black';
+
+                                                      // 得点に基づく背景色グラデーション
+                                                      const maxScore = Math.max(...sortedHorses.map(h => h.score));
+                                                      const minScore = Math.min(...sortedHorses.map(h => h.score));
+                                                      const scoreRange = maxScore - minScore;
+                                                      let scoreBg = '#90EE90'; // デフォルトは緑
+                                                      
+                                                      if (scoreRange > 0) {
+                                                        const normalized = (score - minScore) / scoreRange;
+                                                        if (normalized > 0.66) {
+                                                          scoreBg = '#FF6B6B'; // 高得点：赤
+                                                        } else if (normalized > 0.33) {
+                                                          scoreBg = '#FFD93D'; // 中得点：黄色
+                                                        } else {
+                                                          scoreBg = '#90EE90'; // 低得点：緑
+                                                        }
+                                                      }
+
+                                                      return (
+                                                        <tr key={horseNo} className="hover:opacity-80">
+                                                          <td 
+                                                            className="border-2 border-gray-400 px-3 py-2 text-center font-bold text-xl"
+                                                            style={{ backgroundColor: wakuBg, color: wakuTextColor }}
+                                                          >
+                                                            {horseNoDisplay}
+                                                          </td>
+                                                          <td className="border-2 border-gray-400 px-3 py-2 text-center text-2xl font-bold">{mark}</td>
+                                                          <td 
+                                                            className="border-2 border-gray-400 px-3 py-2 text-center font-bold text-2xl"
+                                                            style={{ backgroundColor: scoreBg }}
+                                                          >
+                                                            {Math.round(score)}
+                                                          </td>
+                                                          <td className="border-2 border-gray-400 px-3 py-2 text-lg font-bold">{horseName}</td>
+                                                          <td className="border-2 border-gray-400 px-3 py-2 text-lg">{jockey}</td>
+                                                          <td className="border-2 border-gray-400 px-3 py-2 text-center font-bold text-xl">{rank + 1}</td>
+                                                        </tr>
+                                                      );
+                                                    })}
+                                                  </tbody>
+                                                </table>
+                                                <button
+                                                  onClick={() => {
+                                                    const doc = new jsPDF();
+                                                    
+                                                    // タイトル
+                                                    const raceTitle = `${raceNo}R ${horses[0].entry['レース名']?.trim()} ${horses[0].entry['距離']?.trim()}`;
+                                                    doc.setFontSize(16);
+                                                    doc.text(raceTitle, 14, 15);
+                                                    
+                                                    // テーブルデータ
+                                                    const tableData = sortedHorses.map((item, rank) => {
+                                                      const { horse, score } = item;
+                                                      const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
+                                                      const horseNoDisplay = parseInt(horseNo, 10).toString();
+                                                      const horseName = String(horse.entry.horseName || horse.entry.馬名 || '');
+                                                      const jockey = String(horse.entry.jockey || horse.entry.騎手 || '');
+                                                      const mark = ['\u25ce', '\u25cb', '\u25b2', '\u2606', '\u25b3'][rank] || '';
+                                                      
+                                                      return [
+                                                        rank + 1,
+                                                        mark,
+                                                        horseNoDisplay,
+                                                        horseName,
+                                                        jockey,
+                                                        Math.round(score)
+                                                      ];
+                                                    });
+                                                    
+                                                    // autoTableでテーブルを生成
+                                                    autoTable(doc, {
+                                                      head: [['順位', '印', '馬番', '馬名', '騎手', '競うスコア']],
+                                                      body: tableData,
+                                                      startY: 25,
+                                                      styles: { font: 'helvetica', fontSize: 10 },
+                                                      headStyles: { fillColor: [31, 41, 55], textColor: 255 },
+                                                    });
+                                                    
+                                                    // PDFをダウンロード
+                                                    doc.save(`${dateCode}_${place}_${raceNo}R_競う指数.pdf`);
+                                                  }}
+                                                  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                >
+                                                  PDFでダウンロード
+                                                </button>
+                                              </div>
+                                            </Tab.Panel>
+                                          );
+                                        })}
+                                    </Tab.Panels>
+                                  </Tab.Group>
+                                </Tab.Panel>
+                              ))}
+                            </Tab.Panels>
+                          </Tab.Group>
+                          </Tab.Panel>
+                        );
+                      })}
+                    </Tab.Panels>
+                  </Tab.Group>
+                )}
+              </div>
+            </Tab.Panel>
           </Tab.Panels>
         </div>
       </Tab.Group>
@@ -1896,6 +1873,7 @@ export default function Home() {
             { label: '枠順', icon: '🏁' },
             { label: '検索', icon: '🔍' },
             { label: '分布', icon: '📊' },
+            { label: '競う', icon: '🏆' },
           ].map(({ label, icon }) => (
             <div key={label} className="flex flex-col items-center text-xs text-gray-700">
               <span className="text-lg leading-none">{icon}</span>

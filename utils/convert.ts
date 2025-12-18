@@ -14,7 +14,7 @@ export function rowToRace(raw: CsvRaceRow): Race {
 
   // 1. ヘッダー → 論理キー変換
   Object.entries(RACE_HEADER2KEY).forEach(([csvKey, logicalKey]) => {
-    r[logicalKey] = (raw[csvKey] ?? '').toString().trim();
+    r[logicalKey] = ((raw as any)[csvKey] ?? '').toString().trim();
   });
 
   // 2. 追加の型変換・加工 ------------------------

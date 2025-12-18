@@ -1,7 +1,7 @@
 // /lib/db.ts
 import Database from 'better-sqlite3';
 
-let db: Database | null = null;
+let db: Database.Database | null = null;
 
 /** どの場所から呼んでも同じ DB インスタンスを返す */
 export function getDb() {

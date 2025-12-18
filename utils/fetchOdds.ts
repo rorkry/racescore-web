@@ -31,7 +31,7 @@ export async function fetchOdds(raceKey: string): Promise<OddsRow[]> {
     .map((h) => {
       // 「馬番」は全角→半角化し、2桁ゼロ埋めの文字列で保持（例："５" → "05")
       const raw  = (h['馬番'] ?? '').toString().trim();
-      const half = raw.replace(/[０-９]/g, (d) =>
+      const half = raw.replace(/[０-９]/g, (d: string) =>
         String.fromCharCode(d.charCodeAt(0) - 0xfee0),
       );
       const horseNo = half.padStart(2, '0');   // "" → "00" になるが後で除外

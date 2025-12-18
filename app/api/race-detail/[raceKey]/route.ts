@@ -73,7 +73,7 @@ export async function GET(
     単勝: r.odds_win ?? null,
   }));
 
-  const m = rows[0];
+  const m: any = rows[0];
   return NextResponse.json({
     ymd: m.ymd,
     dateCode: m.ymd.slice(4),

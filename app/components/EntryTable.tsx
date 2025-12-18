@@ -1,35 +1,24 @@
 'use client';
 
-import { useSyntheticWinOdds } from '@/hooks/useSyntheticWinOdds';
+
 import React from 'react';
 import type { RecordRow } from '../../types/record';
-import { getClusterData } from '../../utils/getClusterData';
 
 export type HorseWithPast = {
   entry: RecordRow;
   past: RecordRow[];
-  winOdds?: number | null;
 };
 
 type Props = {
   horses: HorseWithPast[];
-  dateCode: string;
-  place: string;
-  raceNo: string;
   labels: string[];
   scores: number[];
-  winOddsMap?: Record<string, number>;
-  predicted?: Record<string, number | null>;
   marks: Record<string, Record<string, string>>;
   setMarks: React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>;
   favorites: Set<string>;
   setFavorites: React.Dispatch<React.SetStateAction<Set<string>>>;
-  frameColor?: Record<string, string>;
-  clusterRenderer?: (r: RecordRow) => JSX.Element[];
   showLabels?: boolean;
-  largeCells?: boolean;
   raceKey: string;
-  allRaces?: RecordRow[];
   frameNumbers?: Record<string, number>;
 };
 
@@ -65,28 +54,16 @@ const INDEX_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function EntryTable({
   horses,
-  dateCode,
-  place,
-  raceNo,
   labels,
   scores,
-  winOddsMap = {},
-  predicted = {},
   marks,
   setMarks,
   favorites,
   setFavorites,
-  frameColor = {},
-  clusterRenderer,
   showLabels = true,
-  largeCells = false,
   raceKey,
-  allRaces = [],
   frameNumbers = {},
 }: Props) {
-  const { data: syntheticFromHook } = useSyntheticWinOdds(raceKey);
-
-  const cacheRef = React.useRef<Record<string, any>>({});
   const [selectedTab, setSelectedTab] = React.useState<Record<string, number>>({});
 
   const handleMarkClick = (horseNo: string, mark: string) => {
@@ -121,28 +98,60 @@ export default function EntryTable({
     return { bg: '#ffffff', text: '#000000' };
   };
 
-  const formatPastRace = (race: RecordRow, index: number) => {
-    const date = race['日付(yyyy.mm.dd)'] || race.date || '';
-    const place = race.place || race.場所 || '';
+  const formatPastRace = (race: RecordRow) => {
     const distance = race.distance || race.距離 || '';
-    const surface = distance.includes('ダ') ? 'ダ' : '芝';
+    // 芝ダート区分の重複バグ修正：distanceに既に「芝」または「ダ」が含まれている場合はそのまま使用
+    const surfaceInDistance = distance.includes('芝') || distance.includes('ダ');
+    const surface = surfaceInDistance ? '' : (distance.includes('ダ') ? 'ダ' : '芝');
     const className = race.classname || race['クラス名'] || '';
     const popularity = race.popularity || race.人気 || '';
     const finish = race.finish || race.着順 || '';
-    const time = race.time || race['走破タイム'] || '';
-    const timeDiff = race.timeDiff || '';
-
-    const dayLabel = ['1走前', '2走前', '3走前', '4走前', '5走前'][index] || '';
+    const timeRaw = race.time || race['走破タイム'] || '';
+    // 時計表示修正: "1538" → "1.53.8"
+    const formatTime = (t: string): string => {
+      if (!t) return '';
+      const str = t.toString().padStart(4, '0');
+      const m = str.slice(0, 1);
+      const ss = str.slice(1, 3);
+      const d = str.slice(3);
+      return `${m}.${ss}.${d}`;
+    };
+    const time = formatTime(timeRaw);
+    const timeDiff = race.timeDiff || race['着差'] || '';
+    // 通過順位: "4-4-4-3" 形式
+    const passing = race['通過順位'] || race['コーナー'] || race.corner || '';
+    // 巻き返し指数: 0-10
+    const kisoIndexRaw = race['巻き返し指数'] || race['F'] || race.kiso || '';
+    const kisoIndex = kisoIndexRaw ? parseInt(kisoIndexRaw, 10) : null;
+    // 巻き返し指数の色分け: 0=灰色、0-4=青、5-8=オレンジ、9-10=赤
+    const getKisoColor = (k: number | null): string => {
+      if (k === null || k === 0) return '#999';
+      if (k >= 1 && k <= 4) return '#3b82f6';
+      if (k >= 5 && k <= 8) return '#f97316';
+      if (k >= 9 && k <= 10) return '#dc2626';
+      return '#999';
+    };
+    const kisoColor = getKisoColor(kisoIndex);
 
     return (
       <div style={{ fontSize: '0.75rem', lineHeight: '1.3' }}>
         <div style={{ fontWeight: 600, marginBottom: '2px' }}>
-          {dayLabel} {surface}{distance}
+          {surface}{distance}
         </div>
         <div>{className} {popularity}人気 {finish}着</div>
         <div style={{ color: '#666' }}>
           {time} {timeDiff ? `(${timeDiff})` : ''}
         </div>
+        {passing && (
+          <div style={{ color: '#666', fontSize: '0.7rem' }}>
+            通過: {passing}
+          </div>
+        )}
+        {kisoIndex !== null && (
+          <div style={{ color: kisoColor, fontWeight: 600, fontSize: '0.7rem' }}>
+            巻き返し: {kisoIndex}
+          </div>
+        )}
       </div>
     );
   };
@@ -206,11 +215,11 @@ export default function EntryTable({
           justify-content: center;
         }
         .mark-tab {
-          padding: 4px 6px;
+          padding: 2px 4px;
           border: 1px solid #ccc;
-          border-radius: 3px;
+          border-radius: 2px;
           cursor: pointer;
-          font-size: 0.75rem;
+          font-size: 0.65rem;
           background: white;
           transition: all 0.2s;
           font-weight: 600;
@@ -277,6 +286,7 @@ export default function EntryTable({
             <th>騎手</th>
             <th>斤量</th>
             {showLabels && <th>指数</th>}
+            <th>競うスコア</th>
             <th>過去5走</th>
           </tr>
         </thead>
@@ -354,6 +364,24 @@ export default function EntryTable({
                     )}
                   </td>
                 )}
+                <td>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>
+                    {scores[idx] !== undefined ? Math.round(scores[idx]) : '-'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#666' }}>
+                    {/* 印の自動割り当て: スコア順に◎○▲☆△ */}
+                    {(() => {
+                      const sortedScores = scores.map((s, i) => ({ score: s, idx: i })).sort((a, b) => b.score - a.score);
+                      const rank = sortedScores.findIndex((s) => s.idx === idx) + 1;
+                      if (rank === 1) return '◎';
+                      if (rank === 2) return '○';
+                      if (rank === 3) return '▲';
+                      if (rank === 4) return '☆';
+                      if (rank === 5) return '△';
+                      return '';
+                    })()}
+                  </div>
+                </td>
                 <td style={{ padding: '4px', textAlign: 'left' }}>
                   <div className="past-race-tabs">
                     {[0, 1, 2, 3, 4].map((i) => (
@@ -368,7 +396,7 @@ export default function EntryTable({
                   </div>
                   <div className="past-race-content">
                     {horse.past[tabIndex]
-                      ? formatPastRace(horse.past[tabIndex], tabIndex)
+                      ? formatPastRace(horse.past[tabIndex])
                       : '情報なし'}
                   </div>
                 </td>
