@@ -103,6 +103,8 @@ export default function EntryTable({
     // 芝ダート区分の重複バグ修正：distanceに既に「芝」または「ダ」が含まれている場合はそのまま使用
     const surfaceInDistance = distance.includes('芝') || distance.includes('ダ');
     const surface = surfaceInDistance ? '' : (distance.includes('ダ') ? 'ダ' : '芝');
+    const courseName = race.course || race.開催地 || '';
+    const trackCondition = race.trackCondition || race.馬場状態 || '';
     const className = race.classname || race['クラス名'] || '';
     const popularity = race.popularity || race.人気 || '';
     const finish = race.finish || race.着順 || '';
@@ -136,7 +138,7 @@ export default function EntryTable({
     return (
       <div style={{ fontSize: '0.75rem', lineHeight: '1.3' }}>
         <div style={{ fontWeight: 600, marginBottom: '2px' }}>
-          {surface}{distance}
+          {trackCondition} {courseName}{surface}{distance}
         </div>
         <div>{className} {popularity}人気 {finish}着</div>
         <div style={{ color: '#666' }}>
@@ -281,8 +283,8 @@ export default function EntryTable({
         <thead>
           <tr>
             <th>馬番</th>
-            <th>馬名</th>
             <th>印</th>
+            <th>馬名</th>
             <th>騎手</th>
             <th>斤量</th>
             {showLabels && <th>指数</th>}
@@ -317,6 +319,29 @@ export default function EntryTable({
                 >
                   {horseNoDisplay}
                 </td>
+                <td>
+                  <select
+                    value={currentMark}
+                    onChange={(e) => handleMarkClick(horseNo, e.target.value)}
+                    style={{
+                      fontSize: '0.85rem',
+                      padding: '2px 4px',
+                      border: '1px solid #ccc',
+                      borderRadius: '3px',
+                      cursor: 'pointer',
+                      backgroundColor: currentMark ? '#1f2937' : 'white',
+                      color: currentMark ? 'white' : '#000',
+                      fontWeight: currentMark ? 'bold' : 'normal',
+                    }}
+                  >
+                    <option value="">-</option>
+                    <option value="◎">◎</option>
+                    <option value="○">○</option>
+                    <option value="▲">▲</option>
+                    <option value="△">△</option>
+                    <option value="×">×</option>
+                  </select>
+                </td>
                 <td className="horse-name">
                   {horseName}
                   <button
@@ -333,19 +358,6 @@ export default function EntryTable({
                   >
                     {isFavorite ? '★' : '☆'}
                   </button>
-                </td>
-                <td>
-                  <div className="mark-tabs">
-                    {['◎', '○', '▲', '△', '×'].map((mark) => (
-                      <button
-                        key={mark}
-                        className={`mark-tab ${currentMark === mark ? 'active' : ''}`}
-                        onClick={() => handleMarkClick(horseNo, mark)}
-                      >
-                        {mark}
-                      </button>
-                    ))}
-                  </div>
                 </td>
                 <td style={{ fontSize: '0.85rem' }}>{jockey}</td>
                 <td style={{ fontSize: '0.85rem' }}>{weight}</td>
