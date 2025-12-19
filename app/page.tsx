@@ -242,8 +242,9 @@ const frameBgStyle: Record<string, string> = {
 // 全角 A～E を半角に変換し、A→5★、…、E→1★
 
 // "全角／半角スペースを全削除して馬名照合キーを作る
+// 外国産馬マーク（$、*など）も削除
 const normalizeName = (name: string = '') =>
-  name.replace(/\u3000/g, '').replace(/\s/g, '');
+  name.replace(/\u3000/g, '').replace(/\s/g, '').replace(/[$*＄＊]/g, '');
 
 // "yyyy.mm.dd"形式を Date に変換
 function parseDateStr(str: string): Date | null {
