@@ -102,6 +102,36 @@ function mergeIndices(indexMaps: Map<string, Map<string, number>>): IndexRecord[
 }
 
 /**
+ * Save merged data to CSV file
+ */
+function saveToCsv(data: IndexRecord[], outputPath: string): void {
+  console.log(`\nSaving merged data to CSV...`);
+  console.log(`  Output: ${outputPath}`);
+
+  // Create header
+  const headers = ['race_id', 'L4F', 'T2F', 'potential', 'revouma', 'makikaeshi', 'cushion'];
+  
+  // Create CSV content
+  const rows = data.map(record => {
+    return headers.map(h => {
+      const value = record[h];
+      return value !== undefined ? String(value) : '';
+    }).join(',');
+  });
+
+  const csvContent = [headers.join(','), ...rows].join('\n');
+  
+  // Ensure output directory exists
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  fs.writeFileSync(outputPath, csvContent, 'utf-8');
+  console.log(`  -> ${data.length} records saved to CSV`);
+}
+
+/**
  * Upload data to API
  */
 async function uploadToApi(data: IndexRecord[]): Promise<void> {
@@ -156,6 +186,10 @@ async function main() {
   for (const record of mergedData.slice(0, 3)) {
     console.log(JSON.stringify(record, null, 2));
   }
+
+  // Save to CSV file
+  const outputCsvPath = path.join(process.cwd(), 'output', 'merged-indices.csv');
+  saveToCsv(mergedData, outputCsvPath);
 
   // Upload to API
   await uploadToApi(mergedData);

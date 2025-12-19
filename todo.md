@@ -364,3 +364,11 @@
 - [x] 過去走データに指数を表示（コンパクト・横スクロール対応）
 - [x] 指数名は省略せずにきれいに表示
 - [x] race_idマッチング（umadataの16桁 + 馬番2桁 = 18桁）
+
+
+## 指数CSV結合ツールの改善（2024-12-20）
+
+### 変更内容
+- [x] 結合した指数データをCSVファイルとしても出力
+- [x] 出力先: `output/merged-indices.csv`
+- [x] フォーマット: race_id, L4F, T2F, potential, revouma, makikaeshi, cushion
