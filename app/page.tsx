@@ -13,7 +13,7 @@ import html2canvas from 'html2canvas';
 
 import EntryTable from './components/EntryTable'
 import DateSelector from './components/DateSelector'
-import { getClusterData, ClusterInfo, computeKisoScore } from '../utils/getClusterData'
+import { getClusterData, ClusterInfo, computeKisoScore, computeKisoScoreWithLocal } from '../utils/getClusterData'
 import { assignLabelsByZ } from '../utils/labels'
 import { levelToStars, toHalfWidth, formatTime, toSec, classToRank } from '../utils/helpers'
 import type { CsvRaceRow } from '../types/csv'
@@ -620,7 +620,7 @@ export default function Home() {
     Object.values(nestedData).forEach(placeMap =>
       Object.values(placeMap).forEach(raceMap =>
         Object.values(raceMap).forEach(horses => {
-          const rawScores = horses.map(h => computeKisoScore(h));
+          const rawScores = horses.map(h => computeKisoScoreWithLocal(h));
           scores.push(...rawScores);           // スケールせず生スコアを集計
         })
       )
@@ -652,7 +652,7 @@ export default function Home() {
       Object.values(placeMap).forEach(raceMap =>
         Object.values(raceMap).forEach(horses => {
           if (!horses.length) return;
-          const scores = horses.map(h => computeKisoScore(h));
+          const scores = horses.map(h => computeKisoScoreWithLocal(h));
 
           // race‑max 用
           const maxScore = Math.max(...scores);
@@ -690,7 +690,7 @@ export default function Home() {
     Object.values(frameNestedData).forEach(placeMap =>
       Object.values(placeMap).forEach(raceMap =>
         Object.values(raceMap).forEach(horses => {
-          const rawScores = horses.map(h => computeKisoScore(h));
+          const rawScores = horses.map(h => computeKisoScoreWithLocal(h));
           scores.push(...rawScores);           // 生スコアをそのまま集計
         })
       )
@@ -1149,7 +1149,7 @@ export default function Home() {
                                       // スコア順でラベルを割り当てる
                                       // === スコア (0–1 正規化) ======================================
                                       const rawScores = horses.map((horse, idx) => {
-                                        const sc = computeKisoScore(horse);
+                                        const sc = computeKisoScoreWithLocal(horse);
                                         if (DEBUG) console.log(`[PAGE] rawScore [${dateCode}|${place}|${raceNo}] idx=${idx} ${horse.entry['馬名']}:`, sc);
                                         return sc;
                                       });
@@ -1253,7 +1253,7 @@ export default function Home() {
                                       isFirstPage = false;
 
                                       // 競うスコアを計算
-                                      const rawScores = horses.map((horse) => computeKisoScore(horse));
+                                      const rawScores = horses.map((horse) => computeKisoScoreWithLocal(horse));
                                       const scores = rawScores.map(s => isNaN(s) ? 0 : s);
 
                                       // スコア順にソート
@@ -1415,7 +1415,7 @@ export default function Home() {
                                         // スコア順でラベルを割り当てる
                                         // === スコア (0–1 正規化) ======================================
                                         const rawScores = horses.map((horse, idx) => {
-                                          const sc = computeKisoScore(horse);
+                                          const sc = computeKisoScoreWithLocal(horse);
                                           if (DEBUG) console.log(
                                             `[FRAME] rawScore [${dateCode}|${place}|${raceNo}] idx=${idx} ${horse.entry['馬名']}:`,
                                             sc
@@ -1468,7 +1468,7 @@ export default function Home() {
                                               Number(b.entry['馬番'] || 0)
                                           );
                                           // ラベルを割り当て
-                                          const orderedScores = ordered.map(h => computeKisoScore(h));
+                                          const orderedScores = ordered.map(h => computeKisoScoreWithLocal(h));
                                           const classRank = classToRank(ordered[0]?.entry['クラス名'] || '');
                                           const labels = assignLabelsByZ(orderedScores);
                                           // 8頭ごとにチャンク化
@@ -1555,7 +1555,7 @@ export default function Home() {
                 )}
                 {searchResult && (() => {
                   const horses = [searchResult];
-                  const rawScores = horses.map(h => computeKisoScore(h));
+                  const rawScores = horses.map(h => computeKisoScoreWithLocal(h));
                   const scores = rawScores;
                   const classRank = classToRank(horses[0]?.entry['クラス名'] || '');
                   const labels = assignLabelsByZ(scores);
@@ -1636,7 +1636,7 @@ export default function Home() {
                                         isFirstPage = false;
 
                                         // 競うスコアを計算
-                                        const rawScores = horses.map((horse) => computeKisoScore(horse));
+                                        const rawScores = horses.map((horse) => computeKisoScoreWithLocal(horse));
                                         const scores = rawScores.map(s => isNaN(s) ? 0 : s);
 
                                         // スコア順にソート
@@ -1789,7 +1789,7 @@ export default function Home() {
 
                                           // 競うスコアを計算
                                           const rawScores = horses.map((horse, idx) => {
-                                            const sc = computeKisoScore(horse);
+                                            const sc = computeKisoScoreWithLocal(horse);
                                             return sc;
                                           });
                                           const scores = rawScores;

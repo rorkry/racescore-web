@@ -375,3 +375,237 @@ export function scaleAndShapeScores(rawScores: number[]): number[] {
   // soften tail: use x^1.8 instead of x^2
   return norm.map(x => Math.pow(x, 1.8));
 }
+
+/* ------------------------------------------------------------------ */
+/*  地方競馬評価ロジック                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 地方競馬場のレベル分類
+ * - 高レベル: 1.0倍
+ * - 中レベル: 0.85倍
+ * - 低レベル: 0.7倍
+ */
+const LOCAL_TRACK_LEVELS: Record<string, number> = {
+  // 高レベル
+  '大井': 1.0,
+  '船橋': 1.0,
+  '園田': 1.0,
+  
+  // 中レベル
+  '川崎': 0.85,
+  '高知': 0.85,
+  
+  // 低レベル
+  '佐賀': 0.7,
+  '名古屋': 0.7,
+  '浦和': 0.7,
+  '笠松': 0.7,
+  '水沢': 0.7,
+  '門別': 0.7,
+  '盛岡': 0.7,
+  '姫路': 0.7,
+  '福山': 0.7,
+  '帯広': 0.7,
+  '金沠': 0.7,
+};
+
+/**
+ * 基準時計（1勝クラス、ダート）
+ * 単位: 秒
+ */
+const BASE_TIMES: Record<number, number> = {
+  1200: 72.0,   // 1:12.0
+  1400: 86.0,   // 1:26.0
+  1600: 101.0,  // 1:41.0
+  1800: 115.0,  // 1:55.0
+};
+
+/**
+ * 園田の特別基準時計
+ */
+const SONODA_BASE_TIMES: Record<number, number> = {
+  1400: 90.0,   // 1:30.0
+};
+
+/**
+ * クラスごとの時計補正（秒）
+ * 1勝クラスを基準として、クラスが上がるごとに-0.5秒
+ */
+const CLASS_TIME_ADJUSTMENT: Record<string, number> = {
+  '新馬': 0.5,
+  '未勝利': 0.0,
+  '1勝': 0.0,
+  '2勝': -0.5,
+  '3勝': -1.0,
+  'OP': -1.5,
+  'オープン': -1.5,
+  'G3': -2.0,
+  'G2': -2.5,
+  'G1': -3.0,
+};
+
+/**
+ * 転入クラスによる補正倍率
+ */
+const TRANSFER_CLASS_MULTIPLIER: Record<string, number> = {
+  '新馬': 1.0,
+  '未勝利': 1.0,
+  '1勝': 1.0,
+  '2勝': 0.85,
+  '3勝': 0.7,
+  'OP': 0.6,
+  'オープン': 0.6,
+  'G3': 0.5,
+  'G2': 0.4,
+  'G1': 0.3,
+};
+
+/**
+ * 地方競馬場かどうかを判定
+ */
+function isLocalTrack(place: string): boolean {
+  return place in LOCAL_TRACK_LEVELS;
+}
+
+/**
+ * 地方競馬の1走分のスコアを計算
+ * @param race 過去走1件
+ * @param targetClass 今回転入するクラス（中央競馬）
+ * @returns 0〜100のスコア
+ */
+function computeLocalRaceScore(race: RecordRow, targetClass: string): number {
+  const place = toHalfWidth(GET(race, 'place', '場所', '場所_1')).replace(/\s+/g, '');
+  const className = GET(race, 'クラス名').trim();
+  const distStr = GET(race, 'distance', '距離').replace(/[^\d]/g, '');
+  const distance = parseInt(distStr, 10);
+  const timeStr = GET(race, 'time', '走破タイム').trim();
+  const timeSec = toSec(timeStr);
+  const finish = parseInt(toHalfWidth(GET(race, 'finish', '着順').trim()).replace(/[^0-9]/g, ''), 10) || 99;
+  const margin = parseFloat(GET(race, 'margin', '着差') || '0');
+  
+  // 競馬場レベル倍率
+  const trackLevel = LOCAL_TRACK_LEVELS[place] || 0.7;
+  
+  // 基準時計を取得（園田の1400mは特別扱い）
+  let baseTime = BASE_TIMES[distance] || 0;
+  if (place === '園田' && distance === 1400) {
+    baseTime = SONODA_BASE_TIMES[1400];
+  }
+  
+  // 距離が基準にない場合は線形補間
+  if (baseTime === 0) {
+    const distances = Object.keys(BASE_TIMES).map(Number).sort((a, b) => a - b);
+    for (let i = 0; i < distances.length - 1; i++) {
+      if (distance > distances[i] && distance < distances[i + 1]) {
+        const d1 = distances[i];
+        const d2 = distances[i + 1];
+        const t1 = BASE_TIMES[d1];
+        const t2 = BASE_TIMES[d2];
+        baseTime = t1 + (t2 - t1) * (distance - d1) / (d2 - d1);
+        break;
+      }
+    }
+  }
+  
+  // クラス補正
+  const classAdj = CLASS_TIME_ADJUSTMENT[className] || 0;
+  const adjustedBaseTime = baseTime + classAdj;
+  
+  // 時計評価（基準時計との差）
+  let timeScore = 0;
+  if (timeSec > 0 && adjustedBaseTime > 0) {
+    const diff = timeSec - adjustedBaseTime;
+    // 基準より速い: +点、遅い: -点
+    // 1秒差で±10点
+    timeScore = Math.max(0, 40 - diff * 10);
+  }
+  
+  // 着順評価（30点満点）
+  const finishScore = Math.max(0, 30 - (finish - 1) * 3);
+  
+  // 着差評価（20点満点）
+  // 勝ち馬（着差0）: 20点
+  // 着差が大きいほど減点（1秒で-5点）
+  const marginScore = Math.max(0, 20 - Math.abs(margin) * 5);
+  
+  // 転入クラス補正
+  const transferMult = TRANSFER_CLASS_MULTIPLIER[targetClass] || 1.0;
+  
+  // 合計スコア
+  const rawScore = (timeScore + finishScore + marginScore) * trackLevel * transferMult;
+  
+  return Math.min(100, Math.max(0, +rawScore.toFixed(1)));
+}
+
+/**
+ * 地方競馬を含む競うスコア計算（拡張版）
+ */
+export function computeKisoScoreWithLocal(horse: { past: RecordRow[]; entry: RecordRow }): number {
+  const recent = horse.past.slice(0, 5);  // 直近5走
+  const targetClass = GET(horse.entry, 'クラス名', 'classname').trim();
+  
+  let totalScore = 0;
+  let weights = [50, 10, 5, 0, 0];  // 前走、2走前、3走前の重み（100点満点換算）
+  
+  // 前走・2走前・3走前を評価
+  for (let i = 0; i < 3; i++) {
+    const race = recent[i];
+    if (!race) continue;
+    
+    const place = toHalfWidth(GET(race, 'place', '場所', '場所_1')).replace(/\s+/g, '');
+    
+    if (isLocalTrack(place)) {
+      // 地方競馬の場合
+      const localScore = computeLocalRaceScore(race, targetClass);
+      totalScore += (localScore / 100) * weights[i];
+    } else {
+      // 中央競馬の場合（既存ロジック）
+      const comeback = parseFloat(GET(race, 'comeback', '指数') || '0');
+      totalScore += (comeback / 10) * weights[i];
+    }
+  }
+  
+  // 前走の着順・着差・通過順位などの追加評価（中央・地方共通）
+  const race1 = recent[0];
+  if (race1) {
+    // 着順スコア（10点満点）
+    const fin1 = parseInt(toHalfWidth(GET(race1, 'finish', '着順').trim()), 10) || 99;
+    const finishScore = Math.max(0, 10 - (fin1 - 1) * 1);
+    totalScore += finishScore;
+    
+    // 着差スコア（10点満点）
+    const margin1 = parseFloat(GET(race1, 'margin', '着差') || '0');
+    const marginScoreVal = Math.max(0, 10 - margin1 * 3);
+    totalScore += marginScoreVal;
+    
+    // クラスタタイムスコア（8点満点）
+    const clusterScore = 4; // 仮実装
+    totalScore += clusterScore;
+    
+    // 通過順位×ペーススコア（7点満点）
+    const passNums = ['corner2', 'corner3', 'corner4']
+      .map(k => {
+        const raw = toHalfWidth(GET(race1, k, k).trim());
+        const m = raw.match(/^\d+/);
+        return m ? parseInt(m[0], 10) : NaN;
+      })
+      .filter(n => !isNaN(n));
+    
+    const fieldSize = parseInt(GET(race1, 'fieldSize', '頭数') || '1', 10);
+    const avgPass = passNums.length
+      ? passNums.reduce((a, b) => a + b, 0) / passNums.length
+      : fieldSize;
+    
+    const basePassScore = Math.max(0, (fieldSize - avgPass + 1) / fieldSize);
+    const surf = (GET(race1, 'surface', '距離').trim().charAt(0) as '芝'|'ダ') || '芝';
+    const dist = parseInt(GET(race1, 'distance', '距離').replace(/[^\d]/g, '') || '0', 10);
+    const pci = parseFloat(GET(race1, 'pci', 'PCI') || '0');
+    const paceCat = getPaceCat(surf, dist, pci);
+    const passFactor = paceFactorMap[paceCat];
+    const passScore = basePassScore * passFactor * 7;
+    totalScore += passScore;
+  }
+  
+  return Math.min(100, Math.max(0, +totalScore.toFixed(1)));
+}
