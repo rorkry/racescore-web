@@ -187,8 +187,9 @@ async function main() {
     console.log(JSON.stringify(record, null, 2));
   }
 
-  // Save to CSV file
-  const outputCsvPath = path.join(process.cwd(), 'output', 'merged-indices.csv');
+  // Save to CSV file (to Downloads folder)
+  const userHome = process.env.USERPROFILE || process.env.HOME || '';
+  const outputCsvPath = path.join(userHome, 'Downloads', 'merged-indices.csv');
   saveToCsv(mergedData, outputCsvPath);
 
   // Upload to API
