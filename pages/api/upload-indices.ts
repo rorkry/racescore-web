@@ -5,10 +5,10 @@ interface IndexData {
   race_id: string;
   L4F?: number;
   T2F?: number;
-  ポテンシャル指数?: number;
-  レボウマ?: number;
-  巻き返し指数?: number;
-  クッション値?: number;
+  potential?: number;
+  revouma?: number;
+  makikaeshi?: number;
+  cushion?: number;
 }
 
 export const config = {
@@ -72,10 +72,10 @@ export default async function handler(
           item.race_id,
           item.L4F ?? null,
           item.T2F ?? null,
-          item.ポテンシャル指数 ?? null,
-          item.レボウマ ?? null,
-          item.巻き返し指数 ?? null,
-          item.クッション値 ?? null
+          item.potential ?? null,
+          item.revouma ?? null,
+          item.makikaeshi ?? null,
+          item.cushion ?? null
         );
       }
     });
