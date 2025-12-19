@@ -14,6 +14,17 @@ function GET(row: any, ...keys: string[]): string {
 }
 
 /**
+ * 馬名を正規化する（$、*、その他の記号を除去）
+ * 外国産馬マーク($)、地方競馬マーク(*)などを除去
+ */
+function normalizeHorseName(name: string): string {
+  return name
+    .replace(/^[\$\*\s]+/, '')  // 先頭の$, *, スペースを除去
+    .replace(/[\s]+$/, '')       // 末尾のスペースを除去
+    .trim();
+}
+
+/**
  * umadataテーブルのカラム名をcomputeKisoScoreが期待する形式に変換
  * DBカラム名 → 期待されるキー名
  */
@@ -125,8 +136,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 各馬の過去走データを取得してスコアを計算
     const horsesWithScore = horses.map((horse: any) => {
-      // 馬名を取得（前後のスペースを除去）
-      const horseName = GET(horse, 'umamei').trim();
+      // 馬名を取得（$、*マークとスペースを除去）
+      const horseName = normalizeHorseName(GET(horse, 'umamei'));
 
       // umadataテーブルから過去走データを取得（最新5走）
       const pastRacesRaw = db.prepare(`
