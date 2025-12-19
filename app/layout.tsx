@@ -24,6 +24,13 @@ export const metadata: Metadata = {
   formatDetection: {
     telephone: false,
   },
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/icon-192x192.png",
+  },
+  other: {
+    "theme-color": "#1f2937",
+  },
 };
 
 export const viewport: Viewport = {
@@ -34,43 +41,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ja">
-      <head>
-        <meta name="theme-color" content="#1f2937" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="RaceScore" />
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
-        <link rel="icon" type="image/png" href="/favicon.ico" />
-        <link rel="manifest" href="/manifest.json" />
-      </head>
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html lang="ja" suppressHydrationWarning>
+      <head suppressHydrationWarning />
+      <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <main>{children}</main>
-        <ServiceWorkerRegister />
       </body>
     </html>
-  );
-}
-
-function ServiceWorkerRegister() {
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `
-          if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-              navigator.serviceWorker.register('/sw.js').then(
-                (registration) => {
-                  console.log('Service Worker registered:', registration);
-                },
-                (error) => {
-                  console.log('Service Worker registration failed:', error);
-                }
-              );
-            });
-          }
-        `,
-      }}
-    />
   );
 }

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, sql } from 'drizzle-orm/sqlite-core';
 
 /**
  * umadataテーブル
@@ -111,3 +111,38 @@ export const wide = sqliteTable('wide', {
 
 export type Wide = typeof wide.$inferSelect;
 export type NewWide = typeof wide.$inferInsert;
+
+/**
+ * wakujunテーブル
+ * 当日の出走馬データ（枠順・騎手など）
+ */
+export const wakujun = sqliteTable('wakujun', {
+  // 主キー
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  
+  // wakujun.csvのカラム（21カラム）
+  date: text('date'), // 日付（例: 1220）
+  place: text('place'), // 場所（例: 中山）
+  race_number: text('race_number'), // レース番号
+  class_name_1: text('class_name_1'), // クラス名1
+  class_name_2: text('class_name_2'), // クラス名2
+  waku: text('waku'), // 枠番
+  umaban: text('umaban'), // 馬番
+  kinryo: text('kinryo'), // 斤量
+  umamei: text('umamei'), // 馬名
+  seibetsu: text('seibetsu'), // 性別
+  nenrei: text('nenrei'), // 年齢（数字）
+  nenrei_display: text('nenrei_display'), // 年齢表示（例: ２歳）
+  kishu: text('kishu'), // 騎手
+  blank_field: text('blank_field'), // 空欄フィールド
+  track_type: text('track_type'), // トラック種別（ダ/芝）
+  distance: text('distance'), // 距離
+  tosu: text('tosu'), // 頭数
+  shozoku: text('shozoku'), // 所属（例: (美)）
+  chokyoshi: text('chokyoshi'), // 調教師
+  shozoku_chi: text('shozoku_chi'), // 所属地（例: 美浦）
+  umajirushi: text('umajirushi'), // 馬印
+  
+  // タイムスタンプ
+  created_at: text('created_at'),
+});
