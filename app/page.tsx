@@ -576,20 +576,20 @@ export default function RaceCardPage() {
                     {parseFloat(race.index_value || '0').toFixed(1)}
                   </td>
                   {/* 指数データ */}
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.L4F ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.L4F?.toFixed(1) ?? '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.L4F != null ? race.indices.L4F.toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.T2F ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.T2F?.toFixed(1) ?? '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.T2F != null ? race.indices.T2F.toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.potential ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.potential?.toFixed(0) ?? '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.potential != null ? race.indices.potential.toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.revouma ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.revouma?.toFixed(1) ?? '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.revouma != null ? race.indices.revouma.toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.cushion ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.cushion?.toFixed(1) ?? '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.cushion != null ? race.indices.cushion.toFixed(1) : '-'}
                   </td>
                 </tr>
               );
