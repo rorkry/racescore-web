@@ -3,7 +3,6 @@ import { getRawDb } from '../../lib/db-new';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 
-// ヘルパー関数: フィールド取得
 function GET(row: any, ...keys: string[]): string {
   for (const k of keys) {
     if (row && row[k] !== undefined && row[k] !== null) {
@@ -13,92 +12,70 @@ function GET(row: any, ...keys: string[]): string {
   return '';
 }
 
-/**
- * 馬名を正規化する（$、*、その他の記号を除去）
- * 外国産馬マーク($)、地方競馬マーク(*)などを除去
- */
 function normalizeHorseName(name: string): string {
   return name
-    .replace(/^[\$\*\s]+/, '')  // 先頭の$, *, スペースを除去
-    .replace(/[\s]+$/, '')       // 末尾のスペースを除去
+    .replace(/^[\$\*\s]+/, '')
+    .replace(/[\s]+$/, '')
     .trim();
 }
 
-/**
- * umadataテーブルのカラム名をcomputeKisoScoreが期待する形式に変換
- * DBカラム名 → 期待されるキー名
- */
+function generateIndexRaceId(date: string, place: string, raceNumber: string, umaban: string): string {
+  const year = '2025';
+  const dateStr = date.padStart(4, '0');
+  const month = dateStr.substring(0, 2);
+  const day = dateStr.substring(2, 4);
+  const fullDate = `${year}${month}${day}`;
+  
+  const placeCode: { [key: string]: string } = {
+    '札幌': '01', '函館': '02', '福島': '03', '新潟': '04',
+    '東京': '05', '中山': '06', '中京': '07', '京都': '08',
+    '阪神': '09', '小倉': '10'
+  };
+  const placeCodeStr = placeCode[place] || '00';
+  const kaisai = '05';
+  const kaisaiDay = '01';
+  const raceNum = raceNumber.padStart(2, '0');
+  const umabanStr = umaban.padStart(2, '0');
+  
+  return `${fullDate}${placeCodeStr}${kaisai}${kaisaiDay}${raceNum}${umabanStr}`;
+}
+
 function mapUmadataToRecordRow(dbRow: any): RecordRow {
   const result: any = {};
-  
-  // 全フィールドを文字列として追加（元のキーも保持）
   for (const key in dbRow) {
     result[key] = dbRow[key] !== null && dbRow[key] !== undefined ? String(dbRow[key]) : '';
   }
-  
-  // 追加のマッピング（computeKisoScoreが期待するキー名）
-  // 巻き返し指数
   result['指数'] = result['index_value'] || '';
   result['comeback'] = result['index_value'] || '';
-  
-  // 着順
   result['着順'] = result['finish_position'] || '';
   result['finish'] = result['finish_position'] || '';
-  
-  // 着差
   result['着差'] = result['margin'] || '';
-  
-  // 通過順
   result['corner2'] = result['corner_2'] || '';
   result['corner3'] = result['corner_3'] || '';
   result['corner4'] = result['corner_4'] || '';
-  
-  // 頭数
   result['頭数'] = result['number_of_horses'] || '';
   result['fieldSize'] = result['number_of_horses'] || '';
-  
-  // 距離（芝/ダ + 距離）
   result['距離'] = result['distance'] || '';
   result['surface'] = result['distance'] || '';
-  
-  // PCI
   result['PCI'] = result['pci'] || '';
-  
-  // 日付
   result['日付'] = result['date'] || '';
   result['日付(yyyy.mm.dd)'] = result['date'] || '';
-  
-  // 場所
   result['場所'] = result['place'] || '';
   result['場所_1'] = result['place'] || '';
-  
-  // 走破タイム
   result['走破タイム'] = result['finish_time'] || '';
   result['time'] = result['finish_time'] || '';
-  
-  // クラス名
   result['クラス名'] = result['class_name'] || '';
-  
-  // レースID
   result['レースID'] = result['race_id_new_no_horse_num'] || '';
   result['レースID(新/馬番無)'] = result['race_id_new_no_horse_num'] || '';
   result['raceId'] = result['race_id_new_no_horse_num'] || '';
-  
   return result as RecordRow;
 }
 
-/**
- * wakujunテーブルのカラム名をRecordRow形式に変換
- */
 function mapWakujunToRecordRow(dbRow: any): RecordRow {
   const result: any = {};
-  
-  // 全フィールドを文字列として追加
   for (const key in dbRow) {
     result[key] = dbRow[key] !== null && dbRow[key] !== undefined ? String(dbRow[key]) : '';
   }
-  
-  // 追加のマッピング
   result['馬番'] = result['umaban'] || '';
   result['horse_number'] = result['umaban'] || '';
   result['馬名'] = result['umamei'] || '';
@@ -109,7 +86,6 @@ function mapWakujunToRecordRow(dbRow: any): RecordRow {
   result['距離'] = result['distance'] || '';
   result['頭数'] = result['tosu'] || '';
   result['クラス名'] = result['class_name_1'] || '';
-  
   return result as RecordRow;
 }
 
@@ -123,7 +99,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const db = getRawDb();
 
-    // wakujunテーブルから当日の出走馬リストを取得
     const horses = db.prepare(`
       SELECT * FROM wakujun
       WHERE date = ? AND place = ? AND race_number = ?
@@ -134,12 +109,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: 'No horses found for this race' });
     }
 
-    // 各馬の過去走データを取得してスコアを計算
     const horsesWithScore = horses.map((horse: any) => {
-      // 馬名を取得（$、*マークとスペースを除去）
       const horseName = normalizeHorseName(GET(horse, 'umamei'));
 
-      // umadataテーブルから過去走データを取得（最新5走）
       const pastRacesRaw = db.prepare(`
         SELECT * FROM umadata
         WHERE TRIM(horse_name) = ?
@@ -147,26 +119,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         LIMIT 5
       `).all(horseName);
 
-      // 過去走データをRecordRow形式に変換
-      const pastRaces = pastRacesRaw.map(mapUmadataToRecordRow);
+      // 過去走データに指数を紐づけ
+      const pastRacesWithIndices = pastRacesRaw.map((race: any) => {
+        const raceIdBase = race.race_id_new_no_horse_num || '';
+        const horseNum = String(race.horse_number || '').padStart(2, '0');
+        const fullRaceId = `${raceIdBase}${horseNum}`;
+        
+        let raceIndices = null;
+        try {
+          const indexData = db.prepare(`
+            SELECT L4F, T2F, potential, revouma, makikaeshi, cushion
+            FROM indices WHERE race_id = ?
+          `).get(fullRaceId);
+          if (indexData) raceIndices = indexData;
+        } catch (e) {
+          // 指数データがない場合は無視
+        }
+        
+        return {
+          ...race,
+          indices: raceIndices,
+          indexRaceId: fullRaceId
+        };
+      });
 
-      // 出走情報をRecordRow形式に変換
+      const pastRaces = pastRacesWithIndices.map(mapUmadataToRecordRow);
       const entryRow = mapWakujunToRecordRow(horse);
 
-      // computeKisoScore関数を使用してスコアを計算
       let score = 0;
       try {
-        score = computeKisoScore({
-          past: pastRaces,
-          entry: entryRow
-        });
+        score = computeKisoScore({ past: pastRaces, entry: entryRow });
       } catch (scoreError: any) {
         console.error('Score calculation error for', horseName, ':', scoreError.message);
         score = 0;
       }
 
+      const indexRaceId = generateIndexRaceId(
+        String(date), String(place), String(raceNumber), GET(horse, 'umaban')
+      );
+      
+      let indices = null;
+      try {
+        const indexData = db.prepare(`
+          SELECT L4F, T2F, potential, revouma, makikaeshi, cushion
+          FROM indices WHERE race_id = ?
+        `).get(indexRaceId);
+        if (indexData) indices = indexData;
+      } catch (indexError: any) {
+        console.error('Index fetch error:', indexError.message);
+      }
+
       return {
-        // 元のDBデータ
         id: horse.id,
         date: horse.date,
         place: horse.place,
@@ -188,40 +191,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         seibetsu: horse.seibetsu,
         nenrei: horse.nenrei,
         nenrei_display: horse.nenrei_display,
-        // 過去走データ
-        past_races: pastRacesRaw,
+        past_races: pastRacesWithIndices,
         past_races_count: pastRaces.length,
-        past: pastRacesRaw,
+        past: pastRacesWithIndices,
         hasData: pastRaces.length > 0,
-        // スコア
-        score: score
+        score: score,
+        indices: indices,
+        indexRaceId: indexRaceId
       };
     });
 
-    // スコアでソート（降順）
     horsesWithScore.sort((a: any, b: any) => b.score - a.score);
 
-    // レース情報を取得
     const raceInfo = {
-      date,
-      place,
-      raceNumber,
+      date, place, raceNumber,
       className: GET(horses[0], 'class_name_1'),
       trackType: GET(horses[0], 'track_type'),
       distance: GET(horses[0], 'distance'),
       fieldSize: horses.length
     };
 
-    res.status(200).json({
-      raceInfo: raceInfo,
-      horses: horsesWithScore
-    });
+    res.status(200).json({ raceInfo, horses: horsesWithScore });
   } catch (error: any) {
     console.error('Error fetching race card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message,
-      stack: error.stack
-    });
+    res.status(500).json({ error: 'Internal server error', message: error.message });
   }
 }

@@ -4,6 +4,15 @@ import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
+interface PastRaceIndices {
+  L4F: number | null;
+  T2F: number | null;
+  potential: number | null;
+  revouma: number | null;
+  makikaeshi: number | null;
+  cushion: number | null;
+}
+
 interface PastRace {
   date: string;
   distance: string;
@@ -19,6 +28,8 @@ interface PastRace {
   popularity: string;
   track_condition: string;
   place: string;
+  indices?: PastRaceIndices | null;
+  indexRaceId?: string;
 }
 
 interface Race {
@@ -36,6 +47,15 @@ interface Venue {
   races: Race[];
 }
 
+interface Indices {
+  L4F: number | null;
+  T2F: number | null;
+  potential: number | null;
+  revouma: number | null;
+  makikaeshi: number | null;
+  cushion: number | null;
+}
+
 interface Horse {
   umaban: string;
   waku: string;
@@ -45,6 +65,8 @@ interface Horse {
   score: number;
   hasData: boolean;
   past: PastRace[];
+  indices: Indices | null;
+  indexRaceId?: string;
 }
 
 interface RaceCard {
@@ -490,18 +512,23 @@ export default function RaceCardPage() {
 
     return (
       <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
+        <table className="min-w-max text-sm border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">日付</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">場所</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">クラス</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">距離</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">人気</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">着順</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">着差</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">通過</th>
-              <th className="border border-slate-800 px-2 py-1 text-center text-slate-800">巻き返し</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">日付</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">場所</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">クラス</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">距離</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">人気</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着順</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着差</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">通過</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">巻き返し指数</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F指数</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F指数</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">ポテンシャル</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">レボウマ</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">クッション値</th>
             </tr>
           </thead>
           <tbody>
@@ -514,7 +541,7 @@ export default function RaceCardPage() {
               return (
                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                   <td 
-                    className={`border border-slate-800 px-2 py-1 text-center text-xs ${
+                    className={`border border-slate-300 px-2 py-1 text-center text-xs whitespace-nowrap ${
                       clickable 
                         ? 'text-blue-600 underline cursor-pointer hover:bg-blue-50' 
                         : 'text-slate-800'
@@ -524,35 +551,52 @@ export default function RaceCardPage() {
                   >
                     {race.date || '-'}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {race.place || '-'}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-xs text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
                     {race.class_name || '-'}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {race.distance || '-'}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
                     {race.popularity || '-'}
                   </td>
-                  <td className={`border border-slate-800 px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>
+                  <td className={`border border-slate-300 px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>
                     {toHalfWidth(race.finish_position || '-')}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
                     {race.margin || '-'}
                   </td>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-xs text-slate-800">
+                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
                     {passing || '-'}
                   </td>
-                  <td className={`border border-slate-800 px-2 py-1 text-center ${getIndexColor(race.index_value || '0')}`}>
+                  <td className={`border border-slate-300 px-2 py-1 text-center ${getIndexColor(race.index_value || '0')}`}>
                     {parseFloat(race.index_value || '0').toFixed(1)}
+                  </td>
+                  {/* 指数データ */}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.L4F ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.L4F?.toFixed(1) ?? '-'}
+                  </td>
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.T2F ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.T2F?.toFixed(1) ?? '-'}
+                  </td>
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.potential ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.potential?.toFixed(0) ?? '-'}
+                  </td>
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.revouma ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.revouma?.toFixed(1) ?? '-'}
+                  </td>
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.cushion ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices?.cushion?.toFixed(1) ?? '-'}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+        <p className="text-xs text-slate-400 mt-2">※ 横スクロールで全てのカラムを確認できます。指数データが「-」の場合は、該当レースの指数が未アップロードです。</p>
       </div>
     );
   };
