@@ -1240,7 +1240,7 @@ export default function Home() {
                                 {/* 開催地ごとのPDFダウンロードボタン */}
                                 <button
                                   onClick={async () => {
-                                    const doc = new jsPDF();
+                                    const doc = new jsPDF({ compress: true });
                                     let isFirstPage = true;
 
                                     // この開催地の全レースをループ
@@ -1352,7 +1352,7 @@ export default function Home() {
                                       
                                       // html2canvasでHTMLをCanvasに変換
                                       const canvas = await html2canvas(tempDiv, {
-                                        scale: 2,
+                                        scale: 1,
                                         useCORS: true,
                                         logging: false
                                       });
@@ -1360,10 +1360,10 @@ export default function Home() {
                                       document.body.removeChild(tempDiv);
                                       
                                       // CanvasをPDFに追加
-                                      const imgData = canvas.toDataURL('image/png');
+                                      const imgData = canvas.toDataURL('image/jpeg', 0.7);
                                       const imgWidth = 190;
                                       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                                      doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                                      doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
                                     }
 
                                     // PDFをダウンロード
@@ -1623,7 +1623,7 @@ export default function Home() {
                                   {/* 開催地ごとのPDFダウンロードボタン */}
                                   <button
                                     onClick={async () => {
-                                      const doc = new jsPDF();
+                                      const doc = new jsPDF({ compress: true });
                                       let isFirstPage = true;
 
                                       // この開催地の全レースをループ
@@ -1735,7 +1735,7 @@ export default function Home() {
                                         
                                         // html2canvasでHTMLをCanvasに変換
                                         const canvas = await html2canvas(tempDiv, {
-                                          scale: 2,
+                                          scale: 1,
                                           useCORS: true,
                                           logging: false
                                         });
@@ -1743,10 +1743,10 @@ export default function Home() {
                                         document.body.removeChild(tempDiv);
                                         
                                         // CanvasをPDFに追加
-                                        const imgData = canvas.toDataURL('image/png');
+                                        const imgData = canvas.toDataURL('image/jpeg', 0.7);
                                         const imgWidth = 190;
                                         const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                                        doc.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+                                        doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
                                       }
 
                                       // PDFをダウンロード
@@ -1885,7 +1885,7 @@ export default function Home() {
                                                 </table>
                                                 <button
                                                   onClick={() => {
-                                                    const doc = new jsPDF();
+                                                    const doc = new jsPDF({ compress: true });
                                                     
                                                     // タイトル
                                                     const raceTitle = `${raceNo}R ${horses[0].entry['レース名']?.trim()} ${horses[0].entry['距離']?.trim()}`;
