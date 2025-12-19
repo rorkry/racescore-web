@@ -604,20 +604,20 @@ export default function RaceCardPage() {
                     {parseFloat(race.index_value || '0').toFixed(1)}
                   </td>
                   {/* 指数データ */}
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.L4F != null ? race.indices.L4F.toFixed(1) : '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.L4F != null ? Number(race.indices.L4F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.T2F != null ? race.indices.T2F.toFixed(1) : '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.T2F != null ? Number(race.indices.T2F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.potential != null ? race.indices.potential.toFixed(1) : '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.potential != null ? Number(race.indices.potential).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.revouma != null ? race.indices.revouma.toFixed(1) : '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.revouma != null ? Number(race.indices.revouma).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices?.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices?.cushion != null ? race.indices.cushion.toFixed(1) : '-'}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.cushion != null ? Number(race.indices.cushion).toFixed(1) : '-'}
                   </td>
                 </tr>
               );
@@ -837,7 +837,7 @@ export default function RaceCardPage() {
                         {horse.kinryo.trim()}
                       </td>
                       <td className={`border border-slate-800 px-4 py-2 text-center text-lg ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                        {horse.hasData ? horse.score.toFixed(1) : 'データなし'}
+                        {horse.hasData && horse.score != null ? Number(horse.score).toFixed(1) : 'データなし'}
                       </td>
                     </tr>
                     {expandedHorse === horse.umaban && (
