@@ -13,9 +13,9 @@ function MyApp({ Component, pageProps }: AppProps) {
       links: [
         httpBatchLink({
           url: '/api/trpc',
+          transformer: superjson,
         }),
       ],
-      transformer: superjson,
     })
   );
 

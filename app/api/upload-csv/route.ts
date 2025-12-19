@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     try {
       // まずShift_JISとしてデコードを試みる
       text = iconv.decode(buffer, 'Shift_JIS');
-    } catch (e) {
+    } catch {
       // 失敗した場合はUTF-8として読み込む
       text = buffer.toString('utf-8');
     }
@@ -124,8 +124,8 @@ function importWakujun(db: any, data: any[]): { count: number; date: string; isU
           row[20]  // umajirushi
         );
         count++;
-      } catch (e) {
-        console.error('Error inserting wakujun row:', e);
+      } catch {
+        console.error('Error inserting wakujun row');
       }
     }
   }
@@ -158,7 +158,7 @@ function importUmadata(db: any, data: any[]): { count: number; updated: number; 
   `);
 
   let count = 0;
-  let updated = 0;
+  const updated = 0;
   let inserted = 0;
   
   for (const row of data) {
@@ -218,8 +218,8 @@ function importUmadata(db: any, data: any[]): { count: number; updated: number; 
         );
         count++;
         inserted++;
-      } catch (e) {
-        console.error('Error inserting umadata row:', e);
+      } catch {
+        console.error('Error inserting umadata row');
       }
     }
   }

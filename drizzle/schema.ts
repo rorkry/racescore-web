@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, sql } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 /**
  * umadataテーブル
@@ -85,14 +85,13 @@ export type NewRace = typeof races.$inferInsert;
 /**
  * umarenテーブル（既存）
  * 馬連オッズデータを保存
+ * 注: 複合主キーはSQLite側で管理
  */
 export const umaren = sqliteTable('umaren', {
   raceKey: text('raceKey').notNull(),
   comb: text('comb').notNull(),
   odds: integer('odds'),
-}, (table) => ({
-  pk: { columns: [table.raceKey, table.comb] },
-}));
+});
 
 export type Umaren = typeof umaren.$inferSelect;
 export type NewUmaren = typeof umaren.$inferInsert;
@@ -100,14 +99,13 @@ export type NewUmaren = typeof umaren.$inferInsert;
 /**
  * wideテーブル（既存）
  * ワイドオッズデータを保存
+ * 注: 複合主キーはSQLite側で管理
  */
 export const wide = sqliteTable('wide', {
   raceKey: text('raceKey').notNull(),
   comb: text('comb').notNull(),
   odds: integer('odds'),
-}, (table) => ({
-  pk: { columns: [table.raceKey, table.comb] },
-}));
+});
 
 export type Wide = typeof wide.$inferSelect;
 export type NewWide = typeof wide.$inferInsert;

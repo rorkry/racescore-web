@@ -31,6 +31,7 @@ export default async function handler(
     }
     
     // 各馬の過去走データを取得
+    const firstHorse = raceCard[0] as any;
     const horsesWithHistory = raceCard.map((horse: any) => {
       // 馬名の前後の空白を削除
       const horseName = horse.umamei.trim();
@@ -55,9 +56,9 @@ export default async function handler(
         date: date as string,
         place: place as string,
         raceNumber: raceNumber as string,
-        className: raceCard[0]?.class_name_1 || '',
-        trackType: raceCard[0]?.track_type || '',
-        distance: raceCard[0]?.distance || '',
+        className: firstHorse?.class_name_1 || '',
+        trackType: firstHorse?.track_type || '',
+        distance: firstHorse?.distance || '',
         horseCount: raceCard.length,
       },
       horses: horsesWithHistory,

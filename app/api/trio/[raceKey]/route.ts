@@ -20,7 +20,7 @@ export async function GET(
     const filePath = path.join(process.cwd(), 'public', 'o6', `${raceKey}.json`)
     const raw      = await fs.readFile(filePath, 'utf8')
     return NextResponse.json(JSON.parse(raw))
-  } catch (err) {
+  } catch {
     // ファイルが見つからない場合は404を返す
     return NextResponse.json(
       { error: 'CSV not found' },

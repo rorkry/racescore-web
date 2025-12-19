@@ -132,7 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             FROM indices WHERE race_id = ?
           `).get(fullRaceId);
           if (indexData) raceIndices = indexData;
-        } catch (e) {
+        } catch {
           // 指数データがない場合は無視
         }
         

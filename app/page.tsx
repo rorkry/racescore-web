@@ -2,7 +2,48 @@
 
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+
+// 日本語フォント用のBase64データをキャッシュ
+let fontBase64: string | null = null;
+
+// フォントをロードする関数
+async function loadJapaneseFont(): Promise<string | null> {
+  if (fontBase64) return fontBase64;
+  try {
+    const response = await fetch('/fonts/NotoSansJP-Regular.otf');
+    if (!response.ok) {
+      throw new Error('Font file not found');
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    // バイナリデータをBase64に変換
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, uint8Array.length));
+      binary += String.fromCharCode.apply(null, Array.from(chunk));
+    }
+    fontBase64 = btoa(binary);
+    console.log('Font loaded successfully, size:', fontBase64.length);
+    return fontBase64;
+  } catch (error) {
+    console.error('Failed to load Japanese font:', error);
+    return null;
+  }
+}
+
+// jsPDFに日本語フォントを追加する関数
+async function addJapaneseFontToPDF(doc: jsPDF): Promise<void> {
+  const fontData = await loadJapaneseFont();
+  if (fontData) {
+    doc.addFileToVFS('NotoSansJP-Regular.otf', fontData);
+    doc.addFont('NotoSansJP-Regular.otf', 'NotoSansJP', 'normal');
+    doc.setFont('NotoSansJP', 'normal');
+    console.log('Japanese font added to PDF');
+  } else {
+    console.error('Failed to add Japanese font to PDF');
+  }
+}
 
 interface PastRaceIndices {
   L4F: number | null;
@@ -289,6 +330,8 @@ export default function RaceCardPage() {
     setVenuePdfGenerating(venue.place);
     try {
       const doc = new jsPDF();
+      // 日本語フォントを追加
+      await addJapaneseFontToPDF(doc);
       let isFirstPage = true;
 
       for (const race of venue.races) {
@@ -302,6 +345,7 @@ export default function RaceCardPage() {
         isFirstPage = false;
 
         // ヘッダー
+        doc.setFont('NotoSansJP', 'normal');
         doc.setFontSize(16);
         doc.setTextColor(0, 0, 0);
         doc.text(`${venue.place} ${race.race_number}R ${race.class_name || ''}`, 10, 15);
@@ -398,6 +442,8 @@ export default function RaceCardPage() {
     setPdfGenerating(true);
     try {
       const doc = new jsPDF();
+      // 日本語フォントを追加
+      await addJapaneseFontToPDF(doc);
       let isFirstPage = true;
 
       for (const venue of venues) {
@@ -412,6 +458,7 @@ export default function RaceCardPage() {
           isFirstPage = false;
 
           // ヘッダー
+          doc.setFont('NotoSansJP', 'normal');
           doc.setFontSize(16);
           doc.setTextColor(0, 0, 0);
           doc.text(`${venue.place} ${race.race_number}R ${race.class_name || ''}`, 10, 15);
