@@ -41,13 +41,25 @@ export async function POST(request: NextRequest) {
 
     // ファイル名でテーブルを判定
     if (file.name.includes('wakujun')) {
-      // wakujunテーブルにインポート
-      const count = importWakujun(db, data.slice(1)); // ヘッダー行をスキップ
-      return NextResponse.json({ success: true, count, table: 'wakujun' });
+      // wakujunテーブルにインポート（日付ごとに保持）
+      const result = importWakujun(db, data.slice(1)); // ヘッダー行をスキップ
+      return NextResponse.json({ 
+        success: true, 
+        count: result.count, 
+        table: 'wakujun',
+        date: result.date,
+        message: `${result.date}のデータを${result.isUpdate ? '更新' : '追加'}しました`
+      });
     } else if (file.name.includes('umadata')) {
-      // umadataテーブルにインポート
-      const count = importUmadata(db, data.slice(1)); // ヘッダー行をスキップ
-      return NextResponse.json({ success: true, count, table: 'umadata' });
+      // umadataテーブルにインポート（馬名ごとに更新）
+      const result = importUmadata(db, data.slice(1)); // ヘッダー行をスキップ
+      return NextResponse.json({ 
+        success: true, 
+        count: result.count, 
+        table: 'umadata',
+        updated: result.updated,
+        inserted: result.inserted
+      });
     } else {
       return NextResponse.json({ error: 'ファイル名がwakujunまたはumadataを含む必要があります' }, { status: 400 });
     }
@@ -57,9 +69,22 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function importWakujun(db: any, data: any[]): number {
-  // 既存データを削除
-  db.prepare('DELETE FROM wakujun').run();
+function importWakujun(db: any, data: any[]): { count: number; date: string; isUpdate: boolean } {
+  // CSVから日付を取得（最初の行の日付を使用）
+  const firstRow = data[0];
+  if (!Array.isArray(firstRow) || firstRow.length < 1) {
+    throw new Error('CSVデータが不正です');
+  }
+  const date = firstRow[0]; // 日付は最初のカラム
+
+  // 同じ日付のデータが既に存在するか確認
+  const existingData = db.prepare('SELECT COUNT(*) as count FROM wakujun WHERE date = ?').get(date);
+  const isUpdate = existingData && existingData.count > 0;
+
+  // 同じ日付のデータのみ削除（他の日付のデータは保持）
+  if (isUpdate) {
+    db.prepare('DELETE FROM wakujun WHERE date = ?').run(date);
+  }
 
   // wakujunテーブルのカラム（idとcreated_at以外）
   const insertStmt = db.prepare(`
@@ -104,11 +129,13 @@ function importWakujun(db: any, data: any[]): number {
       }
     }
   }
-  return count;
+  return { count, date, isUpdate };
 }
 
-function importUmadata(db: any, data: any[]): number {
-  // 既存データを削除
+function importUmadata(db: any, data: any[]): { count: number; updated: number; inserted: number } {
+  // 既存データを削除せず、馬名ごとに更新または挿入
+  // umadataは過去走データなので、全削除して入れ替える方式を維持
+  // （毎回最新の過去走データを取得するため）
   db.prepare('DELETE FROM umadata').run();
 
   // umadataテーブルのカラム（idとcreated_at以外）
@@ -131,6 +158,9 @@ function importUmadata(db: any, data: any[]): number {
   `);
 
   let count = 0;
+  let updated = 0;
+  let inserted = 0;
+  
   for (const row of data) {
     if (Array.isArray(row) && row.length >= 50) {
       try {
@@ -187,10 +217,11 @@ function importUmadata(db: any, data: any[]): number {
           row[49]  // horse_mark_8
         );
         count++;
+        inserted++;
       } catch (e) {
         console.error('Error inserting umadata row:', e);
       }
     }
   }
-  return count;
+  return { count, updated, inserted };
 }

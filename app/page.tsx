@@ -71,8 +71,29 @@ function normalizeHorseName(name: string): string {
   return name.trim().replace(/^[\$\*\s]+/, '').trim();
 }
 
+// 日付フォーマット変換（"2025.12. 6" → "1206"）
+function formatDateForQuery(dateStr: string): string {
+  // "2025.12. 6" or "2025. 1. 5" のような形式を "1206" or "0105" に変換
+  const match = dateStr.match(/(\d{4})\.?\s*(\d{1,2})\.?\s*(\d{1,2})/);
+  if (match) {
+    const month = match[2].padStart(2, '0');
+    const day = match[3].padStart(2, '0');
+    return `${month}${day}`;
+  }
+  return dateStr;
+}
+
+// 日付表示用フォーマット（"1220" → "12/20"）
+function formatDateForDisplay(dateStr: string): string {
+  if (dateStr.length === 4) {
+    return `${dateStr.slice(0, 2)}/${dateStr.slice(2)}`;
+  }
+  return dateStr;
+}
+
 export default function RaceCardPage() {
   const [date, setDate] = useState('1220');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<string>('');
   const [selectedRace, setSelectedRace] = useState<string>('');
@@ -82,6 +103,23 @@ export default function RaceCardPage() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [expandedHorse, setExpandedHorse] = useState<string | null>(null);
   const [venuePdfGenerating, setVenuePdfGenerating] = useState<string | null>(null);
+
+  // 利用可能な日付一覧を取得
+  useEffect(() => {
+    fetchAvailableDates();
+  }, []);
+
+  const fetchAvailableDates = async () => {
+    try {
+      const res = await fetch('/api/races');
+      if (!res.ok) throw new Error('Failed to fetch dates');
+      const data = await res.json();
+      const dates = (data.dates || []).map((d: { date: string }) => d.date);
+      setAvailableDates(dates);
+    } catch (err: any) {
+      console.error('Failed to fetch available dates:', err);
+    }
+  };
 
   useEffect(() => {
     if (date) {
@@ -149,90 +187,129 @@ export default function RaceCardPage() {
       2: 'bg-black text-white',
       3: 'bg-red-500 text-white',
       4: 'bg-blue-500 text-white',
-      5: 'bg-yellow-400 text-slate-800',
+      5: 'bg-yellow-400 text-black',
       6: 'bg-green-500 text-white',
       7: 'bg-orange-500 text-white',
       8: 'bg-pink-400 text-white',
     };
-    return colors[wakuNum] || 'bg-slate-300';
+    return colors[wakuNum] || 'bg-slate-200';
   };
 
-  // 巻き返し指数の文字色を取得
-  const getIndexColor = (indexValue: string) => {
-    const idx = parseFloat(indexValue) || 0;
-    if (idx >= 9) return 'text-red-600 font-bold';
-    if (idx >= 5) return 'text-orange-500 font-bold';
-    if (idx >= 1) return 'text-blue-600';
-    return 'text-slate-400';
-  };
-
-  // 着順の文字色を取得
+  // 着順の色を取得（文字色のみ）
   const getFinishColor = (finish: string) => {
-    const pos = parseInt(toHalfWidth(finish)) || 99;
-    if (pos === 1) return 'text-red-600 font-bold';
-    if (pos === 2) return 'text-blue-600 font-bold';
-    if (pos === 3) return 'text-green-600 font-bold';
-    if (pos <= 5) return 'text-slate-700';
-    return 'text-slate-400';
+    const finishNum = parseInt(toHalfWidth(finish));
+    if (finishNum === 1) return 'text-red-600 font-bold';
+    if (finishNum === 2) return 'text-blue-600 font-bold';
+    if (finishNum === 3) return 'text-green-600 font-bold';
+    return 'text-slate-800';
+  };
+
+  // 巻き返し指数の色を取得（文字色のみ）
+  const getIndexColor = (indexValue: string) => {
+    const value = parseFloat(indexValue);
+    if (value >= 9) return 'text-red-600 font-bold';
+    if (value >= 5) return 'text-orange-500 font-bold';
+    if (value >= 1) return 'text-blue-600';
+    return 'text-slate-800';
   };
 
   const toggleHorseExpand = (umaban: string) => {
     setExpandedHorse(expandedHorse === umaban ? null : umaban);
   };
 
+  // 日付クリックで過去レースカードに遷移
+  const navigateToDate = (pastDate: string) => {
+    const queryDate = formatDateForQuery(pastDate);
+    // 利用可能な日付に含まれているか確認
+    if (availableDates.includes(queryDate)) {
+      setDate(queryDate);
+      setSelectedRace('');
+      setRaceCard(null);
+    } else {
+      // 利用可能でない場合はアラート表示
+      alert(`${pastDate}のレースカードデータはありません`);
+    }
+  };
+
+  // 日付がクリック可能かどうかを判定
+  const isDateClickable = (pastDate: string): boolean => {
+    const queryDate = formatDateForQuery(pastDate);
+    return availableDates.includes(queryDate);
+  };
+
+  // PDF生成のためのスコア色取得（HEX形式）
+  const getScoreColorHex = (rank: number, total: number) => {
+    const percentage = (rank / total) * 100;
+    if (percentage <= 10) return '#dc2626'; // red-600
+    if (percentage <= 25) return '#f97316'; // orange-500
+    if (percentage <= 40) return '#ca8a04'; // yellow-600
+    if (percentage <= 60) return '#16a34a'; // green-600
+    return '#64748b'; // slate-500
+  };
+
+  const getFrameColorHex = (waku: string) => {
+    const wakuNum = parseInt(waku);
+    const colors: Record<number, string> = {
+      1: '#ffffff',
+      2: '#000000',
+      3: '#ef4444',
+      4: '#3b82f6',
+      5: '#facc15',
+      6: '#22c55e',
+      7: '#f97316',
+      8: '#f472b6',
+    };
+    return colors[wakuNum] || '#e2e8f0';
+  };
+
   // 競馬場毎のPDF生成
-  const generateVenuePDF = async (venueName: string) => {
+  const generateVenuePDF = async (venue: Venue) => {
+    setVenuePdfGenerating(venue.place);
     try {
-      setVenuePdfGenerating(venueName);
-      const doc = new jsPDF({ compress: true });
+      const doc = new jsPDF();
       let isFirstPage = true;
 
-      const venue = venues.find(v => v.place === venueName);
-      if (!venue) return;
-
       for (const race of venue.races) {
-        const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venueName}&raceNumber=${race.race_number}`);
+        const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
         if (!res.ok) continue;
-        const data: RaceCard = await res.json();
+        const data = await res.json();
 
         if (!isFirstPage) {
           doc.addPage();
         }
         isFirstPage = false;
 
-        const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'absolute';
-        tempDiv.style.left = '-9999px';
-        tempDiv.style.width = '800px';
-        tempDiv.style.backgroundColor = 'white';
-        tempDiv.style.padding = '20px';
+        // ヘッダー
+        doc.setFontSize(16);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`${venue.place} ${race.race_number}R ${race.class_name || ''}`, 10, 15);
+        doc.setFontSize(10);
+        doc.text(`${race.track_type}${race.distance}m / ${data.horses.length}頭立`, 10, 22);
 
-        const raceTitle = `${data.raceInfo.place}${data.raceInfo.raceNumber}R ${data.raceInfo.className} ${data.raceInfo.trackType}${data.raceInfo.distance}m`;
+        // テーブルヘッダー
+        let y = 30;
+        doc.setFillColor(34, 197, 94);
+        doc.rect(10, y, 190, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text('枠', 15, y + 5.5);
+        doc.text('馬番', 28, y + 5.5);
+        doc.text('馬名', 50, y + 5.5);
+        doc.text('騎手', 100, y + 5.5);
+        doc.text('斤量', 140, y + 5.5);
+        doc.text('競うスコア', 165, y + 5.5);
 
-        const getFrameColorHex = (waku: string) => {
-          const wakuNum = parseInt(waku);
-          const colors: Record<number, { bg: string; text: string }> = {
-            1: { bg: '#ffffff', text: '#000000' },
-            2: { bg: '#000000', text: '#ffffff' },
-            3: { bg: '#ff0000', text: '#ffffff' },
-            4: { bg: '#0000ff', text: '#ffffff' },
-            5: { bg: '#ffff00', text: '#000000' },
-            6: { bg: '#00ff00', text: '#000000' },
-            7: { bg: '#ff8c00', text: '#ffffff' },
-            8: { bg: '#ff69b4', text: '#ffffff' },
-          };
-          return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
-        };
+        y += 8;
 
-        const getScoreColorHex = (rank: number, totalHorses: number) => {
-          if (rank === 0) return '#ff4444';
-          if (rank === 1) return '#ff8844';
-          if (rank === 2) return '#ffcc44';
-          if (rank < totalHorses / 2) return '#88dd88';
-          return '#dddddd';
-        };
+        // テーブルボディ
+        const sortedHorses = [...data.horses].sort((a: Horse, b: Horse) => {
+          if (a.hasData && !b.hasData) return -1;
+          if (!a.hasData && b.hasData) return 1;
+          if (a.hasData && b.hasData) return b.score - a.score;
+          return parseInt(a.umaban) - parseInt(b.umaban);
+        });
 
-        const tableRows = data.horses.map((horse, rank) => {
+        const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
           const frameColor = getFrameColorHex(horse.waku);
           const scoreColor = getScoreColorHex(rank, data.horses.length);
           const horseName = normalizeHorseName(horse.umamei);
@@ -240,56 +317,53 @@ export default function RaceCardPage() {
           const weight = horse.kinryo.trim();
           const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
-          return `
-            <tr>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horse.umaban}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${scoreDisplay}</td>
-            </tr>
-          `;
-        }).join('');
-
-        tempDiv.innerHTML = `
-          <div style="font-family: 'Noto Sans JP', sans-serif;">
-            <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #166534;">${raceTitle}</h2>
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr style="background-color: #166534; color: white;">
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 25px;">枠</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 50px;">馬番</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">騎手</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">斤量</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows}
-              </tbody>
-            </table>
-          </div>
-        `;
-
-        document.body.appendChild(tempDiv);
-
-        const canvas = await html2canvas(tempDiv, {
-          scale: 1,
-          useCORS: true,
-          logging: false
+          return { horse, horseName, jockey, weight, scoreDisplay, frameColor, scoreColor };
         });
 
-        document.body.removeChild(tempDiv);
+        for (const row of tableRows) {
+          if (y > 280) {
+            doc.addPage();
+            y = 10;
+          }
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.7);
-        const imgWidth = 190;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+          // 背景色（交互）
+          const rowIndex = tableRows.indexOf(row);
+          if (rowIndex % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(10, y, 190, 7, 'F');
+          }
+
+          // 枠色
+          const fc = row.frameColor;
+          const r = parseInt(fc.slice(1, 3), 16);
+          const g = parseInt(fc.slice(3, 5), 16);
+          const b = parseInt(fc.slice(5, 7), 16);
+          doc.setFillColor(r, g, b);
+          doc.rect(12, y + 1, 8, 5, 'F');
+          doc.setDrawColor(0, 0, 0);
+          doc.rect(12, y + 1, 8, 5, 'S');
+
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(8);
+          doc.text(row.horse.waku, 15, y + 5);
+          doc.text(row.horse.umaban, 30, y + 5);
+          doc.text(row.horseName.slice(0, 15), 45, y + 5);
+          doc.text(row.jockey.slice(0, 10), 95, y + 5);
+          doc.text(row.weight, 142, y + 5);
+
+          // スコア色
+          const sc = row.scoreColor;
+          const sr = parseInt(sc.slice(1, 3), 16);
+          const sg = parseInt(sc.slice(3, 5), 16);
+          const sb = parseInt(sc.slice(5, 7), 16);
+          doc.setTextColor(sr, sg, sb);
+          doc.text(String(row.scoreDisplay), 175, y + 5);
+
+          y += 7;
+        }
       }
 
-      doc.save(`${date}_${venueName}.pdf`);
+      doc.save(`${date}_${venue.place}.pdf`);
     } catch (err: any) {
       setError(`PDF生成エラー: ${err.message}`);
     } finally {
@@ -297,56 +371,55 @@ export default function RaceCardPage() {
     }
   };
 
+  // 全レースPDF生成
   const generateAllRacesPDF = async () => {
+    setPdfGenerating(true);
     try {
-      setPdfGenerating(true);
-      const doc = new jsPDF({ compress: true });
+      const doc = new jsPDF();
       let isFirstPage = true;
 
       for (const venue of venues) {
         for (const race of venue.races) {
           const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
           if (!res.ok) continue;
-          const data: RaceCard = await res.json();
+          const data = await res.json();
 
           if (!isFirstPage) {
             doc.addPage();
           }
           isFirstPage = false;
 
-          const tempDiv = document.createElement('div');
-          tempDiv.style.position = 'absolute';
-          tempDiv.style.left = '-9999px';
-          tempDiv.style.width = '800px';
-          tempDiv.style.backgroundColor = 'white';
-          tempDiv.style.padding = '20px';
+          // ヘッダー
+          doc.setFontSize(16);
+          doc.setTextColor(0, 0, 0);
+          doc.text(`${venue.place} ${race.race_number}R ${race.class_name || ''}`, 10, 15);
+          doc.setFontSize(10);
+          doc.text(`${race.track_type}${race.distance}m / ${data.horses.length}頭立`, 10, 22);
 
-          const raceTitle = `${data.raceInfo.place}${data.raceInfo.raceNumber}R ${data.raceInfo.className} ${data.raceInfo.trackType}${data.raceInfo.distance}m`;
+          // テーブルヘッダー
+          let y = 30;
+          doc.setFillColor(34, 197, 94);
+          doc.rect(10, y, 190, 8, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(8);
+          doc.text('枠', 15, y + 5.5);
+          doc.text('馬番', 28, y + 5.5);
+          doc.text('馬名', 50, y + 5.5);
+          doc.text('騎手', 100, y + 5.5);
+          doc.text('斤量', 140, y + 5.5);
+          doc.text('競うスコア', 165, y + 5.5);
 
-          const getFrameColorHex = (waku: string) => {
-            const wakuNum = parseInt(waku);
-            const colors: Record<number, { bg: string; text: string }> = {
-              1: { bg: '#ffffff', text: '#000000' },
-              2: { bg: '#000000', text: '#ffffff' },
-              3: { bg: '#ff0000', text: '#ffffff' },
-              4: { bg: '#0000ff', text: '#ffffff' },
-              5: { bg: '#ffff00', text: '#000000' },
-              6: { bg: '#00ff00', text: '#000000' },
-              7: { bg: '#ff8c00', text: '#ffffff' },
-              8: { bg: '#ff69b4', text: '#ffffff' },
-            };
-            return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
-          };
+          y += 8;
 
-          const getScoreColorHex = (rank: number, totalHorses: number) => {
-            if (rank === 0) return '#ff4444';
-            if (rank === 1) return '#ff8844';
-            if (rank === 2) return '#ffcc44';
-            if (rank < totalHorses / 2) return '#88dd88';
-            return '#dddddd';
-          };
+          // テーブルボディ
+          const sortedHorses = [...data.horses].sort((a: Horse, b: Horse) => {
+            if (a.hasData && !b.hasData) return -1;
+            if (!a.hasData && b.hasData) return 1;
+            if (a.hasData && b.hasData) return b.score - a.score;
+            return parseInt(a.umaban) - parseInt(b.umaban);
+          });
 
-          const tableRows = data.horses.map((horse, rank) => {
+          const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
             const frameColor = getFrameColorHex(horse.waku);
             const scoreColor = getScoreColorHex(rank, data.horses.length);
             const horseName = normalizeHorseName(horse.umamei);
@@ -354,53 +427,50 @@ export default function RaceCardPage() {
             const weight = horse.kinryo.trim();
             const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
-            return `
-              <tr>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horse.umaban}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${scoreDisplay}</td>
-              </tr>
-            `;
-          }).join('');
-
-          tempDiv.innerHTML = `
-            <div style="font-family: 'Noto Sans JP', sans-serif;">
-              <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #166534;">${raceTitle}</h2>
-              <table style="width: 100%; border-collapse: collapse;">
-                <thead>
-                  <tr style="background-color: #166534; color: white;">
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 25px;">枠</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 50px;">馬番</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">騎手</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">斤量</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tableRows}
-                </tbody>
-              </table>
-            </div>
-          `;
-
-          document.body.appendChild(tempDiv);
-
-          const canvas = await html2canvas(tempDiv, {
-            scale: 1,
-            useCORS: true,
-            logging: false
+            return { horse, horseName, jockey, weight, scoreDisplay, frameColor, scoreColor };
           });
 
-          document.body.removeChild(tempDiv);
+          for (const row of tableRows) {
+            if (y > 280) {
+              doc.addPage();
+              y = 10;
+            }
 
-          const imgData = canvas.toDataURL('image/jpeg', 0.7);
-          const imgWidth = 190;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+            // 背景色（交互）
+            const rowIndex = tableRows.indexOf(row);
+            if (rowIndex % 2 === 1) {
+              doc.setFillColor(248, 250, 252);
+              doc.rect(10, y, 190, 7, 'F');
+            }
+
+            // 枠色
+            const fc = row.frameColor;
+            const r = parseInt(fc.slice(1, 3), 16);
+            const g = parseInt(fc.slice(3, 5), 16);
+            const b = parseInt(fc.slice(5, 7), 16);
+            doc.setFillColor(r, g, b);
+            doc.rect(12, y + 1, 8, 5, 'F');
+            doc.setDrawColor(0, 0, 0);
+            doc.rect(12, y + 1, 8, 5, 'S');
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(8);
+            doc.text(row.horse.waku, 15, y + 5);
+            doc.text(row.horse.umaban, 30, y + 5);
+            doc.text(row.horseName.slice(0, 15), 45, y + 5);
+            doc.text(row.jockey.slice(0, 10), 95, y + 5);
+            doc.text(row.weight, 142, y + 5);
+
+            // スコア色
+            const sc = row.scoreColor;
+            const sr = parseInt(sc.slice(1, 3), 16);
+            const sg = parseInt(sc.slice(3, 5), 16);
+            const sb = parseInt(sc.slice(5, 7), 16);
+            doc.setTextColor(sr, sg, sb);
+            doc.text(String(row.scoreDisplay), 175, y + 5);
+
+            y += 7;
+          }
         }
       }
 
@@ -439,10 +509,19 @@ export default function RaceCardPage() {
               const passing = [race.corner_2, race.corner_3, race.corner_4]
                 .filter(c => c && c !== '')
                 .join('-');
+              const clickable = isDateClickable(race.date);
               
               return (
                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                  <td className="border border-slate-800 px-2 py-1 text-center text-xs text-slate-800">
+                  <td 
+                    className={`border border-slate-800 px-2 py-1 text-center text-xs ${
+                      clickable 
+                        ? 'text-blue-600 underline cursor-pointer hover:bg-blue-50' 
+                        : 'text-slate-800'
+                    }`}
+                    onClick={() => clickable && navigateToDate(race.date)}
+                    title={clickable ? 'クリックしてこの日のレースカードを表示' : ''}
+                  >
                     {race.date || '-'}
                   </td>
                   <td className="border border-slate-800 px-2 py-1 text-center text-slate-800">
@@ -501,13 +580,36 @@ export default function RaceCardPage() {
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-slate-800 mb-2">日付</label>
-          <input
-            type="text"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
-            placeholder="例: 1220"
-          />
+          <div className="flex gap-2 items-center">
+            {availableDates.length > 0 ? (
+              <select
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setSelectedRace('');
+                  setRaceCard(null);
+                }}
+                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+              >
+                {availableDates.map((d) => (
+                  <option key={d} value={d}>
+                    {formatDateForDisplay(d)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+                placeholder="例: 1220"
+              />
+            )}
+            <span className="text-sm text-slate-500">
+              {availableDates.length > 0 ? `${availableDates.length}日分のデータ` : ''}
+            </span>
+          </div>
         </div>
 
         {venues.length > 0 && (
@@ -543,9 +645,9 @@ export default function RaceCardPage() {
                     {venue.place}
                   </button>
                   <button
-                    onClick={() => generateVenuePDF(venue.place)}
+                    onClick={() => generateVenuePDF(venue)}
                     disabled={venuePdfGenerating === venue.place}
-                    className={`px-2 py-2 rounded-r border-l-0 ${
+                    className={`px-2 py-2 rounded-r ${
                       selectedVenue === venue.place
                         ? 'bg-green-600 text-white hover:bg-green-500'
                         : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -663,14 +765,14 @@ export default function RaceCardPage() {
                         {horse.kinryo.trim()}
                       </td>
                       <td className={`border border-slate-800 px-4 py-2 text-center text-lg ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                        {horse.hasData ? horse.score : 'データなし'}
+                        {horse.hasData ? horse.score.toFixed(1) : 'データなし'}
                       </td>
                     </tr>
                     {expandedHorse === horse.umaban && (
                       <tr key={`${horse.umaban}-detail`}>
                         <td colSpan={6} className="border border-slate-800 p-4 bg-slate-50">
                           <div className="text-sm font-bold mb-2 text-green-800">
-                            {normalizeHorseName(horse.umamei)} の過去詳細
+                            {normalizeHorseName(horse.umamei)} の過去走詳細
                           </div>
                           <PastRaceDetail pastRaces={horse.past} />
                         </td>
