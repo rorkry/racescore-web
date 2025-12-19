@@ -623,7 +623,15 @@ export default function RaceCardPage() {
                 </tr>
               </thead>
               <tbody>
-                {raceCard.horses.map((horse, index) => (
+                {[...raceCard.horses].sort((a, b) => {
+                  // データなしの馬を一番下に配置
+                  if (a.hasData && !b.hasData) return -1;
+                  if (!a.hasData && b.hasData) return 1;
+                  // 両方データありの場合はスコア降順
+                  if (a.hasData && b.hasData) return b.score - a.score;
+                  // 両方データなしの場合は馬番順
+                  return parseInt(a.umaban) - parseInt(b.umaban);
+                }).map((horse, index) => (
                   <React.Fragment key={horse.umaban}>
                     <tr className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                       <td className={`border border-slate-800 px-2 py-2 text-center ${getWakuColor(horse.waku)}`}>
