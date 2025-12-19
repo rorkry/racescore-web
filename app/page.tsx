@@ -1693,13 +1693,13 @@ export default function Home() {
                                             <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #1e3a8a;">${raceTitle}</h2>
                                             <table style="width: 100%; border-collapse: collapse;">
                                               <thead>
-                                                <tr style="background-color: #1e3a8a; color: white;">
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 25px;">枠</th>
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 50px;">馬番</th>
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 14px; font-weight: bold;">馬名</th>
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 100px;">騎手</th>
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; font-weight: bold; width: 60px;">斤量</th>
-                                                  <th style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 13px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
+                                                <tr style="background-color: #3b82f6; color: white;">
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 25px;">枠</th>
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 50px;">馬番</th>
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">騎手</th>
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">斤量</th>
+                                                  <th style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
@@ -1717,12 +1717,12 @@ export default function Home() {
                                                   
                                                   return `
                                                     <tr>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horseNo}</td>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
-                                                      <td style="border: 3px solid #000; padding: 8px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${Math.round(isNaN(score) ? 0 : score)}</td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horseNo}</td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
+                                                      <td style="border: 1px solid #666; padding: 10px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${Math.round(isNaN(score) ? 0 : score)}</td>
                                                     </tr>
                                                   `;
                                                 }).join('')}
