@@ -111,6 +111,21 @@ export function getRawDb(): Database.Database {
     )
   `);
 
+  // indicesテーブル（各種指数データ）
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS indices (
+      race_id TEXT PRIMARY KEY,
+      L4F REAL,
+      T2F REAL,
+      potential REAL,
+      revouma REAL,
+      makikaeshi REAL,
+      cushion REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // wakujunテーブル（出走表）
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS wakujun (
