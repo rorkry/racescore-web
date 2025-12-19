@@ -13,7 +13,7 @@ import html2canvas from 'html2canvas';
 
 import EntryTable from './components/EntryTable'
 import DateSelector from './components/DateSelector'
-import { getClusterData, ClusterInfo, computeKisoScore, computeKisoScoreWithLocal } from '../utils/getClusterData'
+import { getClusterData, ClusterInfo, computeKisoScore, computeKisoScoreWithLocal, computeKisoScoreWithLocalEx } from '../utils/getClusterData'
 import { assignLabelsByZ } from '../utils/labels'
 import { levelToStars, toHalfWidth, formatTime, toSec, classToRank } from '../utils/helpers'
 import type { CsvRaceRow } from '../types/csv'
@@ -1788,16 +1788,15 @@ export default function Home() {
                                           const raceKey = buildRaceKey(dateCode, place.trim(), raceNo);
 
                                           // 競うスコアを計算
-                                          const rawScores = horses.map((horse, idx) => {
-                                            const sc = computeKisoScoreWithLocal(horse);
-                                            return sc;
+                                          const scoreResults = horses.map((horse, idx) => {
+                                            return computeKisoScoreWithLocalEx(horse);
                                           });
-                                          const scores = rawScores;
+                                          const scores = scoreResults.map(r => r.score);
                                           const labels = assignLabelsByZ(scores);
 
-                                          // スコア順にソート
+                                          // スコア順にソート（データなしは最下位）
                                           const sortedHorses = horses
-                                            .map((horse, idx) => ({ horse, score: scores[idx], idx }))
+                                            .map((horse, idx) => ({ horse, score: scores[idx], hasData: scoreResults[idx].hasData, idx }))
                                             .sort((a, b) => b.score - a.score);
 
                                           return (
@@ -1819,7 +1818,7 @@ export default function Home() {
                                                   </thead>
                                                   <tbody>
                                                     {sortedHorses.map((item, rank) => {
-                                                      const { horse, score, idx } = item;
+                                                      const { horse, score, hasData, idx } = item;
                                                       const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
                                                       const horseNoInt = parseInt(horseNo, 10);
                                                       const horseNoDisplay = horseNoInt.toString();
@@ -1871,9 +1870,9 @@ export default function Home() {
                                                           <td className="border-2 border-gray-400 px-3 py-2 text-center text-2xl font-bold">{mark}</td>
                                                           <td 
                                                             className="border-2 border-gray-400 px-3 py-2 text-center font-bold text-2xl"
-                                                            style={{ backgroundColor: scoreBg }}
+                                                            style={{ backgroundColor: hasData ? scoreBg : '#CCCCCC' }}
                                                           >
-                                                            {Math.round(score)}
+                                                            {hasData ? Math.round(score) : 'データなし'}
                                                           </td>
                                                           <td className="border-2 border-gray-400 px-3 py-2 text-lg font-bold">{horseName}</td>
                                                           <td className="border-2 border-gray-400 px-3 py-2 text-lg">{jockey}</td>
@@ -1894,7 +1893,7 @@ export default function Home() {
                                                     
                                                     // テーブルデータ
                                                     const tableData = sortedHorses.map((item, rank) => {
-                                                      const { horse, score } = item;
+                                                      const { horse, score, hasData } = item;
                                                       const horseNo = String(horse.entry.horseNo || horse.entry.馬番 || '').padStart(2, '0');
                                                       const horseNoDisplay = parseInt(horseNo, 10).toString();
                                                       const horseName = String(horse.entry.horseName || horse.entry.馬名 || '');
@@ -1907,7 +1906,7 @@ export default function Home() {
                                                         horseNoDisplay,
                                                         horseName,
                                                         jockey,
-                                                        Math.round(score)
+                                                        hasData ? Math.round(score) : 'データなし'
                                                       ];
                                                     });
                                                     

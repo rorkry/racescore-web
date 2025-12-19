@@ -540,10 +540,16 @@ function computeLocalRaceScore(race: RecordRow, targetClass: string): number {
 
 /**
  * 地方競馬を含む競うスコア計算（拡張版）
+ * @returns { score: number, hasData: boolean } - score: 0〜100のスコア、hasData: 前走データの有無
  */
-export function computeKisoScoreWithLocal(horse: { past: RecordRow[]; entry: RecordRow }): number {
+export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: RecordRow }): { score: number; hasData: boolean } {
   const recent = horse.past.slice(0, 5);  // 直近5走
   const targetClass = GET(horse.entry, 'クラス名', 'classname').trim();
+  
+  // 前走データがない場合
+  if (!recent[0]) {
+    return { score: -1, hasData: false };
+  }
   
   let totalScore = 0;
   let weights = [50, 10, 5, 0, 0];  // 前走、2走前、3走前の重み（100点満点換算）
@@ -607,5 +613,15 @@ export function computeKisoScoreWithLocal(horse: { past: RecordRow[]; entry: Rec
     totalScore += passScore;
   }
   
-  return Math.min(100, Math.max(0, +totalScore.toFixed(1)));
+  return { score: Math.min(100, Math.max(0, +totalScore.toFixed(1))), hasData: true };
 }
+
+/**
+ * 地方競馬を含む競うスコア計算（互換性版）
+ * @returns number - 0〜100のスコア（データなしの場合は-1）
+ */
+export function computeKisoScoreWithLocal(horse: { past: RecordRow[]; entry: RecordRow }): number {
+  const result = computeKisoScoreWithLocalEx(horse);
+  return result.score;
+}
+
