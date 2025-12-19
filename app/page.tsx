@@ -66,6 +66,11 @@ function toHalfWidth(str: string): string {
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 }
 
+// 馬名から$マーク・*マークを除去
+function normalizeHorseName(name: string): string {
+  return name.trim().replace(/^[\$\*\s]+/, '').trim();
+}
+
 export default function RaceCardPage() {
   const [date, setDate] = useState('1220');
   const [venues, setVenues] = useState<Venue[]>([]);
@@ -230,7 +235,7 @@ export default function RaceCardPage() {
         const tableRows = data.horses.map((horse, rank) => {
           const frameColor = getFrameColorHex(horse.waku);
           const scoreColor = getScoreColorHex(rank, data.horses.length);
-          const horseName = horse.umamei.trim();
+          const horseName = normalizeHorseName(horse.umamei);
           const jockey = horse.kishu.trim();
           const weight = horse.kinryo.trim();
           const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
@@ -344,7 +349,7 @@ export default function RaceCardPage() {
           const tableRows = data.horses.map((horse, rank) => {
             const frameColor = getFrameColorHex(horse.waku);
             const scoreColor = getScoreColorHex(rank, data.horses.length);
-            const horseName = horse.umamei.trim();
+            const horseName = normalizeHorseName(horse.umamei);
             const jockey = horse.kishu.trim();
             const weight = horse.kinryo.trim();
             const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
@@ -645,7 +650,7 @@ export default function RaceCardPage() {
                         onClick={() => toggleHorseExpand(horse.umaban)}
                       >
                         <div className="flex items-center justify-between">
-                          <span>{horse.umamei.trim()}</span>
+                          <span>{normalizeHorseName(horse.umamei)}</span>
                           <span className="text-green-600 text-sm">
                             {expandedHorse === horse.umaban ? '▲' : '▼'}
                           </span>
@@ -665,7 +670,7 @@ export default function RaceCardPage() {
                       <tr key={`${horse.umaban}-detail`}>
                         <td colSpan={6} className="border border-slate-800 p-4 bg-slate-50">
                           <div className="text-sm font-bold mb-2 text-green-800">
-                            {horse.umamei.trim()} の過去走詳細
+                            {normalizeHorseName(horse.umamei)} の過去詳細
                           </div>
                           <PastRaceDetail pastRaces={horse.past} />
                         </td>
