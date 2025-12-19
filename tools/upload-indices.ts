@@ -40,7 +40,9 @@ function readIndexFolder(folderPath: string, indexName: string): Map<string, num
     return indexMap;
   }
 
-  const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.csv'));
+  const files = fs.readdirSync(folderPath).filter(f => 
+    f.endsWith('.csv') && !f.includes('作成用')
+  );
   console.log(`[${indexName}] Found ${files.length} CSV files`);
 
   for (const file of files) {
