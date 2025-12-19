@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRawDb } from '../../../lib/db-new';
 import Papa from 'papaparse';
+import iconv from 'iconv-lite';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,7 +12,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ファイルが選択されていません' }, { status: 400 });
     }
 
-    const text = await file.text();
+    // ファイルをArrayBufferとして読み込み
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // Shift_JIS (CP932) からUTF-8に変換
+    // 日本語CSVファイルは通常Shift_JISでエンコードされている
+    let text: string;
+    try {
+      // まずShift_JISとしてデコードを試みる
+      text = iconv.decode(buffer, 'Shift_JIS');
+    } catch (e) {
+      // 失敗した場合はUTF-8として読み込む
+      text = buffer.toString('utf-8');
+    }
     
     // CSVをパース（ヘッダーなし）
     const { data } = Papa.parse(text, {
@@ -48,9 +62,6 @@ function importWakujun(db: any, data: any[]): number {
   db.prepare('DELETE FROM wakujun').run();
 
   // wakujunテーブルのカラム（idとcreated_at以外）
-  // date, place, race_number, class_name_1, class_name_2, waku, umaban, kinryo, umamei,
-  // seibetsu, nenrei, nenrei_display, kishu, blank_field, track_type, distance, tosu,
-  // shozoku, chokyoshi, shozoku_chi, umajirushi
   const insertStmt = db.prepare(`
     INSERT INTO wakujun (
       date, place, race_number, class_name_1, class_name_2,
@@ -101,13 +112,6 @@ function importUmadata(db: any, data: any[]): number {
   db.prepare('DELETE FROM umadata').run();
 
   // umadataテーブルのカラム（idとcreated_at以外）
-  // race_id_new_no_horse_num, date, distance, horse_number, horse_name, index_value,
-  // class_name, track_condition, finish_position, last_3f, finish_time, standard_time,
-  // rpci, pci, good_run, pci3, horse_mark, corner_2, corner_3, corner_4, gender, age,
-  // horse_weight, weight_change, jockey_weight, jockey, multiple_entries, affiliation,
-  // trainer, place, number_of_horses, popularity, sire, dam, track_condition_2, place_2,
-  // margin, corner_1, corner_2_2, corner_3_2, corner_4_2, work_1s, horse_mark_2,
-  // horse_mark_3, horse_mark_4, horse_mark_5, horse_mark_6, horse_mark_7, horse_mark_7_2, horse_mark_8
   const insertStmt = db.prepare(`
     INSERT INTO umadata (
       race_id_new_no_horse_num, date, distance, horse_number, horse_name, index_value,

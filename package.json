@@ -21,6 +21,7 @@
     "drizzle-orm": "^0.45.1",
     "framer-motion": "^12.9.2",
     "html2canvas": "^1.4.1",
+    "iconv-lite": "^0.7.1",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.503.0",
