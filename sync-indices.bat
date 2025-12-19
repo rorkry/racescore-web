@@ -1,36 +1,35 @@
 @echo off
-chcp 65001 > nul
 echo ============================================================
-echo 🏇 競馬指数データ 結合・アップロードツール
+echo Horse Racing Index Data Upload Tool
 echo ============================================================
 echo.
 
-REM プロジェクトディレクトリに移動
+REM Change to project directory
 cd /d "%~dp0"
 
-REM Node.jsがインストールされているか確認
+REM Check if Node.js is installed
 where node >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo ❌ Node.jsがインストールされていません
-    echo    https://nodejs.org/ からインストールしてください
+    echo ERROR: Node.js is not installed
+    echo Please install from https://nodejs.org/
     pause
     exit /b 1
 )
 
-REM ts-nodeがインストールされているか確認、なければインストール
+REM Check if ts-node is installed, install if not
 call npx ts-node --version >nul 2>nul
 if %ERRORLEVEL% neq 0 (
-    echo 📦 ts-nodeをインストール中...
+    echo Installing ts-node...
     call npm install -g ts-node typescript
 )
 
-REM スクリプトを実行
-echo 🚀 指数データの処理を開始します...
+REM Run the script
+echo Starting index data processing...
 echo.
 call npx ts-node tools/upload-indices.ts
 
 echo.
 echo ============================================================
-echo 処理が完了しました
+echo Process completed
 echo ============================================================
 pause
