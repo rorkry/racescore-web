@@ -68,6 +68,10 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   result['レースID'] = result['race_id_new_no_horse_num'] || '';
   result['レースID(新/馬番無)'] = result['race_id_new_no_horse_num'] || '';
   result['raceId'] = result['race_id_new_no_horse_num'] || '';
+  // indicesオブジェクトを保持（computeKisoScoreで使用）
+  if (dbRow.indices) {
+    result['indices'] = dbRow.indices;
+  }
   return result as RecordRow;
 }
 
