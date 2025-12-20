@@ -278,41 +278,86 @@ export function getClusterData(
 }
 
 /* ------------------------------------------------------------------ */
-/*  競うスコア計算（巻き返し指数ベース、加算式）                       */
+/*  競うスコア計算（改良版：indicesテーブルの指数を使用）               */
 /* ------------------------------------------------------------------ */
 
 /**
+ * indicesオブジェクトから指数値を取得するヘルパー
+ */
+function getIndexValue(race: any, key: string): number {
+  // indicesオブジェクトがある場合はそこから取得
+  if (race && race.indices && race.indices[key] !== null && race.indices[key] !== undefined) {
+    return parseFloat(race.indices[key]) || 0;
+  }
+  return 0;
+}
+
+/**
  * 馬 1 頭の "競うスコア" を返す（最大100点）
- * @param horse 過去走配列と現在出走情報
+ * @param horse 過去走配列と現在出走情報（過去走にはindicesオブジェクトが含まれる）
  * @returns 0〜100 のスコア（高いほど期待）
  */
 export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow }): number {
   const recent = horse.past.slice(0, 5);  // 直近5走
 
-  // 巻き返し指数を取得（0～10の範囲）
-  const comeback1 = parseFloat(GET(recent[0] || {}, 'comeback', '指数') || '0');
-  const comeback2 = parseFloat(GET(recent[1] || {}, 'comeback', '指数') || '0');
-  const comeback3 = parseFloat(GET(recent[2] || {}, 'comeback', '指数') || '0');
+  // ============================================================
+  // 巻き返し指数スコア（50点満点）
+  // indicesテーブルのmakikaeshiを使用
+  // ============================================================
+  const comeback1 = getIndexValue(recent[0], 'makikaeshi');
+  const comeback2 = getIndexValue(recent[1], 'makikaeshi');
+  const comeback3 = getIndexValue(recent[2], 'makikaeshi');
 
-  // 巻き返し指数スコア（65点満点）
   const comebackScore = 
-    (comeback1 / 10) * 50 +  // 前走: 50点
+    (comeback1 / 10) * 35 +  // 前走: 35点
     (comeback2 / 10) * 10 +  // 2走前: 10点
     (comeback3 / 10) * 5;    // 3走前: 5点
 
+  // ============================================================
+  // ポテンシャル指数スコア（15点満点）
+  // 直近3走の平均 + ボーナス
+  // ============================================================
+  const potential1 = getIndexValue(recent[0], 'potential');
+  const potential2 = getIndexValue(recent[1], 'potential');
+  const potential3 = getIndexValue(recent[2], 'potential');
+  
+  // 有効なデータのみで平均を計算
+  const potentialValues = [potential1, potential2, potential3].filter(v => v > 0);
+  const potentialAvg = potentialValues.length > 0 
+    ? potentialValues.reduce((a, b) => a + b, 0) / potentialValues.length 
+    : 0;
+  
+  // 基本点（12点満点）
+  const potentialBaseScore = (potentialAvg / 10) * 12;
+  
+  // ボーナス（平均3.0以上から加点、1上がるごとに+0.5、最大3点）
+  let potentialBonus = 0;
+  if (potentialAvg >= 3.0) {
+    potentialBonus = Math.min(3, (potentialAvg - 3.0) * 0.5 + 0.5);
+  }
+  
+  const potentialScore = potentialBaseScore + potentialBonus;
+
+  // ============================================================
   // 着順スコア（10点満点）
+  // ============================================================
   const fin1 = parseInt(toHalfWidth(GET(recent[0] || {}, 'finish', '着順').trim()), 10) || 99;
   const finishScore = Math.max(0, 10 - (fin1 - 1) * 1);
 
+  // ============================================================
   // 着差スコア（10点満点）
+  // ============================================================
   const margin1 = parseFloat(GET(recent[0] || {}, 'margin', '着差') || '0');
   const marginScoreVal = Math.max(0, 10 - margin1 * 3);
 
+  // ============================================================
   // クラスタタイムスコア（8点満点）
-  // 簡易実装: 前走のクラスタタイム差が小さいほど高評価
+  // ============================================================
   const clusterScore = 4; // 仮実装（後で詳細化可能）
 
+  // ============================================================
   // 通過順位×ペーススコア（7点満点）
+  // ============================================================
   const passNums = ['corner2', 'corner3', 'corner4']
     .map(k => {
       const raw = toHalfWidth(GET(recent[0] || {}, k, k).trim());
@@ -334,8 +379,11 @@ export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow })
   const passFactor = paceFactorMap[paceCat];
   const passScore = basePassScore * passFactor * 7;
 
+  // ============================================================
   // 合計スコア（最大100点）
-  const totalScore = comebackScore + finishScore + marginScoreVal + clusterScore + passScore;
+  // 巻き返し50点 + ポテンシャル15点 + 着順10点 + 着差10点 + クラスタ8点 + 通過7点
+  // ============================================================
+  const totalScore = comebackScore + potentialScore + finishScore + marginScoreVal + clusterScore + passScore;
   
   return Math.min(100, Math.max(0, +totalScore.toFixed(1)));
 }
@@ -539,7 +587,7 @@ function computeLocalRaceScore(race: RecordRow, targetClass: string): number {
 }
 
 /**
- * 地方競馬を含む競うスコア計算（拡張版）
+ * 地方競馬を含む競うスコア計算（改良版：indicesテーブルの指数を使用）
  * @returns { score: number, hasData: boolean } - score: 0〜100のスコア、hasData: 前走データの有無
  */
 export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: RecordRow }): { score: number; hasData: boolean } {
@@ -552,9 +600,13 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
   }
   
   let totalScore = 0;
-  let weights = [50, 10, 5, 0, 0];  // 前走、2走前、3走前の重み（100点満点換算）
   
-  // 前走・2走前・3走前を評価
+  // ============================================================
+  // 巻き返し指数スコア（50点満点）
+  // indicesテーブルのmakikaeshiを使用、地方競馬は別ロジック
+  // ============================================================
+  const weights = [35, 10, 5];  // 前走、2走前、3走前の重み
+  
   for (let i = 0; i < 3; i++) {
     const race = recent[i];
     if (!race) continue;
@@ -566,13 +618,35 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
       const localScore = computeLocalRaceScore(race, targetClass);
       totalScore += (localScore / 100) * weights[i];
     } else {
-      // 中央競馬の場合（既存ロジック）
-      const comeback = parseFloat(GET(race, 'comeback', '指数') || '0');
+      // 中央競馬の場合（indicesテーブルのmakikaeshiを使用）
+      const comeback = getIndexValue(race, 'makikaeshi');
       totalScore += (comeback / 10) * weights[i];
     }
   }
   
+  // ============================================================
+  // ポテンシャル指数スコア（15点満点）
+  // 直近3走の平均 + ボーナス
+  // ============================================================
+  const potential1 = getIndexValue(recent[0], 'potential');
+  const potential2 = getIndexValue(recent[1], 'potential');
+  const potential3 = getIndexValue(recent[2], 'potential');
+  
+  const potentialValues = [potential1, potential2, potential3].filter(v => v > 0);
+  const potentialAvg = potentialValues.length > 0 
+    ? potentialValues.reduce((a, b) => a + b, 0) / potentialValues.length 
+    : 0;
+  
+  const potentialBaseScore = (potentialAvg / 10) * 12;
+  let potentialBonus = 0;
+  if (potentialAvg >= 3.0) {
+    potentialBonus = Math.min(3, (potentialAvg - 3.0) * 0.5 + 0.5);
+  }
+  totalScore += potentialBaseScore + potentialBonus;
+  
+  // ============================================================
   // 前走の着順・着差・通過順位などの追加評価（中央・地方共通）
+  // ============================================================
   const race1 = recent[0];
   if (race1) {
     // 着順スコア（10点満点）

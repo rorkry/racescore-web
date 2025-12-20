@@ -260,6 +260,7 @@ export default function RaceCardPage() {
   };
 
   // PDF生成のためのスコア色取得（HEX形式）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getScoreColorHex = (rank: number, total: number) => {
     const percentage = (rank / total) * 100;
     if (percentage <= 10) return '#dc2626'; // red-600
@@ -269,6 +270,7 @@ export default function RaceCardPage() {
     return '#64748b'; // slate-500
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const getFrameColorHex = (waku: string) => {
     const wakuNum = parseInt(waku);
     const colors: Record<number, string> = {
