@@ -839,7 +839,7 @@ export default function RaceCardPage() {
                         {horse.kinryo.trim()}
                       </td>
                       <td className={`border border-slate-800 px-4 py-2 text-center text-lg ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                        {horse.hasData && horse.score != null ? Number(horse.score).toFixed(1) : 'データなし'}
+                        {horse.hasData && horse.score != null ? Math.round(horse.score) : 'データなし'}
                       </td>
                     </tr>
                     {expandedHorse === horse.umaban && (
