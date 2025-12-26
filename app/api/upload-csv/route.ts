@@ -133,13 +133,11 @@ function importWakujun(db: any, data: any[]): { count: number; date: string; isU
 }
 
 function importUmadata(db: any, data: any[]): { count: number; updated: number; inserted: number } {
-  // 既存データを削除せず、馬名ごとに更新または挿入
-  // umadataは過去走データなので、全削除して入れ替える方式を維持
-  // （毎回最新の過去走データを取得するため）
-  db.prepare('DELETE FROM umadata').run();
+  // race_id_new_no_horse_numをキーにしてUPSERT（既存は更新、新規は追加）
+  // 過去のデータは削除しない
 
-  // umadataテーブルのカラム（idとcreated_at以外）
-  const insertStmt = db.prepare(`
+  // UPSERT用のSQL（race_id_new_no_horse_numが重複した場合は更新可能な列のみ更新）
+  const upsertStmt = db.prepare(`
     INSERT INTO umadata (
       race_id_new_no_horse_num, date, distance, horse_number, horse_name, index_value,
       class_name, track_condition, finish_position, last_3f, finish_time, standard_time,
@@ -155,16 +153,35 @@ function importUmadata(db: any, data: any[]): { count: number; updated: number; 
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
+    ON CONFLICT(race_id_new_no_horse_num) DO UPDATE SET
+      index_value = excluded.index_value,
+      horse_mark = excluded.horse_mark,
+      horse_mark_2 = excluded.horse_mark_2,
+      horse_mark_3 = excluded.horse_mark_3,
+      horse_mark_4 = excluded.horse_mark_4,
+      horse_mark_5 = excluded.horse_mark_5,
+      horse_mark_6 = excluded.horse_mark_6,
+      horse_mark_7 = excluded.horse_mark_7,
+      horse_mark_7_2 = excluded.horse_mark_7_2,
+      horse_mark_8 = excluded.horse_mark_8,
+      rpci = excluded.rpci,
+      pci = excluded.pci,
+      good_run = excluded.good_run,
+      pci3 = excluded.pci3
   `);
 
   let count = 0;
-  const updated = 0;
+  let updated = 0;
   let inserted = 0;
   
   for (const row of data) {
     if (Array.isArray(row) && row.length >= 50) {
       try {
-        insertStmt.run(
+        const raceId = row[0];
+        // 既存データがあるか確認
+        const existing = db.prepare('SELECT id FROM umadata WHERE race_id_new_no_horse_num = ?').get(raceId);
+        
+        upsertStmt.run(
           row[0],  // race_id_new_no_horse_num
           row[1],  // date
           row[2],  // distance
@@ -217,9 +234,13 @@ function importUmadata(db: any, data: any[]): { count: number; updated: number; 
           row[49]  // horse_mark_8
         );
         count++;
-        inserted++;
-      } catch {
-        console.error('Error inserting umadata row');
+        if (existing) {
+          updated++;
+        } else {
+          inserted++;
+        }
+      } catch (e) {
+        console.error('Error upserting umadata row:', e);
       }
     }
   }
