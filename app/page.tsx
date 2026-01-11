@@ -5,7 +5,6 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
 import SagaAICard from '@/app/components/SagaAICard';
-import { CourseCharacteristicsCard } from '@/app/components/CourseCharacteristicsCard';
 import { getCourseInfo } from '@/lib/course-characteristics';
 
 interface PastRaceIndices {
@@ -710,9 +709,9 @@ export default function RaceCardPage() {
               <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">巻返し</th>
               <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F</th>
               <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">POT</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">REV</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">CSH</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">ポテ</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">レボ</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">クッション</th>
             </tr>
           </thead>
           <tbody>
@@ -1003,18 +1002,6 @@ export default function RaceCardPage() {
                 raceNumber={selectedRace}
               />
             )}
-
-            {/* コース特性カード（新規追加） */}
-            {raceCard.raceInfo && (() => {
-              const courseData = getCourseInfo(
-                raceCard.raceInfo.place,
-                parseInt(raceCard.raceInfo.distance, 10),
-                raceCard.raceInfo.trackType === '芝' ? '芝' : 'ダート'
-              );
-              return courseData ? (
-                <CourseCharacteristicsCard courseData={courseData} compact={false} />
-              ) : null;
-            })()}
 
             {/* 既存のレースカード表示 */}
             <div className="bg-white rounded-lg shadow-lg p-3 sm:p-6">

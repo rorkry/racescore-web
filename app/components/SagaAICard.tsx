@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 
 interface SagaAnalysis {
   horseName: string;
@@ -67,6 +67,87 @@ const MEDAL_ICONS: Record<number, { icon: string; color: string }> = {
   2: { icon: '▲', color: 'text-orange-400' },
 };
 
+// レーティングの順序（調整用）
+const RATING_ORDER: ('S' | 'A' | 'B' | 'C' | 'D')[] = ['S', 'A', 'B', 'C', 'D'];
+
+// バイアスに基づく評価調整を計算
+function calculateBiasAdjustment(
+  horseNumber: number,
+  totalHorses: number,
+  runningStyle: string | undefined,
+  bias: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro'
+): { adjustment: -1 | 0 | 1; comment: string | null } {
+  if (bias === 'none') {
+    return { adjustment: 0, comment: null };
+  }
+
+  // 枠順の判定（馬番から推測：1-4番が内枠、最後の4頭が外枠）
+  const isInnerPost = horseNumber <= Math.ceil(totalHorses / 3);
+  const isOuterPost = horseNumber > totalHorses - Math.ceil(totalHorses / 3);
+  
+  // 脚質の判定
+  const isFrontRunner = runningStyle === 'escape' || runningStyle === 'lead' || 
+                        runningStyle?.includes('逃') || runningStyle?.includes('先');
+  const isCloser = runningStyle === 'sashi' || runningStyle === 'oikomi' ||
+                   runningStyle?.includes('差') || runningStyle?.includes('追');
+
+  let adjustment: -1 | 0 | 1 = 0;
+  let comment: string | null = null;
+
+  switch (bias) {
+    case 'uchi':
+      if (isInnerPost) {
+        adjustment = 1;
+        comment = '🎯 内枠有利で評価↑';
+      } else if (isOuterPost) {
+        adjustment = -1;
+        comment = '⚠️ 内有利レースで外枠不利';
+      }
+      break;
+    case 'soto':
+      if (isOuterPost) {
+        adjustment = 1;
+        comment = '🎯 外枠有利で評価↑';
+      } else if (isInnerPost) {
+        adjustment = -1;
+        comment = '⚠️ 外有利レースで内枠不利';
+      }
+      break;
+    case 'mae':
+      if (isFrontRunner) {
+        adjustment = 1;
+        comment = '🎯 前有利で逃げ先行馬評価↑';
+      } else if (isCloser) {
+        adjustment = -1;
+        comment = '⚠️ 前有利レースで差し追込不利';
+      }
+      break;
+    case 'ushiro':
+      if (isCloser) {
+        adjustment = 1;
+        comment = '🎯 後有利で差し追込馬評価↑';
+      } else if (isFrontRunner) {
+        adjustment = -1;
+        comment = '⚠️ 後有利レースで逃げ先行不利';
+      }
+      break;
+  }
+
+  return { adjustment, comment };
+}
+
+// レーティングを調整
+function adjustRating(
+  originalRating: 'S' | 'A' | 'B' | 'C' | 'D',
+  adjustment: -1 | 0 | 1
+): 'S' | 'A' | 'B' | 'C' | 'D' {
+  if (adjustment === 0) return originalRating;
+  
+  const currentIndex = RATING_ORDER.indexOf(originalRating);
+  const newIndex = Math.max(0, Math.min(RATING_ORDER.length - 1, currentIndex - adjustment));
+  return RATING_ORDER[newIndex];
+}
+
 export default function SagaAICard({ year, date, place, raceNumber, trackCondition: propTrackCondition = '良' }: Props) {
   const [analyses, setAnalyses] = useState<SagaAnalysis[]>([]);
   const [aiAnalyses, setAiAnalyses] = useState<OpenAISagaResult[] | null>(null);
@@ -81,14 +162,19 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   // スマホ判定とカード開閉状態
   const [isMobile, setIsMobile] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(true);
+  const initialCheckDone = useRef(false);
   
-  // スマホ判定（初回のみ）
+  // スマホ判定（初回のみカード状態を変更、以降はisMobileのみ更新）
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile) {
+      // 初回のみカードを閉じる（スクロールやリサイズでは閉じない）
+      if (!initialCheckDone.current && mobile) {
         setCardExpanded(false);
+        initialCheckDone.current = true;
+      } else if (!initialCheckDone.current) {
+        initialCheckDone.current = true;
       }
     };
     
@@ -99,6 +185,9 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   
   // 馬場状態（propsから初期値を受け取り、内部で管理）
   const [trackCondition, setTrackCondition] = useState<'良' | '稍' | '重' | '不'>(propTrackCondition);
+  
+  // レースバイアス（内/外/前/後）
+  const [bias, setBias] = useState<'none' | 'uchi' | 'soto' | 'mae' | 'ushiro'>('none');
 
   // ルールベース分析を取得
   const fetchRuleBasedAnalysis = useCallback(async () => {
@@ -256,7 +345,7 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       {(cardExpanded || !isMobile) && (
       <>
       {/* 馬場状態セレクタ */}
-      <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 flex-wrap">
         <span className="text-[10px] sm:text-xs text-slate-400">馬場状態:</span>
         {[
           { key: '良' as const, label: '良', color: 'bg-green-500/20 border-green-500/50' },
@@ -276,8 +365,32 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
             {opt.label}
           </button>
         ))}
+      </div>
+      
+      {/* レースバイアスセレクタ */}
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
+        <span className="text-[10px] sm:text-xs text-slate-400">バイアス:</span>
+        {[
+          { key: 'none' as const, label: '無し', color: 'bg-slate-500/20 border-slate-500/50' },
+          { key: 'uchi' as const, label: '内有利', color: 'bg-cyan-500/20 border-cyan-500/50' },
+          { key: 'soto' as const, label: '外有利', color: 'bg-purple-500/20 border-purple-500/50' },
+          { key: 'mae' as const, label: '前有利', color: 'bg-pink-500/20 border-pink-500/50' },
+          { key: 'ushiro' as const, label: '後有利', color: 'bg-blue-500/20 border-blue-500/50' },
+        ].map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => setBias(opt.key)}
+            className={`px-2 sm:px-3 py-1.5 sm:py-1 text-[10px] sm:text-xs rounded-md border transition-all min-h-[36px] sm:min-h-0 ${
+              bias === opt.key
+                ? `${opt.color} text-white`
+                : 'bg-slate-700/50 border-slate-600/50 text-slate-400 hover:bg-slate-600/50'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
         <span className="hidden sm:inline text-xs text-slate-500 ml-2">
-          ※馬場状態で枠順有利不利が変化します
+          ※レースバイアスで評価が調整されます
         </span>
       </div>
 
@@ -287,6 +400,53 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
           <pre className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
             {summary}
           </pre>
+        </div>
+      )}
+      
+      {/* バイアス調整サマリー */}
+      {bias !== 'none' && analyses.length > 0 && (
+        <div className="bg-gradient-to-r from-cyan-900/30 to-purple-900/30 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4 border border-cyan-500/30">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-cyan-400 font-bold text-sm">🎯 バイアス分析</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">
+              {bias === 'uchi' ? '内有利' : bias === 'soto' ? '外有利' : bias === 'mae' ? '前有利' : '後有利'}
+            </span>
+          </div>
+          <div className="text-xs sm:text-sm text-slate-200 space-y-1">
+            {(() => {
+              const totalHorses = analyses.length;
+              const adjustments: { up: string[]; down: string[] } = { up: [], down: [] };
+              
+              analyses.slice(0, 5).forEach((a) => {
+                const result = calculateBiasAdjustment(a.horseNumber, totalHorses, undefined, bias);
+                if (result.adjustment > 0) {
+                  adjustments.up.push(`${a.horseNumber}番${a.horseName}`);
+                } else if (result.adjustment < 0) {
+                  adjustments.down.push(`${a.horseNumber}番${a.horseName}`);
+                }
+              });
+              
+              return (
+                <>
+                  {adjustments.up.length > 0 && (
+                    <p className="text-green-300">
+                      <span className="font-medium">↑ 評価UP:</span> {adjustments.up.join('、')}
+                    </p>
+                  )}
+                  {adjustments.down.length > 0 && (
+                    <p className="text-orange-300">
+                      <span className="font-medium">↓ 評価DOWN:</span> {adjustments.down.join('、')}
+                    </p>
+                  )}
+                  <p className="text-slate-400 text-xs mt-2">
+                    ※ {bias === 'uchi' || bias === 'soto' 
+                      ? '枠順（馬番）に基づいて評価を調整しています' 
+                      : '脚質（逃げ・先行 vs 差し・追込）に基づいて評価を調整しています'}
+                  </p>
+                </>
+              );
+            })()}
+          </div>
         </div>
       )}
 
@@ -301,9 +461,15 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
           const aiResult = isAI ? (item as OpenAISagaResult) : null;
           const horseNumber = isAI ? aiResult!.horseNumber : analysis.horseNumber;
           const horseName = isAI ? aiResult!.horseName : analysis.horseName;
-          const rating = isAI ? aiResult!.overallRating : analysis.courseMatch.rating;
+          const originalRating = isAI ? aiResult!.overallRating : analysis.courseMatch.rating;
           const kisoScore = analysis.kisoScore || 0;  // 競うスコア
           const tags = isAI ? aiResult!.tags : analysis.tags;
+          
+          // バイアス調整を計算
+          const totalHorses = displayData.length > 3 ? (expanded ? 10 : analyses.length) : analyses.length;
+          const runningStyle = analysis.debugInfo?.lastRaceCondition?.gateAdvantage; // 脚質情報があれば使用
+          const biasResult = calculateBiasAdjustment(horseNumber, totalHorses, runningStyle, bias);
+          const rating = adjustRating(originalRating, biasResult.adjustment);
           
           const medal = MEDAL_ICONS[idx] || { icon: '△', color: 'text-slate-500' };
           
@@ -329,6 +495,11 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
                   {/* 総合レーティングバッジ */}
                   <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold flex-shrink-0 ${RATING_COLORS[rating]}`}>
                     {rating}
+                    {biasResult.adjustment !== 0 && (
+                      <span className="ml-1 text-[8px]">
+                        ({biasResult.adjustment > 0 ? '↑' : '↓'})
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="text-right flex-shrink-0">
@@ -343,6 +514,17 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
                   </span>
                 </div>
               </div>
+              
+              {/* バイアスコメント */}
+              {biasResult.comment && (
+                <div className={`mb-2 px-2 py-1 rounded text-[10px] sm:text-xs ${
+                  biasResult.adjustment > 0 
+                    ? 'bg-green-500/20 text-green-300 border border-green-500/30' 
+                    : 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                }`}>
+                  {biasResult.comment}
+                </div>
+              )}
 
               {/* タグ */}
               {tags.length > 0 && (

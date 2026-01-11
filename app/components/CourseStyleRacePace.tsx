@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import type { RacePacePrediction, HorsePositionPrediction, RunningStyle } from '@/types/race-pace-types';
 import {
   determineSurgeIntensity
@@ -88,15 +88,19 @@ export default function CourseStyleRacePace({
   // スマホ判定とカード開閉状態
   const [isMobile, setIsMobile] = useState(false);
   const [cardExpanded, setCardExpanded] = useState(true); // デフォルトは開く
+  const initialCheckDone = useRef(false);
   
-  // スマホ判定（初回のみ）
+  // スマホ判定（初回のみカード状態を変更、以降はisMobileのみ更新）
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      // スマホの場合はデフォルトで閉じる
-      if (mobile) {
+      // 初回のみカードを閉じる（スクロールやリサイズでは閉じない）
+      if (!initialCheckDone.current && mobile) {
         setCardExpanded(false);
+        initialCheckDone.current = true;
+      } else if (!initialCheckDone.current) {
+        initialCheckDone.current = true;
       }
     };
     
@@ -534,11 +538,18 @@ export default function CourseStyleRacePace({
             radial-gradient(circle at 20% 30%, rgba(120, 160, 255, 0.15) 0%, transparent 50%),
             radial-gradient(circle at 80% 70%, rgba(180, 140, 255, 0.1) 0%, transparent 50%),
             linear-gradient(135deg, #f0f2f5 0%, #e8eef4 100%);
-          padding: 24px;
-          border-radius: 20px;
+          padding: 12px;
+          border-radius: 12px;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           position: relative;
           overflow: hidden;
+        }
+        
+        @media (min-width: 640px) {
+          .modern-race-pace-container {
+            padding: 24px;
+            border-radius: 20px;
+          }
         }
         
         /* グレインテクスチャ */
@@ -580,9 +591,16 @@ export default function CourseStyleRacePace({
         }
         
         .header-card {
-          padding: 20px 24px;
-          margin-bottom: 20px;
+          padding: 10px 12px;
+          margin-bottom: 12px;
           animation: fadeIn 0.6s ease-out;
+        }
+        
+        @media (min-width: 640px) {
+          .header-card {
+            padding: 20px 24px;
+            margin-bottom: 20px;
+          }
         }
         
         @keyframes fadeIn {
@@ -591,11 +609,18 @@ export default function CourseStyleRacePace({
         }
         
         .main-title {
-          font-size: 24px;
+          font-size: 14px;
           font-weight: 700;
           color: #ffffff;
-          margin: 0 0 16px 0;
+          margin: 0;
           letter-spacing: -0.02em;
+        }
+        
+        @media (min-width: 640px) {
+          .main-title {
+            font-size: 24px;
+            margin: 0 0 16px 0;
+          }
         }
         
         .meta-grid {
@@ -899,13 +924,13 @@ export default function CourseStyleRacePace({
         >
           <h2 className="main-title">🏇 展開予想カード</h2>
           {isMobile && (
-            <span className={`text-white text-xl transition-transform duration-300 ${cardExpanded ? 'rotate-180' : ''}`}>
+            <span className={`text-white text-base transition-transform duration-300 ${cardExpanded ? 'rotate-180' : ''}`}>
               ▼
             </span>
           )}
         </div>
         {isMobile && !cardExpanded && (
-          <p className="text-sm text-white/60 mt-2">タップして展開</p>
+          <p className="text-xs text-white/60 mt-1">タップして展開</p>
         )}
         {(cardExpanded || !isMobile) && (
           <>
