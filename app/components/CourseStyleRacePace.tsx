@@ -85,6 +85,26 @@ export default function CourseStyleRacePace({
   const [error, setError] = useState<string | null>(null);
   const [expandedTable, setExpandedTable] = React.useState(false);
   
+  // スマホ判定とカード開閉状態
+  const [isMobile, setIsMobile] = useState(false);
+  const [cardExpanded, setCardExpanded] = useState(true); // デフォルトは開く
+  
+  // スマホ判定（初回のみ）
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      // スマホの場合はデフォルトで閉じる
+      if (mobile) {
+        setCardExpanded(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   // バイアス変更時にlocalStorageに保存
   const handleBiasChange = (newBias: typeof bias) => {
     setBias(newBias);
@@ -871,7 +891,21 @@ export default function CourseStyleRacePace({
       
       {/* ヘッダーカード */}
       <div className="glass-card header-card">
-        <h2 className="main-title">🏇 展開予想カード</h2>
+        <div 
+          className="flex justify-between items-center cursor-pointer"
+          onClick={() => isMobile && setCardExpanded(!cardExpanded)}
+        >
+          <h2 className="main-title">🏇 展開予想カード</h2>
+          {isMobile && (
+            <span className={`text-white text-xl transition-transform duration-300 ${cardExpanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          )}
+        </div>
+        {isMobile && !cardExpanded && (
+          <p className="text-sm text-white/60 mt-2">タップして展開</p>
+        )}
+        {(cardExpanded || !isMobile) && (
         <div className="meta-grid">
           <span className={`pace-badge pace-${prediction.expectedPace}`}>
             {PACE_LABELS[prediction.expectedPace]}
@@ -932,9 +966,11 @@ export default function CourseStyleRacePace({
             </button>
           ))}
         </div>
+        )}
       </div>
 
       {/* コース表示 */}
+      {(cardExpanded || !isMobile) && (
       <div className="course-grid">
         {/* スタート後 */}
         <div className="glass-card course-panel">
@@ -1001,7 +1037,7 @@ export default function CourseStyleRacePace({
       </div>
 
       {/* 詳細テーブル */}
-      <div className="glass-card detail-section">
+      <div className="glass-card detail-section" style={{ marginTop: '20px' }}>
         <div className="detail-header" onClick={() => setExpandedTable(!expandedTable)}>
           <h4 className="detail-title">詳細分析</h4>
           <span className={`toggle-icon ${expandedTable ? 'toggle-icon-expanded' : ''}`}>▼</span>
@@ -1073,6 +1109,7 @@ export default function CourseStyleRacePace({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

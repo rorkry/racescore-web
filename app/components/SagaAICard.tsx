@@ -78,6 +78,25 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   
+  // スマホ判定とカード開閉状態
+  const [isMobile, setIsMobile] = useState(false);
+  const [cardExpanded, setCardExpanded] = useState(true);
+  
+  // スマホ判定（初回のみ）
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setCardExpanded(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   // 馬場状態（propsから初期値を受け取り、内部で管理）
   const [trackCondition, setTrackCondition] = useState<'良' | '稍' | '重' | '不'>(propTrackCondition);
 
@@ -187,13 +206,23 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   return (
     <div className="bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 rounded-xl p-6 shadow-xl border border-slate-700/50">
       {/* ヘッダー */}
-      <div className="flex items-center justify-between mb-4">
+      <div 
+        className={`flex items-center justify-between mb-4 ${isMobile ? 'cursor-pointer' : ''}`}
+        onClick={() => isMobile && setCardExpanded(!cardExpanded)}
+      >
         <h3 className="text-xl font-bold text-white flex items-center gap-2">
           <span className="text-2xl">🧠</span>
           俺AI分析
-          <span className="text-xs font-normal text-slate-400 ml-2">
-            コース適性・ローテーション・距離適性
-          </span>
+          {!isMobile && (
+            <span className="text-xs font-normal text-slate-400 ml-2">
+              コース適性・ローテーション・距離適性
+            </span>
+          )}
+          {isMobile && (
+            <span className={`text-white text-lg transition-transform duration-300 ml-2 ${cardExpanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          )}
         </h3>
         
         {/* AI切替スイッチ */}
@@ -220,6 +249,12 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
         )}
       </div>
       
+      {isMobile && !cardExpanded && (
+        <p className="text-sm text-slate-400">タップして展開</p>
+      )}
+      
+      {(cardExpanded || !isMobile) && (
+      <>
       {/* 馬場状態セレクタ */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className="text-xs text-slate-400">馬場状態:</span>
@@ -469,6 +504,8 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
             💡 <code className="bg-slate-700 px-1 rounded">.env.local</code> に <code className="bg-slate-700 px-1 rounded">OPENAI_API_KEY</code> を設定するとGPT強化モードが使えます
           </p>
         </div>
+      )}
+      </>
       )}
     </div>
   );
