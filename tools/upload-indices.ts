@@ -11,18 +11,38 @@ import * as fs from 'fs';
 import * as path from 'path';
 import Papa from 'papaparse';
 
-// Index folder configuration
-const INDEX_FOLDERS = [
-  { name: 'L4F', path: 'C:\\競馬データ\\L4F\\2025' },
-  { name: 'T2F', path: 'C:\\競馬データ\\T2F\\2025' },
-  { name: 'potential', path: 'C:\\競馬データ\\ポテンシャル指数\\2025' },
-  { name: 'revouma', path: 'C:\\競馬データ\\レボウマ\\2025' },
-  { name: 'makikaeshi', path: 'C:\\競馬データ\\巻き返し指数\\2025' },
-  { name: 'cushion', path: 'C:\\競馬データ\\クッション値\\2025' },
+// Index folder configuration (base paths - year folders will be auto-detected)
+const INDEX_BASE_FOLDERS = [
+  { name: 'L4F', basePath: 'C:\\競馬データ\\L4F' },
+  { name: 'T2F', basePath: 'C:\\競馬データ\\T2F' },
+  { name: 'potential', basePath: 'C:\\競馬データ\\ポテンシャル指数' },
+  { name: 'revouma', basePath: 'C:\\競馬データ\\レボウマ' },
+  { name: 'makikaeshi', basePath: 'C:\\競馬データ\\巻き返し指数' },
+  { name: 'cushion', basePath: 'C:\\競馬データ\\クッション値' },
 ];
 
-// API endpoint
-const API_URL = 'http://localhost:3000/api/upload-indices';
+/**
+ * Get all year folders (2024, 2025, 2026, etc.) from a base path
+ */
+function getYearFolders(basePath: string): string[] {
+  if (!fs.existsSync(basePath)) {
+    return [];
+  }
+  
+  const entries = fs.readdirSync(basePath, { withFileTypes: true });
+  const yearFolders = entries
+    .filter(e => e.isDirectory() && /^\d{4}$/.test(e.name))
+    .map(e => path.join(basePath, e.name))
+    .sort();
+  
+  return yearFolders;
+}
+
+// API endpoint (port will be auto-detected or default to 3000)
+const DEFAULT_PORT = process.env.PORT || '3000';
+const API_URL = `http://localhost:${DEFAULT_PORT}/api/upload-indices`;
+
+console.log(`Using API endpoint: ${API_URL}`);
 
 interface IndexRecord {
   race_id: string;
@@ -30,20 +50,18 @@ interface IndexRecord {
 }
 
 /**
- * Read all CSV files from a folder and get index data
+ * Read all CSV files from a single folder and get index data
  */
-function readIndexFolder(folderPath: string, indexName: string): Map<string, number> {
+function readCsvFilesFromFolder(folderPath: string): Map<string, number> {
   const indexMap = new Map<string, number>();
   
   if (!fs.existsSync(folderPath)) {
-    console.warn(`WARNING: Folder not found: ${folderPath}`);
     return indexMap;
   }
 
   const files = fs.readdirSync(folderPath).filter(f => 
     f.endsWith('.csv') && !f.includes('作成用')
   );
-  console.log(`[${indexName}] Found ${files.length} CSV files`);
 
   for (const file of files) {
     const filePath = path.join(folderPath, file);
@@ -65,6 +83,50 @@ function readIndexFolder(folderPath: string, indexName: string): Map<string, num
         }
       }
     }
+  }
+
+  return indexMap;
+}
+
+/**
+ * Read all CSV files from base folder (including all year subfolders)
+ */
+function readIndexFolder(basePath: string, indexName: string): Map<string, number> {
+  const indexMap = new Map<string, number>();
+  
+  if (!fs.existsSync(basePath)) {
+    console.warn(`WARNING: Base folder not found: ${basePath}`);
+    return indexMap;
+  }
+
+  // Get all year folders
+  const yearFolders = getYearFolders(basePath);
+  
+  if (yearFolders.length === 0) {
+    // If no year folders, try reading CSVs directly from base folder
+    console.log(`[${indexName}] No year folders found, reading from base folder`);
+    const directMap = readCsvFilesFromFolder(basePath);
+    for (const [key, value] of directMap) {
+      indexMap.set(key, value);
+    }
+  } else {
+    // Read from each year folder
+    const years = yearFolders.map(f => path.basename(f)).join(', ');
+    console.log(`[${indexName}] Found year folders: ${years}`);
+    
+    let totalFiles = 0;
+    for (const yearFolder of yearFolders) {
+      const files = fs.readdirSync(yearFolder).filter(f => 
+        f.endsWith('.csv') && !f.includes('作成用')
+      );
+      totalFiles += files.length;
+      
+      const yearMap = readCsvFilesFromFolder(yearFolder);
+      for (const [key, value] of yearMap) {
+        indexMap.set(key, value);
+      }
+    }
+    console.log(`  -> ${totalFiles} CSV files found`);
   }
 
   console.log(`  -> ${indexMap.size} records loaded`);
@@ -167,11 +229,11 @@ async function main() {
   console.log('============================================================');
   console.log();
 
-  // Read data from each index folder
+  // Read data from each index folder (auto-detecting year subfolders)
   const indexMaps = new Map<string, Map<string, number>>();
   
-  for (const folder of INDEX_FOLDERS) {
-    const map = readIndexFolder(folder.path, folder.name);
+  for (const folder of INDEX_BASE_FOLDERS) {
+    const map = readIndexFolder(folder.basePath, folder.name);
     indexMaps.set(folder.name, map);
   }
 

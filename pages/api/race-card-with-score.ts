@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db-new';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
+import { parseFinishPosition } from '../../utils/parse-helpers';
 
 function GET(row: any, ...keys: string[]): string {
   for (const k of keys) {
@@ -19,12 +20,12 @@ function normalizeHorseName(name: string): string {
     .trim();
 }
 
-function generateIndexRaceId(date: string, place: string, raceNumber: string, umaban: string): string {
-  const year = '2025';
+function generateIndexRaceId(date: string, place: string, raceNumber: string, umaban: string, year?: number): string {
+  const yearStr = year ? String(year) : '2025';
   const dateStr = date.padStart(4, '0');
   const month = dateStr.substring(0, 2);
   const day = dateStr.substring(2, 4);
-  const fullDate = `${year}${month}${day}`;
+  const fullDate = `${yearStr}${month}${day}`;
   
   const placeCode: { [key: string]: string } = {
     '札幌': '01', '函館': '02', '福島': '03', '新潟': '04',
@@ -45,8 +46,7 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   for (const key in dbRow) {
     result[key] = dbRow[key] !== null && dbRow[key] !== undefined ? String(dbRow[key]) : '';
   }
-  result['指数'] = result['index_value'] || '';
-  result['comeback'] = result['index_value'] || '';
+  result['4角位置'] = result['index_value'] || '';  // 4コーナーを回った位置（0=最内, 4=大外）
   result['着順'] = result['finish_position'] || '';
   result['finish'] = result['finish_position'] || '';
   result['着差'] = result['margin'] || '';
@@ -71,6 +71,11 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   // indicesオブジェクトを保持（computeKisoScoreで使用）
   if (dbRow.indices) {
     result['indices'] = dbRow.indices;
+    // indicesから各指数をマッピング（表示用）
+    result['巻き返し指数'] = dbRow.indices.makikaeshi !== null && dbRow.indices.makikaeshi !== undefined ? String(dbRow.indices.makikaeshi) : '';
+    result['ポテンシャル指数'] = dbRow.indices.potential !== null && dbRow.indices.potential !== undefined ? String(dbRow.indices.potential) : '';
+    result['L4F指数'] = dbRow.indices.L4F !== null && dbRow.indices.L4F !== undefined ? String(dbRow.indices.L4F) : '';
+    result['T2F指数'] = dbRow.indices.T2F !== null && dbRow.indices.T2F !== undefined ? String(dbRow.indices.T2F) : '';
   }
   return result as RecordRow;
 }
@@ -94,7 +99,7 @@ function mapWakujunToRecordRow(dbRow: any): RecordRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { date, place, raceNumber } = req.query;
+  const { date, place, raceNumber, year } = req.query;
 
   if (!date || !place || !raceNumber) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -102,12 +107,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const db = getRawDb();
+    const yearFilter = year ? parseInt(year as string, 10) : null;
 
     const horses = db.prepare(`
       SELECT * FROM wakujun
-      WHERE date = ? AND place = ? AND race_number = ?
+      WHERE date = ? AND place = ? AND race_number = ? ${yearFilter ? 'AND year = ?' : ''}
       ORDER BY CAST(umaban AS INTEGER)
-    `).all(date, place, raceNumber);
+    `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber]));
 
     if (!horses || horses.length === 0) {
       return res.status(404).json({ error: 'No horses found for this race' });
@@ -116,15 +122,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const horsesWithScore = horses.map((horse: any) => {
       const horseName = normalizeHorseName(GET(horse, 'umamei'));
 
-      const pastRacesRaw = db.prepare(`
+      const pastRacesRawAll = db.prepare(`
         SELECT * FROM umadata
         WHERE TRIM(horse_name) = ?
         ORDER BY date DESC
-        LIMIT 5
+        LIMIT 100
       `).all(horseName);
 
+      // race_id_new_no_horse_numで重複排除（同一レースの重複を除去）
+      const uniquePastRaces = Array.from(
+        new Map(
+          pastRacesRawAll.map((race: any) => [
+            race.race_id_new_no_horse_num || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
+            race
+          ])
+        ).values()
+      ).slice(0, 5) as any[]; // 5走まで
+
       // 過去走データに指数を紐づけ
-      const pastRacesWithIndices = pastRacesRaw.map((race: any) => {
+      const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
         const raceIdBase = race.race_id_new_no_horse_num || '';
         const horseNum = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
@@ -159,7 +175,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const indexRaceId = generateIndexRaceId(
-        String(date), String(place), String(raceNumber), GET(horse, 'umaban')
+        String(date), String(place), String(raceNumber), GET(horse, 'umaban'), yearFilter || undefined
       );
       
       let indices = null;

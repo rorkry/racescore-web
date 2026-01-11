@@ -14,7 +14,7 @@ export const umadata = sqliteTable('umadata', {
   距離: text('distance'),
   馬番: text('horse_number'),
   馬名: text('horse_name'),
-  指数: text('index_value'),
+  コーナー4位置: text('index_value'),  // 4コーナーを回った位置（0=最内, 4=大外）
   クラス名: text('class_name'),
   馬場状態: text('track_condition'),
   着順: text('finish_position'),

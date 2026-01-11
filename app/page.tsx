@@ -3,6 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
+import SagaAICard from '@/app/components/SagaAICard';
+import { CourseCharacteristicsCard } from '@/app/components/CourseCharacteristicsCard';
+import { getCourseInfo } from '@/lib/course-characteristics';
 
 interface PastRaceIndices {
   L4F: number | null;
@@ -20,7 +24,7 @@ interface PastRace {
   finish_position: string;
   finish_time: string;
   margin: string;
-  index_value: string;
+  index_value: string;  // 4コーナーを回った位置（0=最内, 4=大外）
   corner_2: string;
   corner_3: string;
   corner_4: string;
@@ -113,8 +117,27 @@ function formatDateForDisplay(dateStr: string): string {
   return dateStr;
 }
 
+// 今日の日付をMMDD形式で取得（例: 12/27 → "1227"）
+function getTodayDate(): string {
+  // ブラウザのローカルタイムゾーンを使用（日本で使用する場合はJST）
+  const now = new Date();
+  
+  // 日本時間（JST）で取得するため、UTC+9のオフセットを適用
+  // または、ブラウザのローカルタイムを使用（日本で使用する場合は自動的にJST）
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${month}${day}`;
+}
+
+// 今日の年を取得
+function getTodayYear(): number {
+  return new Date().getFullYear();
+}
+
 export default function RaceCardPage() {
-  const [date, setDate] = useState('1220');
+  // 今日の日付と年を初期値として使用
+  const [selectedYear, setSelectedYear] = useState<number>(getTodayYear());
+  const [date, setDate] = useState(getTodayDate());
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<string>('');
@@ -125,44 +148,66 @@ export default function RaceCardPage() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [expandedHorse, setExpandedHorse] = useState<string | null>(null);
   const [venuePdfGenerating, setVenuePdfGenerating] = useState<string | null>(null);
+  const [timeHighlights, setTimeHighlights] = useState<Map<string, { count: number; timeDiff: number }>>(new Map());
 
-  // 利用可能な日付一覧を取得
+  // 利用可能な日付一覧を取得（年が変わったら再取得）
   useEffect(() => {
     fetchAvailableDates();
-  }, []);
+  }, [selectedYear]);
 
   const fetchAvailableDates = async () => {
     try {
-      const res = await fetch('/api/races');
+      const res = await fetch(`/api/races?year=${selectedYear}`);
       if (!res.ok) throw new Error('Failed to fetch dates');
       const data = await res.json();
       const dates = (data.dates || []).map((d: { date: string }) => d.date);
       setAvailableDates(dates);
+      
+      // 利用可能な日付が取得できたら、今日の日付があれば自動選択
+      const today = getTodayDate();
+      const currentYear = getTodayYear();
+      console.log('今日の日付:', today, '今日の年:', currentYear, '選択中の年:', selectedYear, '利用可能な日付:', dates);
+      
+      // 選択中の年が今年で、今日の日付がある場合は自動選択
+      if (selectedYear === currentYear && dates.includes(today)) {
+        console.log('今日の日付が見つかりました。自動選択します。');
+        setDate(today);
+      } else if (dates.length > 0) {
+        // それ以外の場合は、最新の日付を選択
+        console.log('最新の日付を選択します:', dates[0]);
+        setDate(dates[0]);
+      }
     } catch (err: any) {
       console.error('Failed to fetch available dates:', err);
     }
   };
 
   useEffect(() => {
-    if (date) {
+    if (date && selectedYear) {
       fetchVenues();
     }
-  }, [date]);
+  }, [date, selectedYear]);
 
   const fetchVenues = async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/races?date=${date}`);
+      const res = await fetch(`/api/races?date=${date}&year=${selectedYear}`);
       if (!res.ok) throw new Error('Failed to fetch venues');
       const data = await res.json();
+      console.log('fetchVenues response:', data);
       setVenues(data.venues || []);
       
       if (data.venues && data.venues.length > 0) {
         setSelectedVenue(data.venues[0].place);
+        // 最初のレースを自動選択
+        if (data.venues[0].races && data.venues[0].races.length > 0) {
+          setSelectedRace(data.venues[0].races[0].race_number);
+        }
       }
     } catch (err: any) {
       setError(err.message);
+      console.error('fetchVenues error:', err);
     } finally {
       setLoading(false);
     }
@@ -172,12 +217,25 @@ export default function RaceCardPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`/api/race-card-with-score?date=${date}&place=${place}&raceNumber=${raceNumber}`);
-      if (!res.ok) throw new Error('Failed to fetch race card');
+      const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
+      console.log('fetchRaceCard URL:', url);
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch race card: ${res.status}`);
+      }
       const data = await res.json();
+      console.log('fetchRaceCard response:', data);
+      // デバッグ: 過去走件数を確認
+      if (data.horses && data.horses.length > 0) {
+        data.horses.forEach((horse: any, idx: number) => {
+          console.log(`馬${idx + 1} (${horse.umamei}): past件数=${horse.past?.length || 0}, past_races件数=${horse.past_races?.length || 0}`);
+        });
+      }
       setRaceCard(data);
       setExpandedHorse(null);
     } catch (err: any) {
+      console.error('fetchRaceCard error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -191,6 +249,78 @@ export default function RaceCardPage() {
       fetchRaceCard(selectedVenue, selectedRace);
     }
   }, [selectedVenue, selectedRace]);
+
+  // 時計ハイライトを取得（軽量API使用）
+  useEffect(() => {
+    const fetchTimeHighlights = async () => {
+      if (!date || !selectedVenue) return;
+      
+      try {
+        const res = await fetch(`/api/time-check?date=${date}&place=${encodeURIComponent(selectedVenue)}&year=${selectedYear}`);
+        
+        if (res.ok) {
+          const data = await res.json();
+          const newHighlights = new Map<string, { count: number; timeDiff: number }>();
+          
+          for (const result of data.results || []) {
+            if (result.hasExcellentTime || result.hasGoodTime) {
+              const key = `${selectedVenue}_${result.raceNumber}`;
+              newHighlights.set(key, {
+                count: result.hasExcellentTime ? 2 : 1,
+                timeDiff: result.bestTimeDiff ?? 1.0,
+              });
+            }
+          }
+          
+          setTimeHighlights(newHighlights);
+          console.log('[TimeCheck] ハイライト更新:', newHighlights.size, '件');
+        }
+      } catch (err) {
+        console.error('[TimeCheck] エラー:', err);
+      }
+    };
+    
+    fetchTimeHighlights();
+  }, [date, selectedYear, selectedVenue]);
+
+  // 俺AIプリフェッチ（会場選択時に裏で先読み）
+  useEffect(() => {
+    const prefetchSagaAI = async () => {
+      if (!date || !selectedVenue || currentRaces.length === 0) return;
+      
+      // 最初の3レースだけ先読み（負荷軽減）
+      const racesToPrefetch = currentRaces.slice(0, 3);
+      
+      for (const race of racesToPrefetch) {
+        // 100ms間隔で順次リクエスト（サーバー負荷軽減）
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        try {
+          // fetchはキャッシュされるので、バックグラウンドで先読み
+          fetch('/api/saga-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              year: String(selectedYear),
+              date,
+              place: selectedVenue,
+              raceNumber: race.race_number,
+              useAI: false,
+              trackCondition: '良',
+            }),
+          }).catch(() => {}); // エラーは無視（プリフェッチなので）
+        } catch {
+          // プリフェッチのエラーは無視
+        }
+      }
+      
+      console.log(`[Prefetch] ${selectedVenue}の最初の${racesToPrefetch.length}レースを先読み中`);
+    };
+    
+    // 少し遅延してから先読み開始（メインUIの描画を優先）
+    const timer = setTimeout(prefetchSagaAI, 500);
+    return () => clearTimeout(timer);
+  }, [date, selectedYear, selectedVenue, currentRaces]);
 
   // スコアの文字色を取得（背景色ではなく文字色のみ）
   const getScoreTextColor = (score: number, hasData: boolean) => {
@@ -226,13 +356,16 @@ export default function RaceCardPage() {
     return 'text-slate-800';
   };
 
-  // 巻き返し指数の色を取得（文字色のみ）
-  const getIndexColor = (indexValue: string) => {
-    const value = parseFloat(indexValue);
-    if (value >= 9) return 'text-red-600 font-bold';
-    if (value >= 5) return 'text-orange-500 font-bold';
-    if (value >= 1) return 'text-blue-600';
-    return 'text-slate-800';
+  // 4コーナー位置の色を取得（0=最内, 4=大外）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const getCorner4PositionColor = (position: string) => {
+    const value = parseInt(position);
+    if (value === 0) return 'text-green-600 font-bold';  // 最内
+    if (value === 1) return 'text-green-500';            // 内
+    if (value === 2) return 'text-slate-800';            // 中
+    if (value === 3) return 'text-orange-500';           // 外
+    if (value === 4) return 'text-red-600 font-bold';    // 大外
+    return 'text-slate-400';  // データなし
   };
 
   const toggleHorseExpand = (umaban: string) => {
@@ -294,7 +427,7 @@ export default function RaceCardPage() {
       let isFirstPage = true;
 
       for (const race of venue.races) {
-        const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
+        const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}&year=${selectedYear}`);
         if (!res.ok) continue;
         const data = await res.json();
 
@@ -302,6 +435,8 @@ export default function RaceCardPage() {
           doc.addPage();
         }
         isFirstPage = false;
+        
+        let yOffset = 10;
 
         // HTMLテーブルを作成
         const tempDiv = document.createElement('div');
@@ -398,7 +533,14 @@ export default function RaceCardPage() {
         const imgData = canvas.toDataURL('image/jpeg', 0.7);
         const imgWidth = 190;
         const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+        
+        // yOffsetが大きい場合は改ページ
+        if (yOffset + imgHeight > 280) {
+          doc.addPage();
+          yOffset = 10;
+        }
+        
+        doc.addImage(imgData, 'JPEG', 10, yOffset, imgWidth, imgHeight);
       }
 
       doc.save(`${date}_${venue.place}.pdf`);
@@ -418,7 +560,7 @@ export default function RaceCardPage() {
 
       for (const venue of venues) {
         for (const race of venue.races) {
-          const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
+          const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}&year=${selectedYear}`);
           if (!res.ok) continue;
           const data = await res.json();
 
@@ -426,6 +568,8 @@ export default function RaceCardPage() {
             doc.addPage();
           }
           isFirstPage = false;
+          
+          let yOffset = 10;
 
           // HTMLテーブルを作成
           const tempDiv = document.createElement('div');
@@ -522,7 +666,13 @@ export default function RaceCardPage() {
           const imgData = canvas.toDataURL('image/jpeg', 0.7);
           const imgWidth = 190;
           const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
+          // yOffsetが大きい場合は改ページ
+          if (yOffset + imgHeight > 280) {
+            doc.addPage();
+            yOffset = 10;
+          }
+          
+          doc.addImage(imgData, 'JPEG', 10, yOffset, imgWidth, imgHeight);
         }
       }
 
@@ -536,6 +686,10 @@ export default function RaceCardPage() {
 
   // 過去走詳細を表示するコンポーネント
   const PastRaceDetail = ({ pastRaces }: { pastRaces: PastRace[] }) => {
+    // デバッグログ
+    console.log('PastRaceDetail - pastRaces件数:', pastRaces?.length || 0);
+    console.log('PastRaceDetail - pastRaces:', pastRaces);
+    
     if (!pastRaces || pastRaces.length === 0) {
       return <div className="text-slate-500 text-sm p-4">過去走データなし</div>;
     }
@@ -553,7 +707,7 @@ export default function RaceCardPage() {
               <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着順</th>
               <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着差</th>
               <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">通過</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">巻き返し指数</th>
+              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">巻き返し指数</th>
               <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F指数</th>
               <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F指数</th>
               <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">ポテンシャル</th>
@@ -602,8 +756,9 @@ export default function RaceCardPage() {
                   <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
                     {passing || '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center ${getIndexColor(race.index_value || '0')}`}>
-                    {parseFloat(race.index_value || '0').toFixed(1)}
+                  {/* 巻き返し指数 - indices.makikaeshi から取得 */}
+                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.makikaeshi != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                    {race.indices && race.indices.makikaeshi != null ? Number(race.indices.makikaeshi).toFixed(1) : '-'}
                   </td>
                   {/* 指数データ */}
                   <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
@@ -653,8 +808,24 @@ export default function RaceCardPage() {
       <div className="max-w-7xl mx-auto p-4">
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-800 mb-2">日付</label>
+          <label className="block text-sm font-medium text-slate-800 mb-2">年・日付</label>
           <div className="flex gap-2 items-center">
+            {/* 年選択 */}
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(Number(e.target.value));
+                setSelectedRace('');
+                setRaceCard(null);
+              }}
+              className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+            >
+              <option value={2025}>2025年</option>
+              <option value={2026}>2026年</option>
+              <option value={2027}>2027年</option>
+            </select>
+            
+            {/* 日付選択 */}
             {availableDates.length > 0 ? (
               <select
                 value={date}
@@ -747,22 +918,49 @@ export default function RaceCardPage() {
 
         {currentRaces.length > 0 && (
           <div className="mb-6">
-            <label className="block text-sm font-medium text-slate-800 mb-2">レース</label>
+            <label className="block text-sm font-medium text-slate-800 mb-2">
+              レース
+              <span className="ml-2 text-xs text-slate-500">
+                (⏱️ = 時計優秀な馬あり)
+              </span>
+            </label>
             <div className="grid grid-cols-6 gap-2">
-              {currentRaces.map((race) => (
-                <button
-                  key={race.race_number}
-                  onClick={() => setSelectedRace(race.race_number)}
-                  className={`px-3 py-2 rounded text-sm ${
-                    selectedRace === race.race_number
-                      ? 'bg-green-700 text-white'
-                      : 'bg-white border border-slate-200 text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  {race.race_number}R<br />
-                  <span className="text-xs">{race.track_type}{race.distance}m</span>
-                </button>
-              ))}
+              {currentRaces.map((race) => {
+                // 時計ハイライトをチェック
+                const highlightKey = `${selectedVenue}_${race.race_number}`;
+                const highlight = timeHighlights.get(highlightKey);
+                
+                return (
+                  <button
+                    key={race.race_number}
+                    onClick={() => setSelectedRace(race.race_number)}
+                    className={`px-3 py-2 rounded text-sm relative ${
+                      selectedRace === race.race_number
+                        ? 'bg-green-700 text-white'
+                        : highlight
+                          ? 'bg-white border-2 border-orange-400 text-slate-800 hover:bg-orange-50'
+                          : 'bg-white border border-slate-200 text-slate-800 hover:bg-slate-50'
+                    }`}
+                    title={
+                      highlight 
+                        ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'} (${highlight.timeDiff <= 0 ? '上位超え' : highlight.timeDiff.toFixed(1) + '秒差'})` 
+                        : ''
+                    }
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span>{race.race_number}R</span>
+                      {highlight && (
+                        <span className={`text-xs ${
+                          highlight.count >= 2 ? 'text-red-500' : 'text-orange-500'
+                        }`}>
+                          ⏱️
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs">{race.track_type}{race.distance}m</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -781,7 +979,47 @@ export default function RaceCardPage() {
         )}
 
         {raceCard && !loading && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="space-y-6">
+            {/* ★ AI展開予想（新規追加） */}
+            {selectedRace && (
+              <CourseStyleRacePace
+                year={String(selectedYear)}
+                date={date}
+                place={selectedVenue}
+                raceNumber={selectedRace}
+                kisouScores={
+                  raceCard.horses?.reduce((acc, horse) => {
+                    acc[parseInt(horse.umaban, 10)] = horse.score || 0;
+                    return acc;
+                  }, {} as Record<number, number>)
+                }
+              />
+            )}
+
+            {/* ★ 俺AI分析（コース適性・ローテーション） */}
+            {selectedRace && (
+              <SagaAICard
+                year={String(selectedYear)}
+                date={date}
+                place={selectedVenue}
+                raceNumber={selectedRace}
+              />
+            )}
+
+            {/* コース特性カード（新規追加） */}
+            {raceCard.raceInfo && (() => {
+              const courseData = getCourseInfo(
+                raceCard.raceInfo.place,
+                parseInt(raceCard.raceInfo.distance, 10),
+                raceCard.raceInfo.trackType === '芝' ? '芝' : 'ダート'
+              );
+              return courseData ? (
+                <CourseCharacteristicsCard courseData={courseData} compact={false} />
+              ) : null;
+            })()}
+
+            {/* 既存のレースカード表示 */}
+            <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-2xl font-bold mb-4 text-slate-800">
               {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
             </h2>
@@ -856,6 +1094,7 @@ export default function RaceCardPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

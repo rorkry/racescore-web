@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import iconv from 'iconv-lite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,13 +11,27 @@ const __dirname = path.dirname(__filename);
 const dbPath = path.join(__dirname, '..', 'races.db');
 const db = new Database(dbPath);
 
-// CSVファイルパス
-const csvPath = '/home/ubuntu/upload/wakujun_utf8.csv';
+// CSVファイルパス（Shift-JISエンコーディング）
+const csvPath = path.join(__dirname, '..', 'wakujun1227.csv');
 
 console.log('wakujun.csvをインポートしています...');
+console.log(`CSVファイル: ${csvPath}`);
 
-// CSVファイルを読み込み
-const csvContent = fs.readFileSync(csvPath, 'utf-8');
+// CSVファイルを読み込み（Shift-JIS → UTF-8変換）
+let csvContent;
+try {
+  // ファイルをBufferとして読み込み
+  const buffer = fs.readFileSync(csvPath);
+  // Shift_JIS (CP932) からUTF-8に変換
+  csvContent = iconv.decode(buffer, 'Shift_JIS');
+  console.log('Shift-JISからUTF-8に変換しました');
+} catch (err) {
+  console.error('Shift-JIS変換エラー:', err.message);
+  // 失敗した場合はUTF-8として読み込む
+  csvContent = fs.readFileSync(csvPath, 'utf-8');
+  console.log('UTF-8として読み込みました');
+}
+
 const lines = csvContent.trim().split('\n');
 
 console.log(`総行数: ${lines.length}`);
@@ -45,31 +60,56 @@ const insertMany = db.transaction((rows) => {
 
 // CSVデータをパース
 const rows = lines.map(line => {
-  // カンマで分割（21カラム）
+  // カンマで分割（23カラム）
   const columns = line.split(',');
   
+  // 実際のCSV列順序（wakujun1227.csvより）:
+  // 0: 1227 (日付短縮形)
+  // 1: 202512270605070101 (レースID)
+  // 2: 2025.12.27 (日付)
+  // 3: 中山 (場所)
+  // 4: 1 (レース番号)
+  // 5: 未勝利 (クラス名1)
+  // 6: 未勝利・牝* (クラス名2)
+  // 7: 1 (枠番)
+  // 8: 1 (馬番)
+  // 9:  55  (斤量)
+  // 10:  ドレドレ (馬名)
+  // 11: 牝 (性別)
+  // 12: 2 (年齢)
+  // 13: 二歳 (年齢表示)
+  // 14: 津村明秀 (騎手)
+  // 15: (空欄)
+  // 16: 芝 (トラック種別)
+  // 17: 1200 (距離)
+  // 18: 15 (頭数)
+  // 19: (美) (所属)
+  // 20: 矢嶋大樹 (調教師)
+  // 21: 美浦 (所属地)
+  // 22: (空欄) (馬印)
+  
   return [
-    columns[0] || null,  // date: 日付
-    columns[1] || null,  // place: 場所
-    columns[2] || null,  // race_number: レース番号
-    columns[3] || null,  // class_name_1: クラス名1
-    columns[4] || null,  // class_name_2: クラス名2
-    columns[5] || null,  // waku: 枠番
-    columns[6] || null,  // umaban: 馬番
-    columns[7] || null,  // kinryo: 斤量
-    columns[8] || null,  // umamei: 馬名
-    columns[9] || null,  // seibetsu: 性別
-    columns[10] || null, // nenrei: 年齢
-    columns[11] || null, // nenrei_display: 年齢表示
-    columns[12] || null, // kishu: 騎手
-    columns[13] || null, // blank_field: 空欄
-    columns[14] || null, // track_type: トラック種別
-    columns[15] || null, // distance: 距離
-    columns[16] || null, // tosu: 頭数
-    columns[17] || null, // shozoku: 所属
-    columns[18] || null, // chokyoshi: 調教師
-    columns[19] || null, // shozoku_chi: 所属地
-    columns[20] || null, // umajirushi: 馬印
+    (columns[0] || '').trim(),  // date: 1227 (日付短縮形)
+    (columns[3] || '').trim(),  // place: 中山
+    (columns[4] || '').trim(),  // race_number: 1
+    (columns[5] || '').trim(),  // class_name_1: 未勝利
+    (columns[6] || '').trim(),  // class_name_2: 未勝利・牝*
+    (columns[7] || '').trim(),  // waku: 1
+    (columns[8] || '').trim(),  // umaban: 1
+    (columns[9] || '').trim(),  // kinryo:  55 
+    (columns[10] || '').trim(), // umamei:  ドレドレ
+    (columns[11] || '').trim(), // seibetsu: 牝
+    (columns[12] || '').trim(), // nenrei: 2
+    (columns[13] || '').trim(), // nenrei_display: 二歳
+    (columns[14] || '').trim(), // kishu: 津村明秀
+    (columns[15] || '').trim(), // blank_field: (空欄)
+    (columns[16] || '').trim(), // track_type: 芝
+    (columns[17] || '').trim(), // distance: 1200
+    (columns[18] || '').trim(), // tosu: 15
+    (columns[19] || '').trim(), // shozoku: (美)
+    (columns[20] || '').trim(), // chokyoshi: 矢嶋大樹
+    (columns[21] || '').trim(), // shozoku_chi: 美浦
+    (columns[22] || '').trim(), // umajirushi: (空欄)
   ];
 });
 
