@@ -3,6 +3,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from '../drizzle/schema';
 
 let db: ReturnType<typeof drizzle> | null = null;
+let rawDb: Database.Database | null = null;
 
 /** どの場所から呼んでも同じ DB インスタンスを返す */
 export function getDb() {
@@ -19,13 +20,19 @@ export function getDb() {
 }
 
 /** 旧バージョンとの互換性のため、生のSQLiteインスタンスも取得可能に */
+/** シングルトンパターンで同じ接続を再利用（メモリリーク防止） */
 export function getRawDb(): Database.Database {
+  if (rawDb) {
+    return rawDb;
+  }
+  
   const path = process.env.DB_PATH ?? 'races.db';
-  const sqlite = new Database(path);
-  sqlite.pragma('journal_mode = WAL');
+  rawDb = new Database(path);
+  rawDb.pragma('journal_mode = WAL');
+  rawDb.pragma('busy_timeout = 5000'); // ロック待機時間を5秒に設定
   
   // 既存のテーブルを作成（Drizzle移行前のコードとの互換性）
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS races (
       raceKey TEXT PRIMARY KEY,
       date TEXT,
@@ -35,7 +42,7 @@ export function getRawDb(): Database.Database {
     )
   `);
 
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS umaren (
       raceKey TEXT,
       comb TEXT,
@@ -44,7 +51,7 @@ export function getRawDb(): Database.Database {
     )
   `);
 
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS wide (
       raceKey TEXT,
       comb TEXT,
@@ -54,7 +61,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // umadataテーブル（過去走データ）
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS umadata (
       id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
       race_id_new_no_horse_num TEXT,
@@ -112,7 +119,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // indicesテーブル（各種指数データ）
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS indices (
       race_id TEXT PRIMARY KEY,
       L4F REAL,
@@ -127,7 +134,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // wakujunテーブル（出走表）
-  sqlite.exec(`
+  rawDb.exec(`
     CREATE TABLE IF NOT EXISTS wakujun (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT,
@@ -155,5 +162,5 @@ export function getRawDb(): Database.Database {
     )
   `);
   
-  return sqlite;
+  return rawDb;
 }
