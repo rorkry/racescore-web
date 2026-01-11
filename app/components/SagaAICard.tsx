@@ -204,22 +204,22 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
     : analyses.slice(0, expanded ? 10 : 3);
 
   return (
-    <div className="bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 rounded-xl p-6 shadow-xl border border-slate-700/50">
+    <div className="bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 rounded-xl p-3 sm:p-6 shadow-xl border border-slate-700/50">
       {/* ヘッダー */}
       <div 
-        className={`flex items-center justify-between mb-4 ${isMobile ? 'cursor-pointer' : ''}`}
+        className={`flex items-center justify-between mb-3 sm:mb-4 ${isMobile ? 'cursor-pointer' : ''}`}
         onClick={() => isMobile && setCardExpanded(!cardExpanded)}
       >
-        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-          <span className="text-2xl">🧠</span>
-          俺AI分析
+        <h3 className="text-base sm:text-xl font-bold text-white flex items-center gap-1 sm:gap-2">
+          <span className="text-xl sm:text-2xl">🧠</span>
+          <span>俺AI分析</span>
           {!isMobile && (
             <span className="text-xs font-normal text-slate-400 ml-2">
               コース適性・ローテーション・距離適性
             </span>
           )}
           {isMobile && (
-            <span className={`text-white text-lg transition-transform duration-300 ml-2 ${cardExpanded ? 'rotate-180' : ''}`}>
+            <span className={`text-white text-base transition-transform duration-300 ml-1 ${cardExpanded ? 'rotate-180' : ''}`}>
               ▼
             </span>
           )}
@@ -256,8 +256,8 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       {(cardExpanded || !isMobile) && (
       <>
       {/* 馬場状態セレクタ */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="text-xs text-slate-400">馬場状態:</span>
+      <div className="flex items-center gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
+        <span className="text-[10px] sm:text-xs text-slate-400">馬場状態:</span>
         {[
           { key: '良' as const, label: '良', color: 'bg-green-500/20 border-green-500/50' },
           { key: '稍' as const, label: '稍重', color: 'bg-yellow-500/20 border-yellow-500/50' },
@@ -267,7 +267,7 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
           <button
             key={opt.key}
             onClick={() => setTrackCondition(opt.key)}
-            className={`px-3 py-1 text-xs rounded-md border transition-all ${
+            className={`px-2 sm:px-3 py-1.5 sm:py-1 text-[10px] sm:text-xs rounded-md border transition-all min-h-[36px] sm:min-h-0 ${
               trackCondition === opt.key
                 ? `${opt.color} text-white`
                 : 'bg-slate-700/50 border-slate-600/50 text-slate-400 hover:bg-slate-600/50'
@@ -276,15 +276,15 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
             {opt.label}
           </button>
         ))}
-        <span className="text-xs text-slate-500 ml-2">
+        <span className="hidden sm:inline text-xs text-slate-500 ml-2">
           ※馬場状態で枠順有利不利が変化します
         </span>
       </div>
 
       {/* サマリー */}
       {summary && (
-        <div className="bg-slate-700/30 rounded-lg p-4 mb-4 border border-slate-600/50 backdrop-blur-sm">
-          <pre className="text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
+        <div className="bg-slate-700/30 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4 border border-slate-600/50 backdrop-blur-sm">
+          <pre className="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
             {summary}
           </pre>
         </div>
@@ -310,7 +310,7 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
           return (
             <div 
               key={horseNumber}
-              className={`rounded-lg p-4 border backdrop-blur-sm transition-all duration-200 hover:scale-[1.01] ${
+              className={`rounded-lg p-3 sm:p-4 border backdrop-blur-sm transition-all duration-200 hover:scale-[1.01] ${
                 idx === 0 ? 'bg-amber-900/20 border-amber-500/40 shadow-lg shadow-amber-500/10' :
                 idx === 1 ? 'bg-slate-700/20 border-slate-400/40' :
                 idx === 2 ? 'bg-orange-900/20 border-orange-500/40' :
@@ -318,22 +318,22 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
               }`}
             >
               {/* ヘッダー */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className={`text-2xl ${medal.color}`}>
+              <div className="flex items-center justify-between mb-2 sm:mb-3 gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-3 flex-1 min-w-0">
+                  <span className={`text-xl sm:text-2xl flex-shrink-0 ${medal.color}`}>
                     {medal.icon}
                   </span>
-                  <span className="text-white font-bold text-lg">
+                  <span className="text-white font-bold text-sm sm:text-lg truncate">
                     {horseNumber}番 {horseName}
                   </span>
                   {/* 総合レーティングバッジ */}
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${RATING_COLORS[rating]}`}>
+                  <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold flex-shrink-0 ${RATING_COLORS[rating]}`}>
                     {rating}
                   </span>
                 </div>
-                <div className="text-right">
-                  <span className="text-slate-400 text-xs block">競うスコア</span>
-                  <span className={`font-bold text-xl ${
+                <div className="text-right flex-shrink-0">
+                  <span className="text-slate-400 text-[10px] sm:text-xs block">競うスコア</span>
+                  <span className={`font-bold text-lg sm:text-xl ${
                     kisoScore >= 70 ? 'text-green-400' :
                     kisoScore >= 60 ? 'text-yellow-400' :
                     kisoScore >= 50 ? 'text-slate-400' :
@@ -346,11 +346,11 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
 
               {/* タグ */}
               {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
+                <div className="flex flex-wrap gap-1 sm:gap-1.5 mb-2 sm:mb-3">
                   {tags.map((tag, i) => (
                     <span 
                       key={i}
-                      className={`px-2 py-0.5 rounded-full text-xs ${
+                      className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs ${
                         tag.includes('◎') ? 'bg-green-500/20 text-green-300 border border-green-500/30' :
                         tag.includes('巧者') ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
                         'bg-slate-600/50 text-slate-300 border border-slate-500/30'
@@ -362,57 +362,51 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
                 </div>
               )}
 
-              {/* デバッグ情報（開発環境のみ） */}
-              {process.env.NODE_ENV === 'development' && (
-                <div className="mb-3 p-3 bg-slate-900/50 rounded border border-slate-700/50 text-xs space-y-2">
-                  <div className="text-slate-500 mb-2">🐛 分析サマリー</div>
-                  
-                  {/* 能力・指数サマリー（1行目） */}
+              {/* 分析サマリー（本番環境でも表示） */}
+              {(analysis.abilitySummary || analysis.timeEvaluation || analysis.lapEvaluation) && (
+                <div className="mb-3 p-2 sm:p-3 bg-slate-900/50 rounded border border-slate-700/50 text-xs sm:text-sm space-y-1.5 sm:space-y-2">
+                  {/* 能力・指数サマリー */}
                   {analysis.abilitySummary && (
                     <div className="text-slate-300 leading-relaxed">
                       <span className="text-cyan-400 font-medium">【能力】</span>
-                      {analysis.abilitySummary}
+                      <span className="break-words">{analysis.abilitySummary}</span>
                     </div>
                   )}
                   
-                  {/* タイム評価（2行目） */}
+                  {/* タイム評価 */}
                   {analysis.timeEvaluation && (
-                    <div className="text-slate-300 leading-relaxed mt-1">
+                    <div className="text-slate-300 leading-relaxed">
                       <span className="text-amber-400 font-medium">【タイム】</span>
-                      {analysis.timeEvaluation}
+                      <span className="break-words">{analysis.timeEvaluation}</span>
                     </div>
                   )}
                   
-                  {/* ラップ評価（3行目） */}
+                  {/* ラップ評価 */}
                   {analysis.lapEvaluation && (
-                    <div className="text-slate-300 leading-relaxed mt-1">
+                    <div className="text-slate-300 leading-relaxed">
                       <span className="text-orange-400 font-medium">【ラップ】</span>
-                      {analysis.lapEvaluation}
+                      <span className="break-words">{analysis.lapEvaluation}</span>
                     </div>
                   )}
                   
-                  {/* コース・指数詳細（横並び） */}
+                  {/* コース・指数詳細 */}
                   {(analysis.contextSummary || analysis.debugInfo) && (
-                    <div className="flex flex-wrap gap-4 text-slate-500 border-t border-slate-700/50 pt-2 mt-2 text-xs">
-                      {/* コース実績 */}
+                    <div className="flex flex-wrap gap-2 sm:gap-4 text-slate-500 border-t border-slate-700/50 pt-2 mt-2 text-[10px] sm:text-xs">
                       {analysis.contextSummary && (
                         <span className="text-slate-400">{analysis.contextSummary}</span>
                       )}
-                      {/* T2F */}
                       {analysis.debugInfo?.t2f && analysis.debugInfo.t2f.value > 0 && (
                         <span>
                           T2F: {analysis.debugInfo.t2f.value.toFixed(1)}秒 
                           <span className="text-blue-400 ml-1">({analysis.debugInfo.t2f.rank}/{analysis.debugInfo.t2f.total}位)</span>
                         </span>
                       )}
-                      {/* L4F */}
                       {analysis.debugInfo?.l4f && analysis.debugInfo.l4f.value > 0 && (
                         <span>
                           L4F: {analysis.debugInfo.l4f.value.toFixed(1)} 
                           <span className="text-green-400 ml-1">({analysis.debugInfo.l4f.rank}/{analysis.debugInfo.l4f.total}位)</span>
                         </span>
                       )}
-                      {/* 距離データ数 */}
                       {analysis.debugInfo && (
                         <span>距離データ: {analysis.debugInfo.relevantRaceCount || 0}走</span>
                       )}

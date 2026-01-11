@@ -691,28 +691,28 @@ export default function RaceCardPage() {
     console.log('PastRaceDetail - pastRaces:', pastRaces);
     
     if (!pastRaces || pastRaces.length === 0) {
-      return <div className="text-slate-500 text-sm p-4">過去走データなし</div>;
+      return <div className="text-slate-500 text-xs sm:text-sm p-2 sm:p-4">過去走データなし</div>;
     }
 
     return (
-      <div className="overflow-x-auto">
-        <table className="min-w-max text-sm border-collapse">
+      <div className="overflow-x-auto -mx-2 sm:mx-0">
+        <table className="min-w-max text-[10px] sm:text-sm border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">日付</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">場所</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">クラス</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">距離</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">人気</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着順</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着差</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">通過</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">巻き返し指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">ポテンシャル</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">レボウマ</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">クッション値</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">日付</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">場所</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">クラス</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">距離</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">人気</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">着順</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">着差</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap">通過</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">巻返し</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">POT</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">REV</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">CSH</th>
             </tr>
           </thead>
           <tbody>
@@ -725,7 +725,7 @@ export default function RaceCardPage() {
               return (
                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                   <td 
-                    className={`border border-slate-300 px-2 py-1 text-center text-xs whitespace-nowrap ${
+                    className={`border border-slate-300 px-1 sm:px-2 py-1 text-center whitespace-nowrap ${
                       clickable 
                         ? 'text-blue-600 underline cursor-pointer hover:bg-blue-50' 
                         : 'text-slate-800'
@@ -735,45 +735,43 @@ export default function RaceCardPage() {
                   >
                     {race.date || '-'}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {race.place || '-'}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {race.class_name || '-'}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {race.distance || '-'}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800">
                     {race.popularity || '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>
                     {toHalfWidth(race.finish_position || '-')}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800">
                     {race.margin || '-'}
                   </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">
                     {passing || '-'}
                   </td>
-                  {/* 巻き返し指数 - indices.makikaeshi から取得 */}
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.makikaeshi != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.makikaeshi != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.makikaeshi != null ? Number(race.indices.makikaeshi).toFixed(1) : '-'}
                   </td>
-                  {/* 指数データ */}
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.L4F != null ? Number(race.indices.L4F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.T2F != null ? Number(race.indices.T2F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.potential != null ? Number(race.indices.potential).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.revouma != null ? Number(race.indices.revouma).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
                     {race.indices && race.indices.cushion != null ? Number(race.indices.cushion).toFixed(1) : '-'}
                   </td>
                 </tr>
@@ -781,35 +779,35 @@ export default function RaceCardPage() {
             })}
           </tbody>
         </table>
-        <p className="text-xs text-slate-400 mt-2">※ 横スクロールで全てのカラムを確認できます。指数データが「-」の場合は、該当レースの指数が未アップロードです。</p>
+        <p className="text-[10px] sm:text-xs text-slate-400 mt-2">※ 横スクロールで指数データを確認できます</p>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 overflow-x-hidden">
       {/* ヘッダー */}
       <header className="bg-green-800 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">緑の組織</h1>
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex justify-between items-center">
+          <h1 className="text-lg sm:text-2xl font-bold">緑の組織</h1>
           <a
             href="/admin"
-            className="flex items-center gap-2 px-3 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors min-h-[44px]"
             title="管理者画面"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm">管理</span>
+            <span className="text-xs sm:text-sm">管理</span>
           </a>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto p-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-800 mb-2">年・日付</label>
-          <div className="flex gap-2 items-center">
+          <label className="block text-xs sm:text-sm font-medium text-slate-800 mb-2">年・日付</label>
+          <div className="flex flex-wrap gap-2 items-center">
             {/* 年選択 */}
             <select
               value={selectedYear}
@@ -818,7 +816,7 @@ export default function RaceCardPage() {
                 setSelectedRace('');
                 setRaceCard(null);
               }}
-              className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+              className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800 min-h-[44px] text-sm sm:text-base"
             >
               <option value={2025}>2025年</option>
               <option value={2026}>2026年</option>
@@ -834,7 +832,7 @@ export default function RaceCardPage() {
                   setSelectedRace('');
                   setRaceCard(null);
                 }}
-                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800 min-h-[44px] text-sm sm:text-base"
               >
                 {availableDates.map((d) => (
                   <option key={d} value={d}>
@@ -847,11 +845,11 @@ export default function RaceCardPage() {
                 type="text"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
+                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800 min-h-[44px] text-sm sm:text-base"
                 placeholder="例: 1220"
               />
             )}
-            <span className="text-sm text-slate-500">
+            <span className="text-xs sm:text-sm text-slate-500">
               {availableDates.length > 0 ? `${availableDates.length}日分のデータ` : ''}
             </span>
           </div>
@@ -862,7 +860,7 @@ export default function RaceCardPage() {
             <button
               onClick={generateAllRacesPDF}
               disabled={pdfGenerating}
-              className="px-6 py-3 bg-green-700 text-white rounded hover:bg-green-600 disabled:bg-slate-400 font-bold"
+              className="w-full sm:w-auto px-4 sm:px-6 py-3 bg-green-700 text-white rounded hover:bg-green-600 disabled:bg-slate-400 font-bold text-sm sm:text-base min-h-[44px]"
             >
               {pdfGenerating ? 'PDF生成中...' : '全レースをPDFでダウンロード'}
             </button>
@@ -871,17 +869,17 @@ export default function RaceCardPage() {
 
         {venues.length > 0 && (
           <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-800 mb-2">競馬場</label>
+            <label className="block text-xs sm:text-sm font-medium text-slate-800 mb-2">競馬場</label>
             <div className="flex gap-2 flex-wrap">
               {venues.map((venue) => (
-                <div key={venue.place} className="flex items-center gap-1">
+                <div key={venue.place} className="flex items-center">
                   <button
                     onClick={() => {
                       setSelectedVenue(venue.place);
                       setSelectedRace('');
                       setRaceCard(null);
                     }}
-                    className={`px-4 py-2 rounded-l ${
+                    className={`px-3 sm:px-4 py-2 rounded-l min-h-[44px] text-sm sm:text-base ${
                       selectedVenue === venue.place
                         ? 'bg-green-700 text-white'
                         : 'bg-white border border-slate-200 text-slate-800 hover:bg-slate-50'
@@ -892,7 +890,7 @@ export default function RaceCardPage() {
                   <button
                     onClick={() => generateVenuePDF(venue)}
                     disabled={venuePdfGenerating === venue.place}
-                    className={`px-2 py-2 rounded-r ${
+                    className={`px-2 py-2 rounded-r min-h-[44px] min-w-[44px] flex items-center justify-center ${
                       selectedVenue === venue.place
                         ? 'bg-green-600 text-white hover:bg-green-500'
                         : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -917,14 +915,14 @@ export default function RaceCardPage() {
         )}
 
         {currentRaces.length > 0 && (
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-slate-800 mb-2">
+          <div className="mb-4 sm:mb-6">
+            <label className="block text-xs sm:text-sm font-medium text-slate-800 mb-2">
               レース
               <span className="ml-2 text-xs text-slate-500">
                 (⏱️ = 時計優秀な馬あり)
               </span>
             </label>
-            <div className="grid grid-cols-6 gap-2">
+            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 sm:gap-2">
               {currentRaces.map((race) => {
                 // 時計ハイライトをチェック
                 const highlightKey = `${selectedVenue}_${race.race_number}`;
@@ -934,7 +932,7 @@ export default function RaceCardPage() {
                   <button
                     key={race.race_number}
                     onClick={() => setSelectedRace(race.race_number)}
-                    className={`px-3 py-2 rounded text-sm relative ${
+                    className={`px-2 sm:px-3 py-2 sm:py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] ${
                       selectedRace === race.race_number
                         ? 'bg-green-700 text-white'
                         : highlight
@@ -947,8 +945,8 @@ export default function RaceCardPage() {
                         : ''
                     }
                   >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>{race.race_number}R</span>
+                    <div className="flex items-center justify-center gap-0.5 sm:gap-1">
+                      <span className="font-medium">{race.race_number}R</span>
                       {highlight && (
                         <span className={`text-xs ${
                           highlight.count >= 2 ? 'text-red-500' : 'text-orange-500'
@@ -957,7 +955,7 @@ export default function RaceCardPage() {
                         </span>
                       )}
                     </div>
-                    <span className="text-xs">{race.track_type}{race.distance}m</span>
+                    <span className="text-[10px] sm:text-xs opacity-80">{race.track_type}{race.distance}m</span>
                   </button>
                 );
               })}
@@ -1019,26 +1017,27 @@ export default function RaceCardPage() {
             })()}
 
             {/* 既存のレースカード表示 */}
-            <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold mb-4 text-slate-800">
+            <div className="bg-white rounded-lg shadow-lg p-3 sm:p-6">
+            <h2 className="text-lg sm:text-2xl font-bold mb-2 sm:mb-4 text-slate-800">
               {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
             </h2>
-            <p className="text-slate-500 mb-4">
+            <p className="text-slate-500 mb-2 sm:mb-4 text-sm sm:text-base">
               {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
             </p>
-            <p className="text-sm text-slate-500 mb-4">
+            <p className="text-xs sm:text-sm text-slate-500 mb-3 sm:mb-4">
               ※馬名をクリックすると過去走詳細が表示されます
             </p>
 
-            <table className="w-full border-collapse">
+            <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
+            <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
               <thead>
-                <tr className="bg-green-800 text-white">
-                  <th className="border border-slate-800 px-2 py-3">枠</th>
-                  <th className="border border-slate-800 px-2 py-3">馬番</th>
-                  <th className="border border-slate-800 px-4 py-3">馬名</th>
-                  <th className="border border-slate-800 px-4 py-3">騎手</th>
-                  <th className="border border-slate-800 px-2 py-3">斤量</th>
-                  <th className="border border-slate-800 px-4 py-3">競うスコア</th>
+                <tr className="bg-green-800 text-white text-xs sm:text-base">
+                  <th className="border border-slate-800 px-1 sm:px-2 py-2 sm:py-3">枠</th>
+                  <th className="border border-slate-800 px-1 sm:px-2 py-2 sm:py-3">馬番</th>
+                  <th className="border border-slate-800 px-2 sm:px-4 py-2 sm:py-3">馬名</th>
+                  <th className="border border-slate-800 px-2 sm:px-4 py-2 sm:py-3">騎手</th>
+                  <th className="border border-slate-800 px-1 sm:px-2 py-2 sm:py-3">斤量</th>
+                  <th className="border border-slate-800 px-2 sm:px-4 py-2 sm:py-3 whitespace-nowrap">競う<br className="sm:hidden"/>スコア</th>
                 </tr>
               </thead>
               <tbody>
@@ -1052,38 +1051,38 @@ export default function RaceCardPage() {
                   return parseInt(a.umaban) - parseInt(b.umaban);
                 }).map((horse, index) => (
                   <React.Fragment key={horse.umaban}>
-                    <tr className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                      <td className={`border border-slate-800 px-2 py-2 text-center ${getWakuColor(horse.waku)}`}>
+                    <tr className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} text-xs sm:text-base`}>
+                      <td className={`border border-slate-800 px-1 sm:px-2 py-2 text-center ${getWakuColor(horse.waku)}`}>
                         {horse.waku}
                       </td>
-                      <td className="border border-slate-800 px-2 py-2 text-center font-bold text-slate-800">
+                      <td className="border border-slate-800 px-1 sm:px-2 py-2 text-center font-bold text-slate-800">
                         {horse.umaban}
                       </td>
                       <td 
-                        className="border border-slate-800 px-4 py-2 font-medium cursor-pointer hover:bg-green-50 text-slate-800"
+                        className="border border-slate-800 px-2 sm:px-4 py-2 font-medium cursor-pointer hover:bg-green-50 text-slate-800"
                         onClick={() => toggleHorseExpand(horse.umaban)}
                       >
-                        <div className="flex items-center justify-between">
-                          <span>{normalizeHorseName(horse.umamei)}</span>
-                          <span className="text-green-600 text-sm">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="truncate max-w-[100px] sm:max-w-none">{normalizeHorseName(horse.umamei)}</span>
+                          <span className="text-green-600 text-xs sm:text-sm flex-shrink-0">
                             {expandedHorse === horse.umaban ? '▲' : '▼'}
                           </span>
                         </div>
                       </td>
-                      <td className="border border-slate-800 px-4 py-2 text-slate-800">
+                      <td className="border border-slate-800 px-2 sm:px-4 py-2 text-slate-800 whitespace-nowrap">
                         {horse.kishu.trim()}
                       </td>
-                      <td className="border border-slate-800 px-2 py-2 text-center text-slate-800">
+                      <td className="border border-slate-800 px-1 sm:px-2 py-2 text-center text-slate-800">
                         {horse.kinryo.trim()}
                       </td>
-                      <td className={`border border-slate-800 px-4 py-2 text-center text-lg ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                        {horse.hasData && horse.score != null ? Math.round(horse.score) : 'データなし'}
+                      <td className={`border border-slate-800 px-2 sm:px-4 py-2 text-center text-sm sm:text-lg font-bold ${getScoreTextColor(horse.score, horse.hasData)}`}>
+                        {horse.hasData && horse.score != null ? Math.round(horse.score) : 'N/A'}
                       </td>
                     </tr>
                     {expandedHorse === horse.umaban && (
                       <tr key={`${horse.umaban}-detail`}>
-                        <td colSpan={6} className="border border-slate-800 p-4 bg-slate-50">
-                          <div className="text-sm font-bold mb-2 text-green-800">
+                        <td colSpan={6} className="border border-slate-800 p-2 sm:p-4 bg-slate-50">
+                          <div className="text-xs sm:text-sm font-bold mb-2 text-green-800">
                             {normalizeHorseName(horse.umamei)} の過去走詳細
                           </div>
                           <PastRaceDetail pastRaces={horse.past} />
@@ -1094,6 +1093,7 @@ export default function RaceCardPage() {
                 ))}
               </tbody>
             </table>
+            </div>
             </div>
           </div>
         )}

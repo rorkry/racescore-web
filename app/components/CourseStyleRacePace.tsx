@@ -680,7 +680,9 @@ export default function CourseStyleRacePace({
         }
         
         @media (max-width: 768px) {
-          .course-grid { grid-template-columns: 1fr; }
+          .course-grid {
+            grid-template-columns: 1fr;
+          }
         }
         
         .course-panel {
@@ -906,72 +908,75 @@ export default function CourseStyleRacePace({
           <p className="text-sm text-white/60 mt-2">タップして展開</p>
         )}
         {(cardExpanded || !isMobile) && (
-        <div className="meta-grid">
-          <span className={`pace-badge pace-${prediction.expectedPace}`}>
-            {PACE_LABELS[prediction.expectedPace]}
-          </span>
-          <span className="meta-item">
-            <span>馬群:</span>
-            <span className="meta-value">{groupedHorses.length}</span>
-          </span>
-          <span className="meta-item">
-            <span>頭数:</span>
-            <span className="meta-value">{prediction.predictions.length}</span>
-          </span>
-          <span className="meta-item">
-            <span>先行:</span>
-            <span className="meta-value">{prediction.frontRunners}頭</span>
-          </span>
-          {prediction.avgFront2FLap && (
-            <span className="meta-item">
-              <span>前半2F:</span>
-              <span className="meta-value">{prediction.avgFront2FLap.toFixed(1)}秒</span>
-            </span>
-          )}
-        </div>
-        <div className="bias-controls" style={{ marginTop: '12px' }}>
-          <span className="meta-item" style={{ fontSize: '12px' }}>馬場状態:</span>
-          {[
-            { key: '良', label: '良', color: 'rgba(74, 222, 128, 0.15)' },
-            { key: '稍', label: '稍重', color: 'rgba(251, 191, 36, 0.15)' },
-            { key: '重', label: '重', color: 'rgba(251, 146, 60, 0.15)' },
-            { key: '不', label: '不良', color: 'rgba(239, 68, 68, 0.15)' },
-          ].map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => handleConditionChange(opt.key as '良' | '稍' | '重' | '不')}
-              className={`bias-btn ${trackCondition === opt.key ? 'bias-btn-active' : ''}`}
-              style={trackCondition === opt.key ? { background: opt.color } : {}}
-            >
-              {opt.label}
-            </button>
-          ))}
-          <span className="meta-item" style={{ fontSize: '12px', marginLeft: '16px' }}>バイアス:</span>
-          {[
-            { key: 'none', label: '無し' },
-            { key: 'uchi-mae', label: '内前' },
-            { key: 'soto-mae', label: '外前' },
-            { key: 'mae', label: '前' },
-            { key: 'ushiro', label: '後' },
-            { key: 'uchi', label: '内' },
-            { key: 'soto', label: '外' },
-            { key: 'soto-ushiro', label: '外後' },
-          ].map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => handleBiasChange(opt.key as any)}
-              className={`bias-btn ${bias === opt.key ? 'bias-btn-active' : ''}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+          <>
+            <div className="meta-grid">
+              <span className={`pace-badge pace-${prediction.expectedPace}`}>
+                {PACE_LABELS[prediction.expectedPace]}
+              </span>
+              <span className="meta-item">
+                <span>馬群:</span>
+                <span className="meta-value">{groupedHorses.length}</span>
+              </span>
+              <span className="meta-item">
+                <span>頭数:</span>
+                <span className="meta-value">{prediction.predictions.length}</span>
+              </span>
+              <span className="meta-item">
+                <span>先行:</span>
+                <span className="meta-value">{prediction.frontRunners}頭</span>
+              </span>
+              {prediction.avgFront2FLap && (
+                <span className="meta-item">
+                  <span>前半2F:</span>
+                  <span className="meta-value">{prediction.avgFront2FLap.toFixed(1)}秒</span>
+                </span>
+              )}
+            </div>
+            <div className="bias-controls" style={{ marginTop: '12px' }}>
+              <span className="meta-item" style={{ fontSize: '12px' }}>馬場状態:</span>
+              {[
+                { key: '良', label: '良', color: 'rgba(74, 222, 128, 0.15)' },
+                { key: '稍', label: '稍重', color: 'rgba(251, 191, 36, 0.15)' },
+                { key: '重', label: '重', color: 'rgba(251, 146, 60, 0.15)' },
+                { key: '不', label: '不良', color: 'rgba(239, 68, 68, 0.15)' },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => handleConditionChange(opt.key as '良' | '稍' | '重' | '不')}
+                  className={`bias-btn ${trackCondition === opt.key ? 'bias-btn-active' : ''}`}
+                  style={trackCondition === opt.key ? { background: opt.color } : {}}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <span className="meta-item" style={{ fontSize: '12px', marginLeft: '16px' }}>バイアス:</span>
+              {[
+                { key: 'none', label: '無し' },
+                { key: 'uchi-mae', label: '内前' },
+                { key: 'soto-mae', label: '外前' },
+                { key: 'mae', label: '前' },
+                { key: 'ushiro', label: '後' },
+                { key: 'uchi', label: '内' },
+                { key: 'soto', label: '外' },
+                { key: 'soto-ushiro', label: '外後' },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => handleBiasChange(opt.key as any)}
+                  className={`bias-btn ${bias === opt.key ? 'bias-btn-active' : ''}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
       {/* コース表示 */}
       {(cardExpanded || !isMobile) && (
-      <div className="course-grid">
+        <>
+          <div className="course-grid">
         {/* スタート後 */}
         <div className="glass-card course-panel">
           <div className="panel-header">
@@ -1109,6 +1114,7 @@ export default function CourseStyleRacePace({
           </div>
         )}
       </div>
+        </>
       )}
     </div>
   );
