@@ -406,10 +406,13 @@ export class SagaBrain {
     // 7. 時計比較分析（上位クラスとの時計比較）
     this.analyzeTimeComparison(input, analysis);
 
-    // 8. スコア最終調整
+    // 8. 休み明け得意・不得意判定
+    this.analyzeLayoffPattern(input, analysis);
+
+    // 9. スコア最終調整
     analysis.score = Math.max(0, Math.min(100, analysis.score));
 
-    // 9. サマリー生成（デバッグ用の整理されたコメント）
+    // 10. サマリー生成（デバッグ用の整理されたコメント）
     this.generateSummaries(input, analysis);
 
     return analysis;
@@ -571,9 +574,9 @@ export class SagaBrain {
     for (const { race, result } of highLevelResults) {
       const raceLabel = race === 0 ? '前走' : `${race + 1}走前`;
       if (result.highLevelType === 'historical') {
-        lapComments.push(`🏆歴代上位: ${raceLabel}${result.highLevelComment}`);
-        analysis.tags.push('歴代上位');
-        // 歴代上位にはスコアボーナス
+        lapComments.push(`🏆'19以降上位: ${raceLabel}${result.highLevelComment}`);
+        analysis.tags.push("'19以降上位");
+        // '19以降上位にはスコアボーナス
         const decay = race <= 2 ? 1.0 : race === 3 ? 0.7 : 0.5;
         analysis.score += 5 * decay;
       } else if (result.highLevelType === 'acceleration') {
@@ -2128,6 +2131,104 @@ export class SagaBrain {
         analysis.warnings.push(`${targetDist}m前後で${sameDistTotal}走中${sameDistGood}回と苦戦。`);
         analysis.score -= 1; // 5→1に縮小
       }
+    }
+  }
+
+  /**
+   * 休み明け得意・不得意判定
+   * - 今回が3ヶ月以上の休み明けかチェック
+   * - 過去の休み明けレースでの成績から得意・不得意を判定
+   */
+  private analyzeLayoffPattern(input: HorseAnalysisInput, analysis: SagaAnalysis): void {
+    if (input.pastRaces.length < 2) return;
+
+    // 日付をパースしてミリ秒に変換
+    const parseDate = (dateStr: string): number | null => {
+      if (!dateStr) return null;
+      // "2024.01.15" or "2024-01-15" or "2024/01/15" 形式を想定
+      const cleaned = dateStr.replace(/[\s\-\/]/g, '.').trim();
+      const parts = cleaned.split('.');
+      if (parts.length < 3) return null;
+      const [year, month, day] = parts.map(p => parseInt(p, 10));
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+      return new Date(year, month - 1, day).getTime();
+    };
+
+    // 今回のレース日
+    const currentRaceDate = parseDate(input.raceDate);
+    if (!currentRaceDate) return;
+
+    // 前走の日付
+    const lastRaceDate = parseDate(input.pastRaces[0]?.date);
+    if (!lastRaceDate) return;
+
+    // 今回が休み明けかどうか（3ヶ月 = 約90日）
+    const LAYOFF_THRESHOLD_DAYS = 90;
+    const daysSinceLastRace = (currentRaceDate - lastRaceDate) / (1000 * 60 * 60 * 24);
+    const isCurrentLayoff = daysSinceLastRace >= LAYOFF_THRESHOLD_DAYS;
+
+    if (!isCurrentLayoff) return; // 今回が休み明けでなければ終了
+
+    // 過去の休み明けレースを特定して成績を集計
+    let layoffRaces = 0;
+    let layoffTop3 = 0;
+    const INVALID_FINISH = 30; // 競走除外等
+
+    for (let i = 0; i < input.pastRaces.length - 1; i++) {
+      const race = input.pastRaces[i];
+      const prevRace = input.pastRaces[i + 1];
+
+      const raceDate = parseDate(race.date);
+      const prevRaceDate = parseDate(prevRace.date);
+      if (!raceDate || !prevRaceDate) continue;
+
+      const daysBetween = (raceDate - prevRaceDate) / (1000 * 60 * 60 * 24);
+
+      // 3ヶ月以上空いていた＝休み明けレース
+      if (daysBetween >= LAYOFF_THRESHOLD_DAYS) {
+        // 競走除外等は除外
+        if (race.finishPosition > 0 && race.finishPosition < INVALID_FINISH) {
+          layoffRaces++;
+          if (race.finishPosition <= 3) {
+            layoffTop3++;
+          }
+        }
+      }
+    }
+
+    // 休み明けデータが2回以上ないと判定しない
+    if (layoffRaces < 2) {
+      // 休み明けデータが少ない場合は注意のみ
+      const monthsOff = Math.floor(daysSinceLastRace / 30);
+      analysis.comments.push(`【休み明け】約${monthsOff}ヶ月ぶり。休み明けデータ${layoffRaces}回と少なく傾向不明。`);
+      return;
+    }
+
+    // 3着以内率を計算
+    const top3Rate = layoffTop3 / layoffRaces;
+    const monthsOff = Math.floor(daysSinceLastRace / 30);
+
+    // 判定
+    if (top3Rate >= 0.6) {
+      // かなり得意（60%以上）
+      analysis.comments.push(`【休み明け】約${monthsOff}ヶ月ぶり。過去休み明け${layoffRaces}走で3着内${layoffTop3}回（${Math.round(top3Rate * 100)}%）と非常に得意！`);
+      analysis.tags.push('休み明け◎');
+      analysis.score += 8;
+    } else if (top3Rate >= 0.5) {
+      // 得意（50%以上）
+      analysis.comments.push(`【休み明け】約${monthsOff}ヶ月ぶり。過去休み明け${layoffRaces}走で3着内${layoffTop3}回（${Math.round(top3Rate * 100)}%）と得意。`);
+      analysis.tags.push('休み明け○');
+      analysis.score += 5;
+    } else if (top3Rate >= 0.2) {
+      // 普通（20%〜50%）
+      analysis.comments.push(`【休み明け】約${monthsOff}ヶ月ぶり。過去休み明け${layoffRaces}走で3着内${layoffTop3}回（${Math.round(top3Rate * 100)}%）と普通。`);
+      // スコア調整なし
+    } else {
+      // 苦手（20%未満）
+      analysis.comments.push(`【休み明け】約${monthsOff}ヶ月ぶり。過去休み明け${layoffRaces}走で3着内${layoffTop3}回（${Math.round(top3Rate * 100)}%）と苦手…`);
+      analysis.tags.push('休み明け▲');
+      analysis.warnings.push(`休み明けが苦手なタイプ。過去${layoffRaces}走で好走わずか${layoffTop3}回。`);
+      analysis.score -= 5;
     }
   }
 

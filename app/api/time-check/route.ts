@@ -195,7 +195,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    db.close();
+    // シングルトン接続は閉じない
 
     return NextResponse.json({ results });
   } catch (error) {
@@ -206,6 +206,7 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
 
 

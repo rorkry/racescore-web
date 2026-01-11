@@ -977,19 +977,19 @@ export function compareWithHistorical(
   const isTop10Percent5F = last5FRank <= Math.max(1, Math.floor(last5FTotal * 0.1));
   const isHistoricalHighLevel = isTop10Percent4F || isTop10Percent5F;
 
-  // コメント生成
+  // コメント生成（2019年以降のデータに基づく）
   let comment = '';
   const placeDistance = `${condition.place}${condition.surface}${condition.distance}m`;
   const classLabel = normalizeClassForDisplay(condition.className);
 
   if (isTop10Percent4F && last4FTotal >= 10) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で歴代${last4FRank}位/${last4FTotal}レース中`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last4FRank}位/${last4FTotal}レース中`;
   } else if (isTop10Percent5F && last5FTotal >= 10) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で歴代${last5FRank}位/${last5FTotal}レース中`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last5FRank}位/${last5FTotal}レース中`;
   } else if (last4FRank <= 3 && last4FTotal >= 5) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で歴代${last4FRank}位`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last4FRank}位`;
   } else if (last5FRank <= 3 && last5FTotal >= 5) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で歴代${last5FRank}位`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last5FRank}位`;
   }
 
   return {

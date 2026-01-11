@@ -148,6 +148,11 @@ export default function RaceCardPage() {
   const [expandedHorse, setExpandedHorse] = useState<string | null>(null);
   const [venuePdfGenerating, setVenuePdfGenerating] = useState<string | null>(null);
   const [timeHighlights, setTimeHighlights] = useState<Map<string, { count: number; timeDiff: number }>>(new Map());
+  
+  // おれAI & 展開予想 一括生成
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ current: number; total: number } | null>(null);
+  const [bulkGenerateResult, setBulkGenerateResult] = useState<{ success: number; error: number; time: number } | null>(null);
 
   // 利用可能な日付一覧を取得（年が変わったら再取得）
   useEffect(() => {
@@ -186,6 +191,76 @@ export default function RaceCardPage() {
       fetchVenues();
     }
   }, [date, selectedYear]);
+
+  // おれAI & 展開予想 一括生成
+  const bulkGenerateAnalysis = async () => {
+    if (!date || !selectedYear || venues.length === 0) return;
+    
+    setBulkGenerating(true);
+    setBulkGenerateResult(null);
+    const startTime = Date.now();
+    
+    try {
+      const totalRaces = venues.reduce((sum, v) => sum + v.races.length, 0);
+      let currentRace = 0;
+      let successCount = 0;
+      let errorCount = 0;
+      
+      // 各競馬場の全レースを処理
+      for (const venue of venues) {
+        for (const race of venue.races) {
+          currentRace++;
+          setBulkGenerateProgress({ 
+            current: currentRace, 
+            total: totalRaces,
+          });
+          
+          try {
+            // おれAI生成
+            const sagaRes = await fetch('/api/saga-ai', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                year: String(selectedYear),
+                date,
+                place: venue.place,
+                raceNumber: race.race_number,
+                useAI: false,
+                trackCondition: '良',
+                bias: 'none',
+                forceRecalculate: true,
+                saveToDB: true,
+              }),
+            });
+            
+            // 展開予想生成（並行して実行）
+            const paceRes = await fetch(
+              `/api/race-pace?year=${selectedYear}&date=${date}&place=${encodeURIComponent(venue.place)}&raceNumber=${race.race_number}&forceRecalculate=true&saveToDB=true`
+            );
+            
+            if (sagaRes.ok && paceRes.ok) {
+              successCount++;
+            } else {
+              errorCount++;
+            }
+          } catch {
+            errorCount++;
+          }
+        }
+      }
+      
+      const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+      setBulkGenerateResult({ success: successCount, error: errorCount, time: elapsedTime });
+      console.log(`[bulk-generate] 完了: ${successCount}/${totalRaces}レース成功 (${elapsedTime}秒)`);
+      
+    } catch (err: any) {
+      console.error('Bulk generate error:', err);
+      setError(`一括生成エラー: ${err.message}`);
+    } finally {
+      setBulkGenerating(false);
+      setBulkGenerateProgress(null);
+    }
+  };
 
   const fetchVenues = async () => {
     try {
@@ -855,13 +930,45 @@ export default function RaceCardPage() {
         </div>
 
         {venues.length > 0 && (
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap gap-2 sm:gap-3">
+            {/* おれAI一括生成ボタン */}
+            <button
+              onClick={bulkGenerateAnalysis}
+              disabled={bulkGenerating || pdfGenerating}
+              className="px-4 sm:px-6 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 disabled:from-slate-400 disabled:to-slate-500 font-bold text-sm sm:text-base min-h-[44px] shadow-lg shadow-purple-500/20 transition-all"
+            >
+              {bulkGenerating ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  {bulkGenerateProgress ? `${bulkGenerateProgress.current}/${bulkGenerateProgress.total}` : '生成中...'}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  🧠 一括生成
+                </span>
+              )}
+            </button>
+            
+            {/* 一括生成結果 */}
+            {bulkGenerateResult && (
+              <span className="flex items-center px-3 py-2 bg-green-100 text-green-800 rounded-lg text-sm">
+                ✅ {bulkGenerateResult.success}レース生成完了 ({bulkGenerateResult.time}秒)
+                {bulkGenerateResult.error > 0 && (
+                  <span className="ml-2 text-red-600">({bulkGenerateResult.error}件エラー)</span>
+                )}
+              </span>
+            )}
+            
+            {/* PDF生成ボタン */}
             <button
               onClick={generateAllRacesPDF}
-              disabled={pdfGenerating}
-              className="w-full sm:w-auto px-4 sm:px-6 py-3 bg-green-700 text-white rounded hover:bg-green-600 disabled:bg-slate-400 font-bold text-sm sm:text-base min-h-[44px]"
+              disabled={pdfGenerating || bulkGenerating}
+              className="px-4 sm:px-6 py-3 bg-green-700 text-white rounded-lg hover:bg-green-600 disabled:bg-slate-400 font-bold text-sm sm:text-base min-h-[44px]"
             >
-              {pdfGenerating ? 'PDF生成中...' : '全レースをPDFでダウンロード'}
+              {pdfGenerating ? 'PDF生成中...' : '📄 全レースPDF'}
             </button>
           </div>
         )}

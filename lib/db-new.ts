@@ -2,37 +2,52 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from '../drizzle/schema';
 
-let db: ReturnType<typeof drizzle> | null = null;
-let rawDb: Database.Database | null = null;
+// Next.jsの開発モードではホットリロードで変数がリセットされるため、globalThisを使用
+declare global {
+  // eslint-disable-next-line no-var
+  var _drizzleDb: ReturnType<typeof drizzle> | undefined;
+  // eslint-disable-next-line no-var
+  var _rawDb: Database.Database | undefined;
+}
 
 /** どの場所から呼んでも同じ DB インスタンスを返す */
 export function getDb() {
-  if (!db) {
-    // .env.local に DB_PATH を置かなければ ./races.db を開く
+  if (!globalThis._drizzleDb) {
     const path = process.env.DB_PATH ?? 'races.db';
     
     const sqlite = new Database(path);
     sqlite.pragma('journal_mode = WAL');
     
-    db = drizzle(sqlite, { schema });
+    globalThis._drizzleDb = drizzle(sqlite, { schema });
   }
-  return db;
+  return globalThis._drizzleDb;
 }
 
 /** 旧バージョンとの互換性のため、生のSQLiteインスタンスも取得可能に */
 /** シングルトンパターンで同じ接続を再利用（メモリリーク防止） */
 export function getRawDb(): Database.Database {
-  if (rawDb) {
-    return rawDb;
+  // 既存の接続が有効かチェック
+  if (globalThis._rawDb) {
+    try {
+      // 接続が開いているかテスト
+      globalThis._rawDb.pragma('journal_mode');
+      return globalThis._rawDb;
+    } catch {
+      // 接続が閉じられている場合は再接続
+      console.log('[db-new] 接続が閉じていたため再接続します');
+      globalThis._rawDb = undefined;
+    }
   }
   
   const path = process.env.DB_PATH ?? 'races.db';
-  rawDb = new Database(path);
-  rawDb.pragma('journal_mode = WAL');
-  rawDb.pragma('busy_timeout = 5000'); // ロック待機時間を5秒に設定
+  console.log('[db-new] 新しいDB接続を作成:', path);
+  
+  globalThis._rawDb = new Database(path);
+  globalThis._rawDb.pragma('journal_mode = WAL');
+  globalThis._rawDb.pragma('busy_timeout = 5000'); // ロック待機時間を5秒に設定
   
   // 既存のテーブルを作成（Drizzle移行前のコードとの互換性）
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS races (
       raceKey TEXT PRIMARY KEY,
       date TEXT,
@@ -42,7 +57,7 @@ export function getRawDb(): Database.Database {
     )
   `);
 
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS umaren (
       raceKey TEXT,
       comb TEXT,
@@ -51,7 +66,7 @@ export function getRawDb(): Database.Database {
     )
   `);
 
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS wide (
       raceKey TEXT,
       comb TEXT,
@@ -61,7 +76,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // umadataテーブル（過去走データ）
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS umadata (
       id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
       race_id_new_no_horse_num TEXT,
@@ -119,7 +134,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // indicesテーブル（各種指数データ）
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS indices (
       race_id TEXT PRIMARY KEY,
       L4F REAL,
@@ -134,7 +149,7 @@ export function getRawDb(): Database.Database {
   `);
 
   // wakujunテーブル（出走表）
-  rawDb.exec(`
+  globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS wakujun (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT,
@@ -161,6 +176,48 @@ export function getRawDb(): Database.Database {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // saga_analysis_cacheテーブル（おれAI分析キャッシュ）
+  globalThis._rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS saga_analysis_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year TEXT NOT NULL,
+      date TEXT NOT NULL,
+      place TEXT NOT NULL,
+      race_number TEXT NOT NULL,
+      horse_number INTEGER NOT NULL,
+      horse_name TEXT NOT NULL,
+      analysis_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(year, date, place, race_number, horse_number)
+    )
+  `);
+
+  // インデックス作成（高速検索用）
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_saga_cache_race 
+    ON saga_analysis_cache(year, date, place, race_number)
+  `);
+
+  // race_pace_cacheテーブル（展開予想キャッシュ）
+  globalThis._rawDb.exec(`
+    CREATE TABLE IF NOT EXISTS race_pace_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year TEXT NOT NULL,
+      date TEXT NOT NULL,
+      place TEXT NOT NULL,
+      race_number TEXT NOT NULL,
+      prediction_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(year, date, place, race_number)
+    )
+  `);
+
+  // インデックス作成（高速検索用）
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_pace_cache_race 
+    ON race_pace_cache(year, date, place, race_number)
+  `);
   
-  return rawDb;
+  return globalThis._rawDb;
 }

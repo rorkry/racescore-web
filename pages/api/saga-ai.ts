@@ -60,6 +60,86 @@ function setToCache(key: string, data: any): void {
   analysisCache.set(key, { data, timestamp: Date.now() });
 }
 
+// ========================================
+// DBキャッシュ機能（永続化）
+// ========================================
+
+interface DBCachedAnalysis {
+  horseNumber: number;
+  horseName: string;
+  analysis: SagaAnalysis;
+}
+
+/**
+ * DBからキャッシュされた分析を取得
+ */
+function getAnalysisFromDBCache(
+  db: Database.Database,
+  year: string,
+  date: string,
+  place: string,
+  raceNumber: string
+): DBCachedAnalysis[] | null {
+  try {
+    const rows = db.prepare(`
+      SELECT horse_number, horse_name, analysis_json
+      FROM saga_analysis_cache
+      WHERE year = ? AND date = ? AND place = ? AND race_number = ?
+      ORDER BY horse_number
+    `).all(year, date, place, raceNumber) as any[];
+
+    if (!rows || rows.length === 0) return null;
+
+    return rows.map(row => ({
+      horseNumber: row.horse_number,
+      horseName: row.horse_name,
+      analysis: JSON.parse(row.analysis_json) as SagaAnalysis,
+    }));
+  } catch (error) {
+    console.error('[saga-ai] DBキャッシュ読み込みエラー:', error);
+    return null;
+  }
+}
+
+/**
+ * 分析結果をDBキャッシュに保存
+ */
+function saveAnalysisToDBCache(
+  db: Database.Database,
+  year: string,
+  date: string,
+  place: string,
+  raceNumber: string,
+  analyses: SagaAnalysis[]
+): void {
+  try {
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO saga_analysis_cache 
+      (year, date, place, race_number, horse_number, horse_name, analysis_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+
+    const insertMany = db.transaction((items: SagaAnalysis[]) => {
+      for (const analysis of items) {
+        stmt.run(
+          year,
+          date,
+          place,
+          raceNumber,
+          analysis.horseNumber,
+          analysis.horseName,
+          JSON.stringify(analysis)
+        );
+      }
+    });
+
+    insertMany(analyses);
+    console.log(`[saga-ai] DBキャッシュ保存: ${year}/${date}/${place}/${raceNumber} (${analyses.length}頭)`);
+  } catch (error) {
+    console.error('[saga-ai] DBキャッシュ保存エラー:', error);
+  }
+}
+
 /**
  * 馬名を正規化（$, *, スペースを除去）
  */
@@ -77,6 +157,177 @@ interface RequestBody {
   raceNumber: string;
   useAI?: boolean;
   trackCondition?: '良' | '稍' | '重' | '不';
+  bias?: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro';
+  forceRecalculate?: boolean;  // true: キャッシュを無視して再計算
+  saveToDB?: boolean;          // true: 計算後にDBに保存（一括生成用）
+}
+
+// バイアスに基づくスコア調整
+interface BiasAdjustmentResult {
+  scoreAdjustment: number;
+  comment: string | null;
+  tag: string | null;
+}
+
+/**
+ * バイアスに基づくスコア調整を計算
+ * @param horseNumber 馬番
+ * @param waku 枠番
+ * @param totalHorses 出走頭数
+ * @param bias バイアス設定
+ * @param t2fPercentile 前半2Fの順位パーセンタイル (0-100, 低いほど前目)
+ * @param cornerPositions 近走のコーナー通過順位の平均
+ * @param baseScore 元のスコア
+ */
+function calculateBiasAdjustment(
+  horseNumber: number,
+  waku: number,
+  totalHorses: number,
+  bias: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro',
+  t2fPercentile: number | null,
+  cornerPositions: number[] | null,
+  baseScore: number
+): BiasAdjustmentResult {
+  if (bias === 'none') {
+    return { scoreAdjustment: 0, comment: null, tag: null };
+  }
+
+  let scoreAdjustment = 0;
+  let comment: string | null = null;
+  let tag: string | null = null;
+
+  // 枠の判定（4枠以下が内、5枠以上が外）
+  const isInnerWaku = waku <= 4;
+  const isOuterWaku = waku >= 5;
+  
+  // 馬番での判定（補助）
+  const innerThreshold = Math.ceil(totalHorses / 3);
+  const outerThreshold = totalHorses - Math.ceil(totalHorses / 3);
+  const isInnerNumber = horseNumber <= innerThreshold;
+  const isOuterNumber = horseNumber > outerThreshold;
+
+  // 脚質の判定
+  // 近走平均コーナー位置から判定（低いほど前目）
+  let avgCornerPos = 0;
+  if (cornerPositions && cornerPositions.length > 0) {
+    avgCornerPos = cornerPositions.reduce((a, b) => a + b, 0) / cornerPositions.length;
+  }
+  
+  // T2Fパーセンタイルも考慮（低いほど前半が速い = 前に行ける）
+  const isFrontRunner = avgCornerPos > 0 && avgCornerPos <= 4 || (t2fPercentile !== null && t2fPercentile <= 30);
+  const isCloser = avgCornerPos >= 8 || (t2fPercentile !== null && t2fPercentile >= 70);
+
+  switch (bias) {
+    case 'uchi': // 内有利
+      if (isInnerWaku || isInnerNumber) {
+        // 内枠：全体得点の2割加算
+        scoreAdjustment = baseScore * 0.20;
+        comment = `🎯 内有利: ${waku}枠${horseNumber}番は内枠で大幅プラス評価`;
+        tag = '🎯内有利◎';
+      } else if (isOuterWaku || isOuterNumber) {
+        // 外枠：1割減点
+        scoreAdjustment = -baseScore * 0.10;
+        comment = `⚠️ 内有利レース: ${waku}枠${horseNumber}番は外枠で不利`;
+        tag = '外枠▲';
+      }
+      break;
+
+    case 'soto': // 外有利
+      if (isOuterWaku || isOuterNumber) {
+        // 外枠：全体得点の2割加算
+        scoreAdjustment = baseScore * 0.20;
+        comment = `🎯 外有利: ${waku}枠${horseNumber}番は外枠で大幅プラス評価`;
+        tag = '🎯外有利◎';
+      } else if (isInnerWaku || isInnerNumber) {
+        // 内枠：1割減点
+        scoreAdjustment = -baseScore * 0.10;
+        comment = `⚠️ 外有利レース: ${waku}枠${horseNumber}番は内枠で不利`;
+        tag = '内枠▲';
+      }
+      break;
+
+    case 'mae': // 前有利
+      // 前有利要素を集計
+      let maeFactors = 0;
+      const maeReasons: string[] = [];
+      
+      if (isFrontRunner) {
+        maeFactors += 2;
+        maeReasons.push('逃げ先行型');
+      }
+      if (isInnerWaku || isInnerNumber) {
+        maeFactors += 1;
+        maeReasons.push('内枠（位置取り有利）');
+      }
+      if (t2fPercentile !== null && t2fPercentile <= 25) {
+        maeFactors += 1;
+        maeReasons.push('前半2Fが速い');
+      }
+      if (avgCornerPos > 0 && avgCornerPos <= 3) {
+        maeFactors += 1;
+        maeReasons.push('近走通過順が前');
+      }
+      
+      if (maeFactors >= 2) {
+        // 前有利要素が2つ以上：2割加算
+        scoreAdjustment = baseScore * 0.20;
+        comment = `🎯 前有利: ${maeReasons.join('・')}`;
+        tag = '🎯前有利◎';
+      } else if (maeFactors === 1) {
+        // 前有利要素が1つ：1割加算
+        scoreAdjustment = baseScore * 0.10;
+        comment = `📈 前有利傾向: ${maeReasons.join('・')}`;
+        tag = '前有利○';
+      } else if (isCloser) {
+        // 差し追込み馬：1.5割減点
+        scoreAdjustment = -baseScore * 0.15;
+        comment = `⚠️ 前有利レース: 差し追込み脚質で厳しい`;
+        tag = '差追▲';
+      }
+      break;
+
+    case 'ushiro': // 後有利
+      // 後有利要素を集計
+      let ushiroFactors = 0;
+      const ushiroReasons: string[] = [];
+      
+      if (isCloser) {
+        ushiroFactors += 2;
+        ushiroReasons.push('差し追込み型');
+      }
+      if (t2fPercentile !== null && t2fPercentile >= 60) {
+        ushiroFactors += 1;
+        ushiroReasons.push('前半は控える');
+      }
+      if (avgCornerPos >= 6) {
+        ushiroFactors += 1;
+        ushiroReasons.push('近走通過順が後ろ');
+      }
+      
+      if (ushiroFactors >= 2) {
+        // 後有利要素が2つ以上：2割加算
+        scoreAdjustment = baseScore * 0.20;
+        comment = `🎯 後有利: ${ushiroReasons.join('・')}`;
+        tag = '🎯後有利◎';
+      } else if (ushiroFactors === 1) {
+        // 後有利要素が1つ：1割加算
+        scoreAdjustment = baseScore * 0.10;
+        comment = `📈 後有利傾向: ${ushiroReasons.join('・')}`;
+        tag = '後有利○';
+      } else if (isFrontRunner) {
+        // 逃げ先行馬：1.5割減点
+        scoreAdjustment = -baseScore * 0.15;
+        comment = `⚠️ 後有利レース: 逃げ先行脚質で厳しい`;
+        tag = '逃先▲';
+      }
+      break;
+  }
+
+  return {
+    scoreAdjustment: Math.round(scoreAdjustment * 10) / 10,
+    comment,
+    tag
+  };
 }
 
 /**
@@ -206,6 +457,7 @@ function getHistoricalLapData(
         AND finish_position = '１'
         AND work_1s IS NOT NULL
         AND work_1s != ''
+        AND date >= '2019'
       ORDER BY date DESC
       LIMIT 200
     `;
@@ -434,20 +686,14 @@ export default async function handler(
 
   try {
     const body = req.body as RequestBody;
-    const { year, date, place: rawPlace, raceNumber, useAI = false, trackCondition = '良' } = body;
+    const { 
+      year, date, place: rawPlace, raceNumber, 
+      useAI = false, trackCondition = '良', bias = 'none',
+      forceRecalculate = false, saveToDB = false 
+    } = body;
 
     if (!year || !date || !rawPlace || !raceNumber) {
       return res.status(400).json({ error: 'Missing required parameters' });
-    }
-
-    // キャッシュチェック（AI使用時はキャッシュしない）
-    const cacheKey = getCacheKey(year, date, rawPlace, raceNumber, trackCondition);
-    if (!useAI) {
-      const cached = getFromCache(cacheKey);
-      if (cached) {
-        console.log(`[saga-ai] キャッシュヒット: ${cacheKey}`);
-        return res.status(200).json(cached);
-      }
     }
 
     const normalizePlace = (p: string): string => {
@@ -456,8 +702,54 @@ export default async function handler(
     };
 
     const normalizedPlace = normalizePlace(rawPlace);
-
     const db = getRawDb();
+
+    // ========================================
+    // DBキャッシュチェック（バイアスnone & 再計算でない場合）
+    // ========================================
+    if (!useAI && bias === 'none' && !forceRecalculate) {
+      // まずDBキャッシュをチェック
+      const dbCached = getAnalysisFromDBCache(db, year, date, rawPlace, raceNumber);
+      if (dbCached && dbCached.length > 0) {
+        console.log(`[saga-ai] DBキャッシュヒット: ${year}/${date}/${rawPlace}/${raceNumber} (${dbCached.length}頭)`);
+        
+        // キャッシュされた分析をスコア順にソート
+        const analyses = dbCached.map(c => c.analysis);
+        analyses.sort((a, b) => (b.score || 0) - (a.score || 0));
+        
+        const openAISagaChecker = getOpenAISaga();
+        const isAIEnabled = openAISagaChecker.isOpenAIEnabled();
+        
+        const responseData = {
+          success: true,
+          fromCache: true,
+          raceInfo: {
+            year,
+            date,
+            place: normalizedPlace,
+            raceNumber,
+            horseCount: analyses.length,
+          },
+          analyses,
+          aiAnalyses: null,
+          aiEnabled: isAIEnabled,
+          summary: generateSummary(analyses.slice(0, 3), null),
+        };
+        
+        return res.status(200).json(responseData);
+      }
+    }
+
+    // メモリキャッシュチェック（AI使用時およびバイアス指定時はキャッシュしない）
+    const cacheKey = getCacheKey(year, date, rawPlace, raceNumber, trackCondition);
+    if (!useAI && bias === 'none' && !forceRecalculate) {
+      const cached = getFromCache(cacheKey);
+      if (cached) {
+        console.log(`[saga-ai] メモリキャッシュヒット: ${cacheKey}`);
+        return res.status(200).json(cached);
+      }
+    }
+
     const brain = new SagaBrain();
 
     const openAISagaChecker = getOpenAISaga();
@@ -471,7 +763,6 @@ export default async function handler(
     `).all(date, rawPlace, raceNumber) as any[];
 
     if (!horses || horses.length === 0) {
-      db.close();
       return res.status(404).json({ error: 'No horses found' });
     }
 
@@ -740,11 +1031,60 @@ export default async function handler(
       analyses.push(analysis);
     }
 
+    // バイアス調整を適用
+    if (bias !== 'none') {
+      const totalHorses = horses.length;
+      console.log(`[saga-ai] バイアス調整適用: ${bias}, 出走頭数: ${totalHorses}`);
+      
+      for (let i = 0; i < analyses.length; i++) {
+        const analysis = analyses[i];
+        const horseData = horseDataList.find(hd => parseInt(hd.horse.umaban || '0', 10) === analysis.horseNumber);
+        
+        if (!horseData) continue;
+        
+        const waku = parseInt(horseData.horse.waku || '0', 10);
+        const t2fPercentile = analysis.debugInfo?.t2f?.percentile ?? null;
+        
+        // 近走のコーナー通過順を取得
+        const cornerPositions: number[] = [];
+        for (const race of horseData.pastRaces.slice(0, 3)) {
+          // corner_4が最終コーナーの位置
+          const corner4 = parseInt(race.corner_4 || '0', 10);
+          if (corner4 > 0) {
+            cornerPositions.push(corner4);
+          }
+        }
+        
+        const biasResult = calculateBiasAdjustment(
+          analysis.horseNumber,
+          waku,
+          totalHorses,
+          bias,
+          t2fPercentile,
+          cornerPositions.length > 0 ? cornerPositions : null,
+          analysis.score
+        );
+        
+        if (biasResult.scoreAdjustment !== 0) {
+          analysis.score += biasResult.scoreAdjustment;
+          console.log(`[saga-ai] ${analysis.horseName}: バイアス調整 ${biasResult.scoreAdjustment > 0 ? '+' : ''}${biasResult.scoreAdjustment}pt`);
+        }
+        
+        if (biasResult.comment) {
+          analysis.comments.unshift(biasResult.comment);
+        }
+        
+        if (biasResult.tag) {
+          analysis.tags.unshift(biasResult.tag);
+        }
+      }
+    }
+
     analyses.sort((a, b) => {
       return (b.score || 0) - (a.score || 0);
     });
 
-    db.close();
+    // シングルトン接続は閉じない
 
     let aiResults: OpenAISagaResult[] | null = null;
     if (openAISaga && openAISaga.isOpenAIEnabled()) {
@@ -777,10 +1117,15 @@ export default async function handler(
       summary: generateSummary(analyses.slice(0, 3), aiResults),
     };
 
-    // キャッシュに保存（AI使用時はキャッシュしない）
-    if (!useAI) {
+    // DBキャッシュに保存（バイアスnone時、または明示的にsaveToDB指定時）
+    if (bias === 'none' && (saveToDB || !forceRecalculate)) {
+      saveAnalysisToDBCache(db, year, date, rawPlace, raceNumber, analyses);
+    }
+
+    // メモリキャッシュに保存（AI使用時およびバイアス指定時はキャッシュしない）
+    if (!useAI && bias === 'none') {
       setToCache(cacheKey, responseData);
-      console.log(`[saga-ai] キャッシュ保存: ${cacheKey}`);
+      console.log(`[saga-ai] メモリキャッシュ保存: ${cacheKey}`);
     }
 
     return res.status(200).json(responseData);

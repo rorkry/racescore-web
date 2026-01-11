@@ -61,11 +61,14 @@ const RATING_COLORS: Record<string, string> = {
   'D': 'bg-gradient-to-r from-gray-600 to-gray-700 text-white',
 };
 
-const MEDAL_ICONS: Record<number, { icon: string; color: string }> = {
-  0: { icon: '◎', color: 'text-amber-400' },
-  1: { icon: '○', color: 'text-slate-300' },
-  2: { icon: '▲', color: 'text-orange-400' },
-};
+// 印の定義（インデックス順に降格）
+const MEDAL_ICONS: { icon: string; color: string }[] = [
+  { icon: '◎', color: 'text-amber-400' },   // 0: 本命
+  { icon: '○', color: 'text-slate-300' },   // 1: 対抗
+  { icon: '▲', color: 'text-orange-400' },  // 2: 単穴
+  { icon: '△', color: 'text-blue-400' },    // 3: 連下
+  { icon: '×', color: 'text-slate-500' },   // 4: 消し（無印）
+];
 
 // レーティングの順序（調整用）
 const RATING_ORDER: ('S' | 'A' | 'B' | 'C' | 'D')[] = ['S', 'A', 'B', 'C', 'D'];
@@ -188,19 +191,47 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   
   // レースバイアス（内/外/前/後）
   const [bias, setBias] = useState<'none' | 'uchi' | 'soto' | 'mae' | 'ushiro'>('none');
+  
+  // バイアス変更時にAPIを再呼び出しするためのフラグ
+  const [isRefetching, setIsRefetching] = useState(false);
+  
+  // 印の降格管理（馬番 → 降格回数）
+  const [demotedHorses, setDemotedHorses] = useState<Map<number, number>>(new Map());
+  
+  // 印の降格ハンドラー
+  const handleDemote = useCallback((horseNumber: number) => {
+    setDemotedHorses(prev => {
+      const newMap = new Map(prev);
+      const currentDemotion = newMap.get(horseNumber) || 0;
+      // 最大4段階降格（◎→○→▲→△→無印）
+      if (currentDemotion < 4) {
+        newMap.set(horseNumber, currentDemotion + 1);
+      }
+      return newMap;
+    });
+  }, []);
+  
+  // 降格リセットハンドラー
+  const handleResetDemotions = useCallback(() => {
+    setDemotedHorses(new Map());
+  }, []);
 
   // ルールベース分析を取得
-  const fetchRuleBasedAnalysis = useCallback(async () => {
+  const fetchRuleBasedAnalysis = useCallback(async (currentBias: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro' = 'none', isRefetch = false) => {
     if (!year || !date || !place || !raceNumber) return;
     
     try {
-      setLoading(true);
+      if (isRefetch) {
+        setIsRefetching(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
 
       const res = await fetch('/api/saga-ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ year, date, place, raceNumber, useAI: false, trackCondition }),
+        body: JSON.stringify({ year, date, place, raceNumber, useAI: false, trackCondition, bias: currentBias }),
       });
 
       if (!res.ok) {
@@ -215,8 +246,16 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       setError(err.message);
     } finally {
       setLoading(false);
+      setIsRefetching(false);
     }
   }, [year, date, place, raceNumber, trackCondition]);
+  
+  // バイアス変更ハンドラー（即座に再評価）
+  const handleBiasChange = useCallback((newBias: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro') => {
+    setBias(newBias);
+    // 即座にAPIを再呼び出し
+    fetchRuleBasedAnalysis(newBias, true);
+  }, [fetchRuleBasedAnalysis]);
 
   // AI分析を取得
   const fetchAIAnalysis = useCallback(async () => {
@@ -250,8 +289,8 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
 
   // 初回読み込み
   useEffect(() => {
-    fetchRuleBasedAnalysis();
-  }, [fetchRuleBasedAnalysis]);
+    fetchRuleBasedAnalysis(bias);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // AIモード切替時
   useEffect(() => {
@@ -259,6 +298,33 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       fetchAIAnalysis();
     }
   }, [useAI, aiAnalyses, aiEnabled, fetchAIAnalysis]);
+
+  // 表示するデータを決定（降格を考慮してソート）- Hooksは早期リターンの前に配置
+  const sortedData = React.useMemo(() => {
+    const baseData = useAI && aiAnalyses ? [...aiAnalyses] : [...analyses];
+    
+    // 降格状態に基づいてソート
+    if (demotedHorses.size > 0) {
+      baseData.sort((a, b) => {
+        const aNumber = 'horseNumber' in a ? a.horseNumber : (a as SagaAnalysis).horseNumber;
+        const bNumber = 'horseNumber' in b ? b.horseNumber : (b as SagaAnalysis).horseNumber;
+        const aScore = 'score' in a ? a.score : (a as OpenAISagaResult).ruleBasedAnalysis.score;
+        const bScore = 'score' in b ? b.score : (b as OpenAISagaResult).ruleBasedAnalysis.score;
+        const aDemotion = demotedHorses.get(aNumber) || 0;
+        const bDemotion = demotedHorses.get(bNumber) || 0;
+        
+        // 降格回数が多いほど下に（降格回数 * 100点減点として扱う）
+        const aEffectiveScore = aScore - aDemotion * 100;
+        const bEffectiveScore = bScore - bDemotion * 100;
+        
+        return bEffectiveScore - aEffectiveScore;
+      });
+    }
+    
+    return baseData;
+  }, [useAI, aiAnalyses, analyses, demotedHorses]);
+  
+  const displayData = sortedData.slice(0, expanded ? 10 : 3);
 
   if (loading) {
     return (
@@ -286,11 +352,6 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       </div>
     );
   }
-
-  // 表示するデータを決定
-  const displayData = useAI && aiAnalyses 
-    ? aiAnalyses.slice(0, expanded ? 10 : 3)
-    : analyses.slice(0, expanded ? 10 : 3);
 
   return (
     <div className="bg-gradient-to-br from-slate-800 via-slate-850 to-slate-900 rounded-xl p-3 sm:p-6 shadow-xl border border-slate-700/50">
@@ -379,19 +440,38 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
         ].map(opt => (
           <button
             key={opt.key}
-            onClick={() => setBias(opt.key)}
+            onClick={() => handleBiasChange(opt.key)}
+            disabled={isRefetching}
             className={`px-2 sm:px-3 py-1.5 sm:py-1 text-[10px] sm:text-xs rounded-md border transition-all min-h-[36px] sm:min-h-0 ${
               bias === opt.key
                 ? `${opt.color} text-white`
                 : 'bg-slate-700/50 border-slate-600/50 text-slate-400 hover:bg-slate-600/50'
-            }`}
+            } ${isRefetching ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {opt.label}
           </button>
         ))}
+        {isRefetching && (
+          <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin ml-2"></div>
+        )}
         <span className="hidden sm:inline text-xs text-slate-500 ml-2">
           ※レースバイアスで評価が調整されます
         </span>
+      </div>
+      
+      {/* 印の手動調整案内 & リセットボタン */}
+      <div className="flex items-center justify-between mb-3 sm:mb-4 px-1">
+        <span className="text-[10px] sm:text-xs text-slate-500">
+          💡 印をクリックで評価を下げられます
+        </span>
+        {demotedHorses.size > 0 && (
+          <button
+            onClick={handleResetDemotions}
+            className="px-2 sm:px-3 py-1 text-[10px] sm:text-xs rounded-md border border-red-500/50 bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-all"
+          >
+            🔄 印リセット ({demotedHorses.size}頭)
+          </button>
+        )}
       </div>
 
       {/* サマリー */}
@@ -471,24 +551,40 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
           const biasResult = calculateBiasAdjustment(horseNumber, totalHorses, runningStyle, bias);
           const rating = adjustRating(originalRating, biasResult.adjustment);
           
-          const medal = MEDAL_ICONS[idx] || { icon: '△', color: 'text-slate-500' };
+          // 降格状態を考慮した印を決定
+          const demotion = demotedHorses.get(horseNumber) || 0;
+          const effectiveIdx = Math.min(idx + demotion, MEDAL_ICONS.length - 1);
+          const medal = MEDAL_ICONS[effectiveIdx];
+          const isDemoted = demotion > 0;
           
           return (
             <div 
               key={horseNumber}
               className={`rounded-lg p-3 sm:p-4 border backdrop-blur-sm transition-all duration-200 hover:scale-[1.01] ${
-                idx === 0 ? 'bg-amber-900/20 border-amber-500/40 shadow-lg shadow-amber-500/10' :
-                idx === 1 ? 'bg-slate-700/20 border-slate-400/40' :
-                idx === 2 ? 'bg-orange-900/20 border-orange-500/40' :
+                effectiveIdx === 0 ? 'bg-amber-900/20 border-amber-500/40 shadow-lg shadow-amber-500/10' :
+                effectiveIdx === 1 ? 'bg-slate-700/20 border-slate-400/40' :
+                effectiveIdx === 2 ? 'bg-orange-900/20 border-orange-500/40' :
                 'bg-slate-800/30 border-slate-600/40'
               }`}
             >
               {/* ヘッダー */}
               <div className="flex items-center justify-between mb-2 sm:mb-3 gap-2">
                 <div className="flex items-center gap-1.5 sm:gap-3 flex-1 min-w-0">
-                  <span className={`text-xl sm:text-2xl flex-shrink-0 ${medal.color}`}>
+                  {/* クリック可能な印 */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDemote(horseNumber);
+                    }}
+                    className={`text-xl sm:text-2xl flex-shrink-0 ${medal.color} hover:scale-125 active:scale-90 transition-transform cursor-pointer`}
+                    title={effectiveIdx < MEDAL_ICONS.length - 1 ? 'クリックで評価を下げる' : '最低評価です'}
+                    disabled={effectiveIdx >= MEDAL_ICONS.length - 1}
+                  >
                     {medal.icon}
-                  </span>
+                  </button>
+                  {isDemoted && (
+                    <span className="text-[10px] text-red-400 flex-shrink-0">↓{demotion}</span>
+                  )}
                   <span className="text-white font-bold text-sm sm:text-lg truncate">
                     {horseNumber}番 {horseName}
                   </span>

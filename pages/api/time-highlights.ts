@@ -79,7 +79,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const entries = db.prepare(raceQuery).all(...params) as any[];
 
     if (!entries || entries.length === 0) {
-      db.close();
       return res.json({ highlights: [] });
     }
 
@@ -207,15 +206,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    db.close();
+    // シングルトン接続は閉じない
 
     res.json({ highlights });
   } catch (error: any) {
     console.error('[time-highlights] Error:', error);
-    db.close();
     res.status(500).json({ error: error.message });
   }
 }
+
 
 
 

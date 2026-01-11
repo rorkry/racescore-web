@@ -81,7 +81,7 @@ export default async function handler(
     });
 
     insertMany(data);
-    db.close();
+    // シングルトン接続は閉じない
 
     return res.status(200).json({
       success: true,
