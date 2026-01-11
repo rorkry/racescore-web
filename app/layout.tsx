@@ -45,6 +45,24 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head suppressHydrationWarning />
       <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <main>{children}</main>
+        {/* Service Worker登録 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js')
+                    .then(function(registration) {
+                      console.log('[App] SW registered:', registration.scope);
+                    })
+                    .catch(function(error) {
+                      console.log('[App] SW registration failed:', error);
+                    });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
