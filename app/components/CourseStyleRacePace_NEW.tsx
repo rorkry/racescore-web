@@ -317,3 +317,6 @@ function calculateGoalPositionAdjustment(
 
 
 
+
+
+

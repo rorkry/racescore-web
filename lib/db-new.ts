@@ -218,6 +218,74 @@ export function getRawDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_pace_cache_race 
     ON race_pace_cache(year, date, place, race_number)
   `);
+
+  // ========================================
+  // パフォーマンス向上用インデックス
+  // ========================================
+  
+  // wakujun（出走表）- レース検索の高速化
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_wakujun_race_lookup 
+    ON wakujun(date, place, race_number)
+  `);
+  
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_wakujun_umamei 
+    ON wakujun(umamei)
+  `);
+  
+  // wakujun - 年別検索用
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_wakujun_year 
+    ON wakujun(year)
+  `);
+  
+  // wakujun - 年+日付検索用（日付一覧取得で使用）
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_wakujun_year_date 
+    ON wakujun(year, date)
+  `);
+
+  // umadata（過去走データ）- 馬名・日付検索の高速化
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_horse_name 
+    ON umadata(horse_name)
+  `);
+  
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_date 
+    ON umadata(date DESC)
+  `);
+  
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_horse_date 
+    ON umadata(horse_name, date DESC)
+  `);
+  
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_race_id 
+    ON umadata(race_id_new_no_horse_num)
+  `);
+  
+  // umadata - タイム比較クエリ用（おれAI）
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_place_distance 
+    ON umadata(place, distance)
+  `);
+  
+  // umadata - 日付+場所+距離の複合検索用（おれAI）
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_umadata_date_place_distance 
+    ON umadata(date, place, distance)
+  `);
+
+  // indices（指数データ）- race_id検索の高速化
+  globalThis._rawDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_indices_race_id 
+    ON indices(race_id)
+  `);
+
+  console.log('[db-new] インデックス作成完了');
   
   return globalThis._rawDb;
 }

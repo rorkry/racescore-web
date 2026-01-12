@@ -1980,3 +1980,6 @@ export function getCoursesBySurface(surface: TrackSurface): CourseCharacteristic
 
 
 
+
+
+
