@@ -152,6 +152,7 @@ export function getRawDb(): Database.Database {
   globalThis._rawDb.exec(`
     CREATE TABLE IF NOT EXISTS wakujun (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year TEXT,
       date TEXT,
       place TEXT,
       race_number TEXT,
