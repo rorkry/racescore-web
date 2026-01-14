@@ -285,6 +285,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
 
   // === メモ化: 過去走の基本分析データ ===
   const analysisData = useMemo(() => {
+    try {
     const pastRaces = horse?.past || [];
     
     // コース別成績: 着度数[1着,2着,3着,4着以下]も追加
@@ -466,10 +467,26 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
       highPotentialRaces,
       maxPotential
     };
+    } catch (error) {
+      console.error('HorseDetailModal analysisData error:', error);
+      return {
+        pastRaces: [],
+        courseMap: new Map(),
+        exactMap: new Map(),
+        flatWins: 0, flatTotal: 0, flatRate: 0, isFlatMaster: false, flatRecordStr: '0.0.0.0',
+        steepWins: 0, steepTotal: 0, steepRate: 0, isSteepMaster: false, steepRecordStr: '0.0.0.0',
+        rightTurnWins: 0, rightTurnTotal: 0, rightTurnRate: 0, isRightTurnMaster: false, rightTurnRecordStr: '0.0.0.0',
+        leftTurnWins: 0, leftTurnTotal: 0, leftTurnRate: 0, isLeftTurnMaster: false, leftTurnRecordStr: '0.0.0.0',
+        freshWins: 0, freshTotal: 0, freshRecordStr: '0.0.0.0',
+        quickWins: 0, quickTotal: 0, quickRecordStr: '0.0.0.0',
+        allComebackIndices: [], allPotentialData: [], highComebackRaces: [], highPotentialRaces: [], maxPotential: 0
+      };
+    }
   }, [horse?.past]);
 
   // === メモ化: レーダーチャート用指標計算 ===
   const radarMetrics = useMemo(() => {
+    try {
     const {
       pastRaces, courseMap, freshWins, freshTotal, quickWins, quickTotal,
       allComebackIndices, maxPotential,
@@ -638,24 +655,46 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
       isCurrentlyFresh,
       isCurrentlyQuick
     };
+    } catch (error) {
+      console.error('HorseDetailModal radarMetrics error:', error);
+      return {
+        courseRadarValue: 0, courseRate: 0, turnBonus: 0, flatBonus: 0, steepBonus: 0,
+        comebackRadarValue: 0, avgComebackIndex: 0, isComebackExcellent: false,
+        potentialRadarValue: 0, isPotentialExcellent: false,
+        scoreRadarValue: 25, scoreValue: 0, rotationValue: 50,
+        isCurrentlyFresh: false, isCurrentlyQuick: false
+      };
+    }
   }, [analysisData, horse?.score, raceInfo]);
 
   // === メモ化: レーダーチャートデータ ===
   const radarData = useMemo(() => {
-    const { courseRadarValue, courseRate, rotationValue, potentialRadarValue, comebackRadarValue, avgComebackIndex, scoreRadarValue, scoreValue } = radarMetrics;
-    const { maxPotential } = analysisData;
-    
-    return [
-      { subject: 'コース適性', value: courseRadarValue, rawValue: courseRate, unit: '%' },
-      { subject: 'ローテ', value: rotationValue, rawValue: rotationValue, unit: '' },
-      { subject: 'ポテンシャル', value: potentialRadarValue, rawValue: maxPotential, unit: '' },
-      { subject: '巻き返し', value: comebackRadarValue, rawValue: avgComebackIndex, unit: '' },
-      { subject: '競うスコア', value: scoreRadarValue, rawValue: scoreValue, unit: '' },
-    ];
+    try {
+      const { courseRadarValue = 0, courseRate = 0, rotationValue = 50, potentialRadarValue = 0, comebackRadarValue = 0, avgComebackIndex = 0, scoreRadarValue = 25, scoreValue = 0 } = radarMetrics || {};
+      const { maxPotential = 0 } = analysisData || {};
+      
+      return [
+        { subject: 'コース適性', value: courseRadarValue, rawValue: courseRate, unit: '%' },
+        { subject: 'ローテ', value: rotationValue, rawValue: rotationValue, unit: '' },
+        { subject: 'ポテンシャル', value: potentialRadarValue, rawValue: maxPotential, unit: '' },
+        { subject: '巻き返し', value: comebackRadarValue, rawValue: avgComebackIndex, unit: '' },
+        { subject: '競うスコア', value: scoreRadarValue, rawValue: scoreValue, unit: '' },
+      ];
+    } catch (error) {
+      console.error('HorseDetailModal radarData error:', error);
+      return [
+        { subject: 'コース適性', value: 0, rawValue: 0, unit: '%' },
+        { subject: 'ローテ', value: 50, rawValue: 50, unit: '' },
+        { subject: 'ポテンシャル', value: 0, rawValue: 0, unit: '' },
+        { subject: '巻き返し', value: 0, rawValue: 0, unit: '' },
+        { subject: '競うスコア', value: 25, rawValue: 0, unit: '' },
+      ];
+    }
   }, [radarMetrics, analysisData]);
 
   // === メモ化: 特性バッジ用の分析結果 ===
   const characteristicData = useMemo(() => {
+    try {
     const {
       pastRaces, courseMap, exactMap, flatWins, flatTotal, flatRate, isFlatMaster,
       steepWins, steepTotal, steepRate, isSteepMaster,
@@ -734,12 +773,25 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
       hasMegaIndex,
       megaIndexValue
     };
+    } catch (error) {
+      console.error('HorseDetailModal characteristicData error:', error);
+      return {
+        favoriteCourse: null, excellentCourse: null, flatMaster: null, steepMaster: null,
+        rightTurnMaster: null, leftTurnMaster: null, restMaster: null, restNegative: null,
+        isCurrentlyDifficult: false, hasMegaIndex: false, megaIndexValue: 0
+      };
+    }
   }, [analysisData]);
 
   // === メモ化: スパークラインデータ ===
   const sparklineData = useMemo(() => {
-    return [...analysisData.allPotentialData].reverse().slice(-8);
-  }, [analysisData.allPotentialData]);
+    try {
+      return [...(analysisData?.allPotentialData || [])].reverse().slice(-8);
+    } catch (error) {
+      console.error('HorseDetailModal sparklineData error:', error);
+      return [];
+    }
+  }, [analysisData?.allPotentialData]);
 
   // 早期リターン（Hooks の後に配置）
   if (!horse) return null;
