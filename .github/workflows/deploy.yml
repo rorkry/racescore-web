@@ -19,7 +19,9 @@ jobs:
           port: 10022
           script: |
             cd /var/www/racescore-web
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             npm install
             npm run build
             echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env.local
