@@ -4,6 +4,56 @@ import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { parseFinishPosition } from '../../utils/parse-helpers';
 
+// ========================================
+// サーバーサイドメモリキャッシュ（高速化）
+// ========================================
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+
+// globalThisを使ってサーバーサイドでキャッシュを永続化
+declare global {
+  var _raceCardCache: Map<string, CacheEntry> | undefined;
+}
+
+if (!globalThis._raceCardCache) {
+  globalThis._raceCardCache = new Map();
+}
+
+const CACHE_TTL = 5 * 60 * 1000; // 5分間キャッシュ有効
+const MAX_CACHE_SIZE = 200; // 最大200レース分
+
+function getCacheKey(year: string | number | null, date: string, place: string, raceNumber: string): string {
+  return `${year || 'null'}_${date}_${place}_${raceNumber}`;
+}
+
+function getFromCache(key: string): any | null {
+  const entry = globalThis._raceCardCache?.get(key);
+  if (!entry) return null;
+  
+  // TTL超過チェック
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    globalThis._raceCardCache?.delete(key);
+    return null;
+  }
+  
+  return entry.data;
+}
+
+function setToCache(key: string, data: any): void {
+  // キャッシュサイズ上限チェック（LRU的に古いものから削除）
+  if (globalThis._raceCardCache && globalThis._raceCardCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = globalThis._raceCardCache.keys().next().value;
+    if (firstKey) globalThis._raceCardCache.delete(firstKey);
+  }
+  
+  globalThis._raceCardCache?.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
 function GET(row: any, ...keys: string[]): string {
   for (const k of keys) {
     if (row && row[k] !== undefined && row[k] !== null) {
@@ -18,6 +68,41 @@ function normalizeHorseName(name: string): string {
     .replace(/^[\$\*\s]+/, '')
     .replace(/[\s]+$/, '')
     .trim();
+}
+
+/**
+ * 日付文字列をYYYYMMDD形式の数値に変換（比較用）
+ * 例: "2024. 1. 5" -> 20240105, "2024.01.05" -> 20240105
+ */
+function parseDateToNumber(dateStr: string): number {
+  if (!dateStr) return 0;
+  
+  // 空白を除去し、区切り文字を統一
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  
+  if (parts.length !== 3) return 0;
+  
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return 0;
+  
+  return year * 10000 + month * 100 + day;
+}
+
+/**
+ * 現在のレース日付をYYYYMMDD形式の数値に変換
+ * date: "0125" (MMDD形式), year: 2025 -> 20250125
+ */
+function getCurrentRaceDateNumber(date: string, year: number | null): number {
+  const dateStr = String(date).padStart(4, '0');
+  const month = parseInt(dateStr.substring(0, 2), 10);
+  const day = parseInt(dateStr.substring(2, 4), 10);
+  const currentYear = year || new Date().getFullYear();
+  
+  return currentYear * 10000 + month * 100 + day;
 }
 
 function generateIndexRaceId(date: string, place: string, raceNumber: string, umaban: string, year?: number): string {
@@ -105,56 +190,171 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
+  // ========================================
+  // キャッシュチェック（ヒットすればDB問い合わせをスキップ）
+  // ========================================
+  const yearFilter = year ? parseInt(year as string, 10) : null;
+  const cacheKey = getCacheKey(yearFilter, String(date), String(place), String(raceNumber));
+  
+  const cachedData = getFromCache(cacheKey);
+  if (cachedData) {
+    console.log(`[race-card-with-score] キャッシュヒット: ${cacheKey}`);
+    // HTTPキャッシュヘッダーを設定（ブラウザ側でも5分間キャッシュ）
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+    res.setHeader('X-Cache', 'HIT');
+    return res.status(200).json(cachedData);
+  }
+
   try {
     const db = getRawDb();
-    const yearFilter = year ? parseInt(year as string, 10) : null;
+    const startTime = Date.now();
 
+    // ========================================
+    // STEP 1: 出走馬を取得（1クエリ）
+    // ========================================
     const horses = db.prepare(`
       SELECT * FROM wakujun
       WHERE date = ? AND place = ? AND race_number = ? ${yearFilter ? 'AND year = ?' : ''}
       ORDER BY CAST(umaban AS INTEGER)
-    `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber]));
+    `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
     if (!horses || horses.length === 0) {
       return res.status(404).json({ error: 'No horses found for this race' });
     }
 
-    const horsesWithScore = horses.map((horse: any) => {
-      const horseName = normalizeHorseName(GET(horse, 'umamei'));
+    // 馬名リストを作成（正規化済み）
+    const horseNames = horses.map((h: any) => normalizeHorseName(GET(h, 'umamei')));
+    const horseNameSet = new Set(horseNames);
+    const uniqueHorseNames = Array.from(horseNameSet);
 
-      const pastRacesRawAll = db.prepare(`
-        SELECT * FROM umadata
-        WHERE TRIM(horse_name) = ?
-        ORDER BY date DESC
-        LIMIT 100
-      `).all(horseName);
+    // ========================================
+    // STEP 2: 全馬の過去走データを一括取得（1クエリ）
+    // ========================================
+    // プレースホルダーを動的に生成
+    const placeholders = uniqueHorseNames.map(() => '?').join(',');
+    const allPastRacesRaw = db.prepare(`
+      SELECT * FROM umadata
+      WHERE TRIM(horse_name) IN (${placeholders})
+      ORDER BY horse_name, date DESC
+    `).all(...uniqueHorseNames) as any[];
 
-      // race_id_new_no_horse_numで重複排除（同一レースの重複を除去）
-      const uniquePastRaces = Array.from(
+    // ========================================
+    // 重要: 現在表示中のレース日付以前のデータのみを使用
+    // （当日や未来のデータを含めると、結果を知った上での評価になってしまう）
+    // ========================================
+    const currentRaceDateNum = getCurrentRaceDateNumber(String(date), yearFilter);
+    console.log(`[race-card-with-score] 現在のレース日付: ${currentRaceDateNum} - この日付より前のデータのみ使用`);
+
+    // 馬名をキーにしてMapに振り分け（日付フィルタリング適用）
+    const pastRacesByHorse = new Map<string, any[]>();
+    let filteredOutCount = 0;
+    
+    for (const race of allPastRacesRaw) {
+      const horseName = (race.horse_name || '').trim();
+      
+      // 過去走の日付を数値に変換して比較
+      const pastRaceDateNum = parseDateToNumber(race.date || '');
+      
+      // 現在のレース日付以降のデータは除外（当日も除外）
+      if (pastRaceDateNum >= currentRaceDateNum) {
+        filteredOutCount++;
+        continue;
+      }
+      
+      if (!pastRacesByHorse.has(horseName)) {
+        pastRacesByHorse.set(horseName, []);
+      }
+      pastRacesByHorse.get(horseName)!.push(race);
+    }
+    
+    if (filteredOutCount > 0) {
+      console.log(`[race-card-with-score] ${filteredOutCount}件の未来データを除外しました`);
+    }
+
+    // ========================================
+    // STEP 3: 過去走の指数IDを収集し、一括取得（1クエリ）
+    // ========================================
+    const allPastRaceIndexIds: string[] = [];
+    const pastRaceIndexIdMap = new Map<string, any>(); // 後でマッピング用
+
+    // 各馬の過去走を重複排除（全走取得 - コース適性・鉄砲巧者分析用）
+    const processedPastRacesByHorse = new Map<string, any[]>();
+    
+    for (const horseName of uniqueHorseNames) {
+      const rawRaces = pastRacesByHorse.get(horseName) || [];
+      
+      // 重複排除（race_id_new_no_horse_numで）- 全走取得（最大50走）
+      const uniqueRaces = Array.from(
         new Map(
-          pastRacesRawAll.map((race: any) => [
+          rawRaces.map((race: any) => [
             race.race_id_new_no_horse_num || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
             race
           ])
         ).values()
-      ).slice(0, 5) as any[]; // 5走まで
+      ).slice(0, 50) as any[]; // 50走まで（コース適性・休み明け分析用）
+      
+      processedPastRacesByHorse.set(horseName, uniqueRaces);
+      
+      // 指数IDを収集（直近10走分のみ - パフォーマンス最適化）
+      const racesForIndices = uniqueRaces.slice(0, 10);
+      for (const race of racesForIndices) {
+        const raceIdBase = race.race_id_new_no_horse_num || '';
+        const horseNum = String(race.horse_number || '').padStart(2, '0');
+        const fullRaceId = `${raceIdBase}${horseNum}`;
+        if (fullRaceId && fullRaceId.length > 2) {
+          allPastRaceIndexIds.push(fullRaceId);
+        }
+      }
+    }
 
-      // 過去走データに指数を紐づけ
+    // 今回レースの指数IDも収集
+    const currentRaceIndexIds: string[] = [];
+    for (const horse of horses) {
+      const indexRaceId = generateIndexRaceId(
+        String(date), String(place), String(raceNumber), GET(horse, 'umaban'), yearFilter || undefined
+      );
+      currentRaceIndexIds.push(indexRaceId);
+    }
+
+    // 全ての指数IDを結合
+    const allIndexIds = [...allPastRaceIndexIds, ...currentRaceIndexIds];
+    
+    // 指数を一括取得（1クエリ）
+    const indicesMap = new Map<string, any>();
+    if (allIndexIds.length > 0) {
+      const indexPlaceholders = allIndexIds.map(() => '?').join(',');
+      const allIndices = db.prepare(`
+        SELECT race_id, L4F, T2F, potential, revouma, makikaeshi, cushion
+        FROM indices
+        WHERE race_id IN (${indexPlaceholders})
+      `).all(...allIndexIds) as any[];
+      
+      for (const idx of allIndices) {
+        indicesMap.set(idx.race_id, {
+          L4F: idx.L4F,
+          T2F: idx.T2F,
+          potential: idx.potential,
+          revouma: idx.revouma,
+          makikaeshi: idx.makikaeshi,
+          cushion: idx.cushion
+        });
+      }
+    }
+
+    // ========================================
+    // STEP 4: メモリ上でデータを組み立て（ループ内DBアクセスなし）
+    // ========================================
+    const horsesWithScore = horses.map((horse: any, horseIndex: number) => {
+      const horseName = normalizeHorseName(GET(horse, 'umamei'));
+      const uniquePastRaces = processedPastRacesByHorse.get(horseName) || [];
+
+      // 過去走データに指数を紐づけ（メモリ上のMapから取得）
       const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
         const raceIdBase = race.race_id_new_no_horse_num || '';
         const horseNum = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         
-        let raceIndices = null;
-        try {
-          const indexData = db.prepare(`
-            SELECT L4F, T2F, potential, revouma, makikaeshi, cushion
-            FROM indices WHERE race_id = ?
-          `).get(fullRaceId);
-          if (indexData) raceIndices = indexData;
-        } catch {
-          // 指数データがない場合は無視
-        }
+        const raceIndices = indicesMap.get(fullRaceId) || null;
         
         return {
           ...race,
@@ -166,6 +366,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const pastRaces = pastRacesWithIndices.map(mapUmadataToRecordRow);
       const entryRow = mapWakujunToRecordRow(horse);
 
+      // スコア計算（ロジックは変更なし）
       let score = 0;
       try {
         score = computeKisoScore({ past: pastRaces, entry: entryRow });
@@ -174,21 +375,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         score = 0;
       }
 
-      const indexRaceId = generateIndexRaceId(
-        String(date), String(place), String(raceNumber), GET(horse, 'umaban'), yearFilter || undefined
-      );
-      
-      let indices = null;
-      try {
-        const indexData = db.prepare(`
-          SELECT L4F, T2F, potential, revouma, makikaeshi, cushion
-          FROM indices WHERE race_id = ?
-        `).get(indexRaceId);
-        if (indexData) indices = indexData;
-      } catch (indexError: any) {
-        console.error('Index fetch error:', indexError.message);
-      }
+      // 今回レースの指数を取得（メモリ上のMapから）
+      const indexRaceId = currentRaceIndexIds[horseIndex];
+      const indices = indicesMap.get(indexRaceId) || null;
 
+      // 返り値は完全に互換性を維持
       return {
         id: horse.id,
         date: horse.date,
@@ -221,6 +412,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     });
 
+    // スコアでソート（ロジック変更なし）
     horsesWithScore.sort((a: any, b: any) => b.score - a.score);
 
     const raceInfo = {
@@ -231,7 +423,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fieldSize: horses.length
     };
 
-    res.status(200).json({ raceInfo, horses: horsesWithScore });
+    // ========================================
+    // デバッグ用ログ（確認後に削除可能）
+    // ========================================
+    const endTime = Date.now();
+    console.log(`[race-card-with-score] 最適化版: ${horses.length}頭, 処理時間=${endTime - startTime}ms`);
+    console.log(`[race-card-with-score] クエリ数: 3回 (wakujun=1, umadata=1, indices=1)`);
+    if (horsesWithScore.length > 0) {
+      const firstHorse = horsesWithScore[0];
+      console.log(`[race-card-with-score] 検証: 馬名=${firstHorse.umamei}, 過去走数=${firstHorse.past?.length || 0}, スコア=${firstHorse.score}`);
+    }
+
+    // レスポンスをキャッシュに保存
+    const responseData = { raceInfo, horses: horsesWithScore };
+    setToCache(cacheKey, responseData);
+    console.log(`[race-card-with-score] キャッシュ保存: ${cacheKey} (現在${globalThis._raceCardCache?.size || 0}件)`);
+    
+    // HTTPキャッシュヘッダーを設定（ブラウザ側でも5分間キャッシュ）
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
+    res.setHeader('X-Cache', 'MISS');
+    res.status(200).json(responseData);
   } catch (error: any) {
     console.error('Error fetching race card:', error);
     res.status(500).json({ error: 'Internal server error', message: error.message });

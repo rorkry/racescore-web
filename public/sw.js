@@ -1,14 +1,12 @@
 // Service Worker for RaceScore PWA
-const CACHE_NAME = 'racescore-v1';
-const STATIC_CACHE_NAME = 'racescore-static-v1';
-const API_CACHE_NAME = 'racescore-api-v1';
+const CACHE_NAME = 'racescore-v2';
+const STATIC_CACHE_NAME = 'racescore-static-v2';
+const API_CACHE_NAME = 'racescore-api-v2';
 
-// 静的アセット（長期キャッシュ）
+// 静的アセット（長期キャッシュ）- 存在するファイルのみ
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
 ];
 
 // インストール時に静的アセットをキャッシュ
@@ -17,7 +15,12 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE_NAME).then((cache) => {
       console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
+      // 個別にキャッシュしてエラーを無視
+      return Promise.allSettled(
+        STATIC_ASSETS.map(url => 
+          cache.add(url).catch(err => console.warn(`[SW] Failed to cache ${url}:`, err))
+        )
+      );
     })
   );
   self.skipWaiting();
@@ -30,8 +33,11 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== STATIC_CACHE_NAME && name !== API_CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .filter((name) => !name.includes('-v2'))
+          .map((name) => {
+            console.log('[SW] Deleting old cache:', name);
+            return caches.delete(name);
+          })
       );
     })
   );
@@ -42,19 +48,26 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // APIリクエストの場合
+  // POSTリクエストはキャッシュしない
+  if (event.request.method !== 'GET') {
+    return;
+  }
+  
+  // APIリクエストの場合：Network First with Cache Fallback
   if (url.pathname.startsWith('/api/')) {
-    // saga-aiとrace-paceはNetwork First（DBキャッシュがあるので軽い）
-    // 他のAPIはStale-While-Revalidate
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          // 成功したらキャッシュに保存
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(API_CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
+          // 成功したらキャッシュに保存（クローン可能な場合のみ）
+          if (response.ok && response.status === 200) {
+            try {
+              const responseClone = response.clone();
+              caches.open(API_CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseClone).catch(() => {});
+              }).catch(() => {});
+            } catch (e) {
+              // clone failed - ignore
+            }
           }
           return response;
         })
@@ -66,11 +79,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 静的アセットの場合：Cache First
+  // 静的アセット（JS/CSS/画像）の場合：Cache First with Network Fallback
   if (
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.css') ||
     url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.jpg') ||
     url.pathname.endsWith('.ico') ||
     url.pathname.endsWith('.woff2')
   ) {
@@ -81,12 +95,18 @@ self.addEventListener('fetch', (event) => {
         }
         return fetch(event.request).then((response) => {
           if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(STATIC_CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
+            try {
+              const responseClone = response.clone();
+              caches.open(STATIC_CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseClone).catch(() => {});
+              }).catch(() => {});
+            } catch (e) {
+              // clone failed - ignore
+            }
           }
           return response;
+        }).catch(() => {
+          return new Response('', { status: 404 });
         });
       })
     );
@@ -98,10 +118,14 @@ self.addEventListener('fetch', (event) => {
     fetch(event.request)
       .then((response) => {
         if (response.ok) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
+          try {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone).catch(() => {});
+            }).catch(() => {});
+          } catch (e) {
+            // clone failed - ignore
+          }
         }
         return response;
       })
@@ -110,9 +134,3 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
-
-
-
-
-
-

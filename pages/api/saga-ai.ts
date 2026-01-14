@@ -150,6 +150,40 @@ function normalizeHorseName(name: string): string {
     .trim();
 }
 
+/**
+ * 日付文字列をYYYYMMDD形式の数値に変換（比較用）
+ * 例: "2024. 1. 5" -> 20240105, "2024.01.05" -> 20240105
+ */
+function parseDateToNumber(dateStr: string): number {
+  if (!dateStr) return 0;
+  
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  
+  if (parts.length !== 3) return 0;
+  
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return 0;
+  
+  return year * 10000 + month * 100 + day;
+}
+
+/**
+ * 現在のレース日付をYYYYMMDD形式の数値に変換
+ * date: "0125" (MMDD形式), year: "2025" -> 20250125
+ */
+function getCurrentRaceDateNumber(date: string, year: string): number {
+  const dateStr = String(date).padStart(4, '0');
+  const month = parseInt(dateStr.substring(0, 2), 10);
+  const day = parseInt(dateStr.substring(2, 4), 10);
+  const currentYear = parseInt(year, 10) || new Date().getFullYear();
+  
+  return currentYear * 10000 + month * 100 + day;
+}
+
 interface RequestBody {
   year: string;
   date: string;
@@ -786,9 +820,19 @@ export default async function handler(
         LIMIT 100
       `).all(horseName) as any[];
 
+      // ========================================
+      // 重要: 現在表示中のレース日付以前のデータのみを使用
+      // （当日や未来のデータを含めると、結果を知った上での評価になってしまう）
+      // ========================================
+      const currentRaceDateNum = getCurrentRaceDateNumber(date, year);
+      const filteredPastRaces = pastRacesRawWithDuplicates.filter((race: any) => {
+        const pastRaceDateNum = parseDateToNumber(race.date || '');
+        return pastRaceDateNum < currentRaceDateNum; // 当日も除外
+      });
+
       const pastRacesRaw = Array.from(
         new Map(
-          pastRacesRawWithDuplicates.map(race => [
+          filteredPastRaces.map((race: any) => [
             race.race_id_new_no_horse_num || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
             race
           ])

@@ -45,9 +45,10 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     return `${ymd.slice(0, 4)}.${ymd.slice(4, 6)}.${ymd.slice(6, 8)}`;
   }, [ymd]);
   
-  // 時計ハイライト情報を取得
+  // 時計ハイライト情報を取得（年情報も追加）
+  const yearForApi = ymd?.slice(0, 4) || '';
   const { data: highlightData } = useSWR(
-    dateForApi ? `/api/time-highlights?date=${dateForApi}` : null,
+    dateForApi ? `/api/time-highlights?date=${dateForApi}&year=${yearForApi}` : null,
     fetcher,
     { revalidateOnFocus: false }
   );

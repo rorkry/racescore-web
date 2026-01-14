@@ -9,6 +9,32 @@ import type {
 import { getCourseCharacteristics } from './course-characteristics';
 
 /**
+ * 日付文字列をYYYYMMDD形式の数値に変換（比較用）
+ * 例: "2024. 1. 5" -> 20240105, "2024.01.05" -> 20240105
+ */
+function parseDateToNumber(dateStr: string): number {
+  if (!dateStr) return 0;
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length !== 3) return 0;
+  const [year, month, day] = parts.map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return 0;
+  return year * 10000 + month * 100 + day;
+}
+
+/**
+ * 現在のレース日付をYYYYMMDD形式の数値に変換
+ * date: "0125" (MMDD形式), year: "2025" -> 20250125
+ */
+function getCurrentRaceDateNumber(date: string, year: string): number {
+  const dateStr = String(date).padStart(4, '0');
+  const month = parseInt(dateStr.substring(0, 2), 10);
+  const day = parseInt(dateStr.substring(2, 4), 10);
+  const currentYear = parseInt(year, 10) || new Date().getFullYear();
+  return currentYear * 10000 + month * 100 + day;
+}
+
+/**
  * 偏差値を計算（平均50、標準偏差10）
  */
 function calculateDeviation(
@@ -62,7 +88,366 @@ export function calculateScoreDeviations(
 
 /**
  * =====================================================
- * 【新シンプルロジック】スタート後位置を計算
+ * 【改良版】基礎テンスピードを計算
+ * 
+ * テン1F（最初の200m）とテン3F（600m）を分離して評価
+ * =====================================================
+ */
+export interface BaseSpeedData {
+  horseNumber: number;
+  horseName: string;
+  wakuNumber: number;
+  // テンの速さ（基礎スコア: 0-100）
+  baseSpeedScore: number;
+  // 逃げ経験ブースト適用後のスコア
+  boostedSpeedScore: number;
+  // 構成要素
+  t2fScore: number;          // T2F（前半2F）スコア
+  first1FScore: number;      // テン1F推定スコア（通過順から推定）
+  escapeBoost: number;       // 逃げ経験ブースト
+  distanceBonus: number;     // 距離変更ボーナス
+  // フラグ
+  hasEscapeExperience: boolean;
+  escapeCount: number;
+  recentT2FWeight: number;   // 近走T2Fの重み
+}
+
+/**
+ * テン1F（最初の200m）スコアを推定
+ * T2Fデータがない場合は、最初のコーナー通過順位から推定
+ */
+function estimateFirst1FScore(
+  firstCornerPositions: number[],  // 近走の1コーナー通過順位
+  totalHorses: number
+): number {
+  if (firstCornerPositions.length === 0) return 50; // データなし = 平均
+  
+  // 1-3番手だった回数をカウント
+  const frontCount = firstCornerPositions.filter(pos => pos <= 3).length;
+  const frontRatio = frontCount / firstCornerPositions.length;
+  
+  // 比率をスコアに変換（0-100、高いほど速い）
+  // frontRatio=1.0（100%前）→ score=90
+  // frontRatio=0.5（50%前）→ score=70
+  // frontRatio=0（0%前）→ score=30
+  return 30 + frontRatio * 60;
+}
+
+/**
+ * 近走T2Fの重み付き平均を計算（近3走を重視: 7:3）
+ */
+function calculateWeightedT2F(
+  recentRaces: Array<{ date: string; T2F: number; distance: number }>,
+  targetDistance: number
+): { weightedT2F: number | null; recentWeight: number } {
+  if (recentRaces.length === 0) {
+    return { weightedT2F: null, recentWeight: 0 };
+  }
+  
+  // 日付でソート（新しい順）
+  const sorted = [...recentRaces]
+    .filter(r => r.T2F > 0)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  
+  if (sorted.length === 0) {
+    return { weightedT2F: null, recentWeight: 0 };
+  }
+  
+  // 近3走と4走以降で重み付け
+  const recent3 = sorted.slice(0, 3);
+  const older = sorted.slice(3);
+  
+  // 距離延長の場合、過去のテン3Fを-1.0秒補正
+  const distanceCorrection = (raceDistance: number) => {
+    const diff = targetDistance - raceDistance;
+    if (diff >= 400) return -1.0;  // 大幅延長: 短距離経験者は速い
+    if (diff >= 200) return -0.5;  // 延長
+    if (diff <= -400) return +0.8; // 大幅短縮: 長距離経験者は遅れる
+    if (diff <= -200) return +0.4; // 短縮
+    return 0;
+  };
+  
+  let recentSum = 0;
+  let recentCount = 0;
+  for (const r of recent3) {
+    recentSum += r.T2F + distanceCorrection(r.distance);
+    recentCount++;
+  }
+  
+  let olderSum = 0;
+  let olderCount = 0;
+  for (const r of older) {
+    olderSum += r.T2F + distanceCorrection(r.distance);
+    olderCount++;
+  }
+  
+  // 近3走: 70%, 4走以降: 30%
+  const recentAvg = recentCount > 0 ? recentSum / recentCount : null;
+  const olderAvg = olderCount > 0 ? olderSum / olderCount : null;
+  
+  let weightedT2F: number | null = null;
+  let recentWeight = 0;
+  
+  if (recentAvg !== null && olderAvg !== null) {
+    weightedT2F = recentAvg * 0.7 + olderAvg * 0.3;
+    recentWeight = 0.7;
+  } else if (recentAvg !== null) {
+    weightedT2F = recentAvg;
+    recentWeight = 1.0;
+  } else if (olderAvg !== null) {
+    weightedT2F = olderAvg;
+    recentWeight = 0;
+  }
+  
+  return { weightedT2F, recentWeight };
+}
+
+/**
+ * 基礎テンスピードスコアを計算
+ */
+export function calculateBaseSpeedScore(
+  horseNumber: number,
+  horseName: string,
+  wakuNumber: number,
+  avgT2F: number | null,
+  weightedT2F: number | null,
+  first1FScore: number,
+  escapeCount: number,
+  lastDistance: number | null,
+  currentDistance: number,
+  t2fPercentile: number | null,
+  totalHorses: number,
+  recentWeight: number
+): BaseSpeedData {
+  // =====================================================
+  // 1. T2Fスコア（0-100、高いほど速い）
+  // =====================================================
+  let t2fScore = 50; // デフォルト
+  
+  if (t2fPercentile !== null) {
+    // パーセンタイルを反転（低い%=速い → 高いスコア）
+    t2fScore = 100 - t2fPercentile;
+  } else if (avgT2F !== null) {
+    // 絶対値から推定（22.0秒=100点, 26.0秒=0点）
+    t2fScore = Math.max(0, Math.min(100, (26.0 - avgT2F) / 4.0 * 100));
+  }
+  
+  // =====================================================
+  // 2. 距離変更ボーナス
+  // =====================================================
+  let distanceBonus = 0;
+  if (lastDistance !== null) {
+    const distanceChange = currentDistance - lastDistance;
+    
+    // 距離延長 → 前走の短距離経験で行き脚がつく
+    if (distanceChange >= 400) {
+      distanceBonus = 15;
+    } else if (distanceChange >= 200) {
+      distanceBonus = 8;
+    }
+    // 距離短縮 → ペースについていけず控える傾向
+    else if (distanceChange <= -400) {
+      distanceBonus = -12;
+    } else if (distanceChange <= -200) {
+      distanceBonus = -6;
+    }
+  }
+  
+  // =====================================================
+  // 3. 逃げ経験ブースト（1.5倍相当）
+  // =====================================================
+  let escapeBoost = 0;
+  const hasEscapeExperience = escapeCount > 0;
+  
+  if (escapeCount >= 3) {
+    // 常習逃げ馬: 強力なブースト（+25点 ≒ 1.5倍効果）
+    escapeBoost = 25;
+  } else if (escapeCount >= 2) {
+    escapeBoost = 18;
+  } else if (escapeCount >= 1) {
+    escapeBoost = 10;
+  }
+  
+  // =====================================================
+  // 4. 基礎スコア合成
+  // =====================================================
+  // T2Fスコア(60%) + テン1Fスコア(20%) + 距離ボーナス(20%)
+  const baseSpeedScore = Math.max(0, Math.min(100,
+    t2fScore * 0.6 + 
+    first1FScore * 0.2 + 
+    distanceBonus + 
+    20 // ベース20点
+  ));
+  
+  // 逃げブースト適用後
+  const boostedSpeedScore = Math.min(100, baseSpeedScore + escapeBoost);
+  
+  console.log(`[BaseSpeed] ${horseName}: T2F=${t2fScore.toFixed(0)} 1F=${first1FScore.toFixed(0)} dist=${distanceBonus} escape=${escapeBoost} → base=${baseSpeedScore.toFixed(0)} boosted=${boostedSpeedScore.toFixed(0)}`);
+  
+  return {
+    horseNumber,
+    horseName,
+    wakuNumber,
+    baseSpeedScore,
+    boostedSpeedScore,
+    t2fScore,
+    first1FScore,
+    escapeBoost,
+    distanceBonus,
+    hasEscapeExperience,
+    escapeCount,
+    recentT2FWeight: recentWeight,
+  };
+}
+
+/**
+ * =====================================================
+ * 【椅子取りゲーム】ロジック
+ * 
+ * 内枠から順にポジションを確定させる相対評価シミュレーション
+ * =====================================================
+ */
+export interface ChairGameResult {
+  horseNumber: number;
+  horseName: string;
+  finalPosition: number;       // 最終的なスタート後位置（1=最前）
+  positionType: 'hana' | 'bantte' | 'senkou_uchi' | 'senkou_soto' | 'sashi' | 'oikomi';
+  cutInFlag: boolean;          // 内に切れ込んだか
+  pushedOutFlag: boolean;      // 外に押し出されたか
+  baseSpeedScore: number;
+}
+
+/**
+ * 椅子取りゲームシミュレーション
+ */
+export function runChairGameSimulation(
+  baseSpeedDataList: BaseSpeedData[],
+  totalHorses: number
+): ChairGameResult[] {
+  // 枠番順にソート（内枠から処理）
+  const sortedByWaku = [...baseSpeedDataList].sort((a, b) => a.wakuNumber - b.wakuNumber);
+  
+  const results: ChairGameResult[] = [];
+  const occupiedPositions: Map<number, { horseNumber: number; score: number }> = new Map();
+  
+  // スコア差の閾値
+  const DOMINANT_THRESHOLD = 15;  // これ以上速ければ内に切れ込める
+  const EQUAL_THRESHOLD = 5;      // この範囲内は同等
+  
+  console.log(`[ChairGame] === シミュレーション開始 (${totalHorses}頭) ===`);
+  
+  for (const horse of sortedByWaku) {
+    const { horseNumber, horseName, wakuNumber, boostedSpeedScore } = horse;
+    
+    // 現在占有されているポジションの平均スコアを計算
+    const occupiedList = Array.from(occupiedPositions.values());
+    const innerHorsesAvgScore = occupiedList.length > 0
+      ? occupiedList.reduce((sum, h) => sum + h.score, 0) / occupiedList.length
+      : 0;
+    
+    let finalPosition: number;
+    let positionType: ChairGameResult['positionType'];
+    let cutInFlag = false;
+    let pushedOutFlag = false;
+    
+    if (occupiedList.length === 0) {
+      // 最初の馬（1枠）: 最内を確保
+      finalPosition = boostedSpeedScore >= 70 ? 1 : 2;
+      positionType = finalPosition === 1 ? 'hana' : 'bantte';
+      occupiedPositions.set(finalPosition, { horseNumber, score: boostedSpeedScore });
+      
+      console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 最内確保 → 位置${finalPosition}`);
+    }
+    else {
+      const scoreDiff = boostedSpeedScore - innerHorsesAvgScore;
+      
+      // Case A: 内側より著しく速い → ハナまたは番手を奪う
+      if (scoreDiff >= DOMINANT_THRESHOLD) {
+        // 最前のポジションを探す
+        const frontPositions = Array.from(occupiedPositions.keys()).sort((a, b) => a - b);
+        const currentFront = frontPositions[0] || 1;
+        
+        if (boostedSpeedScore >= 80) {
+          // 圧倒的に速い: ハナを奪う
+          finalPosition = 1;
+          positionType = 'hana';
+          cutInFlag = true;
+          
+          // 既存の馬を1つ後ろにずらす
+          const displaced = occupiedPositions.get(1);
+          if (displaced) {
+            occupiedPositions.delete(1);
+            const newPos = 2;
+            occupiedPositions.set(newPos, displaced);
+            console.log(`[ChairGame]   → 馬${displaced.horseNumber}を位置${newPos}に押し出し`);
+          }
+        } else {
+          // 番手を確保
+          finalPosition = currentFront + 1;
+          positionType = 'bantte';
+          cutInFlag = true;
+        }
+        
+        occupiedPositions.set(finalPosition, { horseNumber, score: boostedSpeedScore });
+        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内より速い(+${scoreDiff.toFixed(0)}) → 切れ込み位置${finalPosition}`);
+      }
+      // Case B: 内側と同等 → 外を回らされる
+      else if (Math.abs(scoreDiff) <= EQUAL_THRESHOLD) {
+        // 同列の外側
+        const maxOccupied = Math.max(...Array.from(occupiedPositions.keys()));
+        finalPosition = maxOccupied + 0.5 + wakuNumber * 0.1; // 外々を回る
+        positionType = wakuNumber <= 4 ? 'senkou_uchi' : 'senkou_soto';
+        pushedOutFlag = wakuNumber >= 5;
+        
+        occupiedPositions.set(Math.ceil(finalPosition), { horseNumber, score: boostedSpeedScore });
+        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内と同等 → 外回り位置${finalPosition.toFixed(1)}`);
+      }
+      // Case C: 内側より遅い → 控える
+      else {
+        // 後方へ
+        const basePosition = totalHorses * 0.5 + (100 - boostedSpeedScore) / 100 * totalHorses * 0.5;
+        finalPosition = Math.min(totalHorses, basePosition + wakuNumber * 0.3);
+        
+        if (finalPosition <= totalHorses * 0.35) {
+          positionType = 'sashi';
+        } else {
+          positionType = 'oikomi';
+        }
+        
+        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内より遅い(${scoreDiff.toFixed(0)}) → 控え位置${finalPosition.toFixed(1)}`);
+      }
+    }
+    
+    results.push({
+      horseNumber,
+      horseName,
+      finalPosition,
+      positionType,
+      cutInFlag,
+      pushedOutFlag,
+      baseSpeedScore: boostedSpeedScore,
+    });
+  }
+  
+  // 位置で再ソート
+  results.sort((a, b) => a.finalPosition - b.finalPosition);
+  
+  // 位置を1から連番に正規化
+  results.forEach((r, idx) => {
+    r.finalPosition = idx + 1;
+  });
+  
+  console.log(`[ChairGame] === シミュレーション完了 ===`);
+  results.forEach(r => {
+    console.log(`  ${r.finalPosition}番手: ${r.horseName} (${r.positionType}${r.cutInFlag ? ' 切込' : ''}${r.pushedOutFlag ? ' 外回り' : ''})`);
+  });
+  
+  return results;
+}
+
+/**
+ * =====================================================
+ * 【旧シンプルロジック】スタート後位置を計算（互換性維持）
  * 
  * 主要ファクター:
  * 1. T2Fパーセンタイル（メンバー内での相対速度）
@@ -148,7 +533,8 @@ function calculateAvgIndicesForDistance(
   db: Database.Database,
   horseName: string,
   targetDistance: number, // 今回のレース距離
-  targetSurface: string   // '芝' or 'ダート'
+  targetSurface: string,  // '芝' or 'ダート'
+  currentRaceDateNum: number = 99999999 // 日付フィルタ（デフォルトは全取得）
 ): { 
   avgT2F: number | null;  // 平均T2F（前半2F秒数）
   avgL4F: number | null;  // 平均L4F（後半4F指数）
@@ -161,7 +547,7 @@ function calculateAvgIndicesForDistance(
   relevantRaces: Array<{ date: string; distance: number; T2F: number; L4F: number }>;
 } {
   try {
-    // umadataからこの馬の距離±200mのレースを取得
+    // umadataからこの馬のレースを取得
     const raceIdsQuery = `
       SELECT DISTINCT 
         race_id_new_no_horse_num, 
@@ -174,13 +560,16 @@ function calculateAvgIndicesForDistance(
       ORDER BY race_id_new_no_horse_num DESC
     `;
     
-    const raceRecords = db.prepare(raceIdsQuery).all(horseName) as Array<{
+    const allRaceRecords = db.prepare(raceIdsQuery).all(horseName) as Array<{
       race_id_new_no_horse_num: string;
       horse_number: string;
       corner_2: string;
       date: string;
       distance: string;
     }>;
+    
+    // 現在のレース日付以前のデータのみをフィルタリング
+    const raceRecords = allRaceRecords.filter(r => parseDateToNumber(r.date) < currentRaceDateNum);
     
     if (raceRecords.length === 0) {
       return { 
@@ -310,6 +699,47 @@ function calculateAvgIndicesForDistance(
 }
 
 /**
+ * 過去の1コーナー通過順位を取得（テン1F推定用）
+ * 現在のレース日付以前のデータのみを使用
+ */
+function getFirstCornerPositions(
+  db: Database.Database,
+  horseName: string,
+  limit: number = 10,
+  currentRaceDateNum: number = 99999999
+): number[] {
+  try {
+    const query = `
+      SELECT corner_1, date
+      FROM umadata
+      WHERE horse_name = ?
+        AND corner_1 IS NOT NULL
+        AND corner_1 != ''
+      ORDER BY race_id_new_no_horse_num DESC
+      LIMIT ?
+    `;
+    
+    const allRecords = db.prepare(query).all(horseName, limit * 2) as Array<{ corner_1: string; date: string }>;
+    
+    // 現在のレース日付以前のデータのみをフィルタリング
+    const records = allRecords.filter(r => parseDateToNumber(r.date) < currentRaceDateNum).slice(0, limit);
+    
+    const positions: number[] = [];
+    for (const record of records) {
+      const pos = parseInt(record.corner_1, 10);
+      if (!isNaN(pos) && pos > 0) {
+        positions.push(pos);
+      }
+    }
+    
+    return positions;
+  } catch (error) {
+    console.error('Error getting first corner positions:', error);
+    return [];
+  }
+}
+
+/**
  * 過去の2コーナー通過順位の平均を計算（全走遡り版＋逃げ経験チェック）
  * - データがある限りすべて遡る
  * - 逃げた経験（2C=1位）もチェック
@@ -317,7 +747,8 @@ function calculateAvgIndicesForDistance(
 function calculateAvgPosition2C(
   db: Database.Database,
   horseName: string,
-  currentDistance: number
+  currentDistance: number,
+  currentRaceDateNum: number = 99999999 // 日付フィルタ（デフォルトは全取得）
 ): { 
   avgPosition: number | null; 
   raceCount: number;
@@ -326,7 +757,7 @@ function calculateAvgPosition2C(
 } {
   try {
     const query = `
-      SELECT corner_2, distance
+      SELECT corner_2, distance, date
       FROM umadata
       WHERE horse_name = ?
         AND corner_2 IS NOT NULL
@@ -337,9 +768,13 @@ function calculateAvgPosition2C(
     const records = db.prepare(query).all(horseName) as Array<{
       corner_2: string;
       distance: string;
+      date: string;
     }>;
     
-    if (records.length === 0) {
+    // 現在のレース日付以前のデータのみをフィルタリング
+    const filteredRecords = records.filter(r => parseDateToNumber(r.date) < currentRaceDateNum);
+    
+    if (filteredRecords.length === 0) {
       return { avgPosition: null, raceCount: 0, hasEscapeExperience: false, escapeCount: 0 };
     }
     
@@ -348,7 +783,7 @@ function calculateAvgPosition2C(
     const allPositions: number[] = [];
     let escapeCount = 0;
     
-    for (const record of records) {
+    for (const record of filteredRecords) {
       const distMatch = record.distance?.match(/(\d+)/);
       const raceDist = distMatch ? parseInt(distMatch[1], 10) : 0;
       const pos = parseInt(record.corner_2, 10);
@@ -386,24 +821,31 @@ function calculateAvgPosition2C(
 }
 
 /**
- * 前走の距離を取得
+ * 前走の距離を取得（現在のレース日付以前のデータのみ）
  */
-function getLastDistance(db: Database.Database, horseName: string): number | null {
+function getLastDistance(
+  db: Database.Database, 
+  horseName: string,
+  currentRaceDateNum: number = 99999999
+): number | null {
   const query = `
-    SELECT distance
+    SELECT distance, date
     FROM umadata
     WHERE horse_name = ?
     ORDER BY race_id_new_no_horse_num DESC
-    LIMIT 1
+    LIMIT 10
   `;
   
-  const row = db.prepare(query).get(horseName) as { distance: string } | undefined;
+  const rows = db.prepare(query).all(horseName) as Array<{ distance: string; date: string }>;
   
-  if (!row || !row.distance) {
+  // 現在のレース日付以前のデータから最新のものを取得
+  const filteredRow = rows.find(r => parseDateToNumber(r.date) < currentRaceDateNum);
+  
+  if (!filteredRow || !filteredRow.distance) {
     return null;
   }
   
-  const match = row.distance.match(/(\d+)/);
+  const match = filteredRow.distance.match(/(\d+)/);
   return match ? parseInt(match[1], 10) : null;
 }
 
@@ -459,11 +901,13 @@ function parseTimeToSeconds(time: number | string | null | undefined): number | 
  * 近走での大敗を判定（相対評価＋厳格化版）
  * 
  * 着差（margin）フィールドを使って判定
+ * 現在のレース日付以前のデータのみを使用
  */
 export function checkRecentBadPerformance(
   db: Database.Database,
   horseName: string,
-  recentRaces: number = 3
+  recentRaces: number = 3,
+  currentRaceDateNum: number = 99999999
 ): {
   isBadPerformer: boolean;
   avgTimeDiff: number;
@@ -473,19 +917,23 @@ export function checkRecentBadPerformance(
   try {
     // 直近N走の着差データを取得（marginフィールドを使用）
     const query = `
-      SELECT finish_position, margin, corner_2, corner_4
+      SELECT finish_position, margin, corner_2, corner_4, date
       FROM umadata
       WHERE horse_name = ?
       ORDER BY race_id_new_no_horse_num DESC
       LIMIT ?
     `;
     
-    const records = db.prepare(query).all(horseName, recentRaces) as Array<{
+    const allRecords = db.prepare(query).all(horseName, recentRaces * 2) as Array<{
       finish_position: string;
       margin: string;
       corner_2: string;
       corner_4: string;
+      date: string;
     }>;
+    
+    // 現在のレース日付以前のデータのみをフィルタリング
+    const records = allRecords.filter(r => parseDateToNumber(r.date) < currentRaceDateNum).slice(0, recentRaces);
     
     if (records.length === 0) {
       return {
@@ -586,9 +1034,10 @@ export function checkRecentBadPerformance(
  */
 function checkConsistentLoser(
   db: Database.Database,
-  horseName: string
+  horseName: string,
+  currentRaceDateNum: number = 99999999
 ): boolean {
-  const result = checkRecentBadPerformance(db, horseName, 3);
+  const result = checkRecentBadPerformance(db, horseName, 3, currentRaceDateNum);
   return result.isBadPerformer;
 }
 
@@ -867,6 +1316,12 @@ export function predictRacePace(
   const currentDistance = parseInt(distanceMatch[1], 10);
   const trackType = horses[0].track_type;
 
+  // ========================================
+  // 重要: 現在表示中のレース日付以前のデータのみを使用
+  // （当日や未来のデータを含めると、結果を知った上での評価になってしまう）
+  // ========================================
+  const currentRaceDateNum = getCurrentRaceDateNumber(date, year);
+
   // コース特性を取得
   const courseChar = getCourseCharacteristics(place, currentDistance, trackType);
 
@@ -902,18 +1357,20 @@ export function predictRacePace(
     const { avgPosition, raceCount: posRaceCount, hasEscapeExperience, escapeCount } = calculateAvgPosition2C(
       db,
       horseName,
-      currentDistance
+      currentDistance,
+      currentRaceDateNum
     );
 
-    // 【改善】距離±200mでフィルタした指数を取得
+    // 【改善】距離±200mでフィルタした指数を取得（日付フィルタも適用）
     const indexData = calculateAvgIndicesForDistance(
       db,
       horseName,
       currentDistance,
-      trackType
+      trackType,
+      currentRaceDateNum
     );
 
-    const lastDistance = getLastDistance(db, horseName);
+    const lastDistance = getLastDistance(db, horseName, currentRaceDateNum);
 
     tempHorseData.push({
       horse,
@@ -973,49 +1430,110 @@ export function predictRacePace(
     console.log(`  ${idx + 1}位: ${d.horseName} L4F=${d.avgL4F?.toFixed(1)} (${d.l4fRaceCount}レース)`);
   });
 
-  // 全頭の最速T2Fを集めて相対評価の閾値を計算
-  const allFastestT2Fs = tempHorseData
-    .map(d => d.fastestT2F)
-    .filter((lap): lap is number => lap !== null && lap > 0)
-    .sort((a, b) => a - b);
-
-  const fastestLapTop25Threshold = allFastestT2Fs.length > 0
-    ? allFastestT2Fs[Math.floor(allFastestT2Fs.length * 0.25)]
-    : null;
-
-  const fastestLapTop10Threshold = allFastestT2Fs.length > 0
-    ? allFastestT2Fs[Math.floor(allFastestT2Fs.length * 0.10)]
-    : null;
-
-  // 第2ループ：位置計算
+  // =====================================================
+  // 【改良版】椅子取りゲーム用の基礎データを準備
+  // =====================================================
+  const baseSpeedDataList: BaseSpeedData[] = [];
+  
   for (const data of tempHorseData) {
-    const { horse, horseNumber, horseName, avgPosition, posRaceCount, avgT2F, avgL4F, fastestT2F, t2fRaceCount, l4fRaceCount, lastDistance, hasEscapeExperience, escapeCount, avgPotential, avgMakikaeshi, relevantRaces } = data;
+    const { horse, horseNumber, horseName, avgT2F, t2fRaceCount, lastDistance, escapeCount, relevantRaces } = data;
+    
+    const t2fPercentile = getT2FPercentile(horseNumber);
+    const wakuNum = parseInt(horse.waku, 10);
+    
+    // 1コーナー通過順位を取得（テン1F推定用、日付フィルタ適用）
+    const firstCornerPositions = getFirstCornerPositions(db, horseName, 10, currentRaceDateNum);
+    const first1FScore = estimateFirst1FScore(firstCornerPositions, horses.length);
+    
+    // 重み付きT2F計算（近3走重視）
+    const { weightedT2F, recentWeight } = calculateWeightedT2F(
+      relevantRaces.map(r => ({ date: r.date, T2F: r.T2F, distance: r.distance })),
+      currentDistance
+    );
+    
+    // 基礎テンスピードスコアを計算
+    const speedData = calculateBaseSpeedScore(
+      horseNumber,
+      horseName,
+      wakuNum,
+      avgT2F,
+      weightedT2F,
+      first1FScore,
+      escapeCount,
+      lastDistance,
+      currentDistance,
+      t2fPercentile,
+      horses.length,
+      recentWeight
+    );
+    
+    baseSpeedDataList.push(speedData);
+  }
+  
+  // =====================================================
+  // 【椅子取りゲーム】シミュレーション実行
+  // =====================================================
+  const chairGameResults = runChairGameSimulation(baseSpeedDataList, horses.length);
+  
+  // 椅子取りゲーム結果をマップ化
+  const chairGameMap = new Map<number, ChairGameResult>();
+  for (const result of chairGameResults) {
+    chairGameMap.set(result.horseNumber, result);
+  }
+
+  // 第2ループ：位置計算（椅子取りゲーム結果を反映）
+  for (const data of tempHorseData) {
+    const { horse, horseNumber, horseName, avgPosition, posRaceCount, avgT2F, avgL4F, t2fRaceCount, l4fRaceCount, hasEscapeExperience, escapeCount, avgPotential, avgMakikaeshi, relevantRaces } = data;
 
     // メンバー内パーセンタイルを取得
     const t2fPercentile = getT2FPercentile(horseNumber);
     const l4fPercentile = getL4FPercentile(horseNumber);
     
+    // 椅子取りゲーム結果を取得
+    const chairResult = chairGameMap.get(horseNumber);
+    
     // ✅ デバッグログ：各馬の詳細
     console.log(`[predictRacePace] ${horseName}: T2F=${avgT2F?.toFixed(1) || 'N/A'}秒 (${t2fWithData.length}頭中${t2fPercentile}%) L4F=${avgL4F?.toFixed(1) || 'N/A'} (${l4fWithData.length}頭中${l4fPercentile}%) 対象レース=${relevantRaces.length}件`);
 
-    // =====================================================
-    // 【新シンプルロジック】スタート後位置を計算
-    // T2Fパーセンタイルを最重要ファクターとして使用
-    // =====================================================
-    const hasT2FData = t2fRaceCount > 0;
-    const wakuNum = parseInt(horse.waku, 10);
+    // 椅子取りゲームの結果を使用（フォールバック: 旧ロジック）
+    let adjustedPosition: number;
+    let runningStyle: RunningStyle;
     
-    const adjustedPosition = calculateSimpleStartPosition(
-      horseNumber,
-      t2fPercentile,
-      hasT2FData,
-      escapeCount,
-      wakuNum,
-      horses.length
-    );
-
-    // 【新シンプルロジック】脚質推定
-    const runningStyle = estimateSimpleRunningStyle(adjustedPosition, horses.length);
+    if (chairResult) {
+      adjustedPosition = chairResult.finalPosition;
+      // positionTypeからRunningStyleへ変換
+      switch (chairResult.positionType) {
+        case 'hana':
+          runningStyle = 'escape';
+          break;
+        case 'bantte':
+        case 'senkou_uchi':
+        case 'senkou_soto':
+          runningStyle = 'lead';
+          break;
+        case 'sashi':
+          runningStyle = 'sashi';
+          break;
+        case 'oikomi':
+          runningStyle = 'oikomi';
+          break;
+        default:
+          runningStyle = 'sashi';
+      }
+    } else {
+      // フォールバック: 旧ロジック
+      const hasT2FData = t2fRaceCount > 0;
+      const wakuNum = parseInt(horse.waku, 10);
+      adjustedPosition = calculateSimpleStartPosition(
+        horseNumber,
+        t2fPercentile,
+        hasT2FData,
+        escapeCount,
+        wakuNum,
+        horses.length
+      );
+      runningStyle = estimateSimpleRunningStyle(adjustedPosition, horses.length);
+    }
 
     if (runningStyle === 'escape' || runningStyle === 'lead') {
       frontRunners++;
@@ -1034,14 +1552,14 @@ export function predictRacePace(
       confidence = 'low';
     }
 
-    // expectedPosition2CはcalculateSimpleStartPositionで計算済み（枠番補正含む）
+    // expectedPosition2Cは椅子取りゲームの結果を使用
     const expectedPosition2C = adjustedPosition;
     
     // 斤量をパース（例: "58.0" → 58.0）
     const kinryo = parseFloat(horse.kinryo) || 0;
     
-    // 大敗続きかどうかをチェック
-    const isConsistentLoser = checkConsistentLoser(db, horseName);
+    // 大敗続きかどうかをチェック（日付フィルタ適用）
+    const isConsistentLoser = checkConsistentLoser(db, horseName, currentRaceDateNum);
     
     predictions.push({
       horseNumber,
@@ -1065,6 +1583,9 @@ export function predictRacePace(
       l4fPercentile,             // メンバー内L4Fパーセンタイル
       t2fMemberCount: t2fWithData.length,  // T2Fデータがあるメンバー数
       l4fMemberCount: l4fWithData.length,  // L4Fデータがあるメンバー数
+      // 椅子取りゲーム追加情報
+      chairGameCutIn: chairResult?.cutInFlag || false,
+      chairGamePushedOut: chairResult?.pushedOutFlag || false,
     });
   }
 

@@ -51,14 +51,41 @@ function isTrackConditionComparable(cond1: string, cond2: string): boolean {
   return Math.abs(getLevel(cond1) - getLevel(cond2)) <= 1;
 }
 
+/**
+ * 日付文字列をYYYYMMDD形式の数値に変換（比較用）
+ */
+function parseDateToNumber(dateStr: string): number {
+  if (!dateStr) return 0;
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length !== 3) return 0;
+  const [year, month, day] = parts.map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return 0;
+  return year * 10000 + month * 100 + day;
+}
+
+/**
+ * 現在のレース日付をYYYYMMDD形式の数値に変換
+ */
+function getCurrentRaceDateNumber(date: string, year: string | null): number {
+  const dateStr = String(date).padStart(4, '0');
+  const month = parseInt(dateStr.substring(0, 2), 10);
+  const day = parseInt(dateStr.substring(2, 4), 10);
+  const currentYear = year ? parseInt(year, 10) : new Date().getFullYear();
+  return currentYear * 10000 + month * 100 + day;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { date, place } = req.query;
+  const { date, place, year } = req.query;
 
   if (!date) {
     return res.status(400).json({ error: 'date is required' });
   }
 
   const db = getRawDb();
+  
+  // 現在表示中のレース日付を数値化（このレース以前のデータのみ使用）
+  const currentRaceDateNum = getCurrentRaceDateNumber(String(date), year as string | null);
 
   try {
     // その日の出走馬リストを取得
@@ -112,13 +139,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const cleanName = horseName.replace(/^[\$\*＄＊\s　]+/, '').trim();
 
         // 過去走を取得（直近5走）
-        const pastRaces = db.prepare(`
+        const allPastRaces = db.prepare(`
           SELECT date, place, distance, class_name, finish_time, track_condition
           FROM umadata
           WHERE TRIM(horse_name) = ?
           ORDER BY date DESC
-          LIMIT 5
+          LIMIT 20
         `).all(cleanName) as any[];
+
+        // 現在のレース日付以前のデータのみをフィルタリング
+        const pastRaces = allPastRaces.filter((race: any) => {
+          const pastRaceDateNum = parseDateToNumber(race.date || '');
+          return pastRaceDateNum < currentRaceDateNum;
+        }).slice(0, 5);
 
         if (!pastRaces || pastRaces.length === 0) continue;
 

@@ -33,16 +33,16 @@ const PACE_COLORS = {
   high: 'bg-red-500',
 };
 
-// 枠色
-const WAKU_COLORS: Record<string, { bg: string; text: string; border?: string }> = {
-  '1': { bg: 'bg-white', text: 'text-black', border: 'border-2 border-black' },
-  '2': { bg: 'bg-black', text: 'text-white' },
-  '3': { bg: 'bg-red-500', text: 'text-white' },
-  '4': { bg: 'bg-blue-500', text: 'text-white' },
-  '5': { bg: 'bg-yellow-400', text: 'text-black' },
-  '6': { bg: 'bg-green-500', text: 'text-white' },
-  '7': { bg: 'bg-orange-500', text: 'text-white' },
-  '8': { bg: 'bg-pink-400', text: 'text-white' },
+// 枠色（サイバーパンク対応: ネオンカラー追加）
+const WAKU_COLORS: Record<string, { bg: string; text: string; border?: string; neon: string; hex: string }> = {
+  '1': { bg: 'bg-white', text: 'text-black', border: 'border-2 border-black', neon: 'rgba(255, 255, 255, 0.9)', hex: '#ffffff' },
+  '2': { bg: 'bg-black', text: 'text-white', neon: 'rgba(30, 30, 30, 0.9)', hex: '#1e1e1e' },
+  '3': { bg: 'bg-red-500', text: 'text-white', neon: 'rgba(239, 68, 68, 0.9)', hex: '#ef4444' },
+  '4': { bg: 'bg-blue-500', text: 'text-white', neon: 'rgba(59, 130, 246, 0.9)', hex: '#3b82f6' },
+  '5': { bg: 'bg-yellow-400', text: 'text-black', neon: 'rgba(250, 204, 21, 0.9)', hex: '#facc15' },
+  '6': { bg: 'bg-green-500', text: 'text-white', neon: 'rgba(34, 197, 94, 0.9)', hex: '#22c55e' },
+  '7': { bg: 'bg-orange-500', text: 'text-white', neon: 'rgba(249, 115, 22, 0.9)', hex: '#f97316' },
+  '8': { bg: 'bg-pink-400', text: 'text-white', neon: 'rgba(244, 114, 182, 0.9)', hex: '#f472b6' },
 };
 
 // calculateGoalPositionAdjustment は lib/race-pace-adjustment.ts に移動しました
@@ -514,149 +514,163 @@ export default function CourseStyleRacePace({
   // 早期リターンはすべてのHooksの後に配置
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold mb-4">🏇 AI展開予想</h3>
-        <p className="text-gray-500">読み込み中...</p>
+      <div className="bg-slate-900 rounded-lg border border-slate-700 p-6 shadow-lg">
+        <h3 className="text-base font-bold mb-4 text-slate-200 flex items-center gap-2">
+          <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+          展開予想
+        </h3>
+        <div className="flex items-center gap-3 text-slate-400">
+          <div className="w-4 h-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm">読み込み中...</span>
+        </div>
       </div>
     );
   }
 
   if (error || !prediction) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-bold mb-4">🏇 AI展開予想</h3>
-        <p className="text-red-500">展開予想の取得に失敗しました</p>
+      <div className="bg-slate-900 rounded-lg border border-slate-700 p-6 shadow-lg">
+        <h3 className="text-base font-bold mb-4 text-slate-200 flex items-center gap-2">
+          <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+          展開予想
+        </h3>
+        <p className="text-red-400 text-sm">データ取得に失敗しました</p>
       </div>
     );
   }
 
   return (
-    <div id={`race-pace-${raceKey}`} className="modern-race-pace-container">
+    <div id={`race-pace-${raceKey}`} className="sports-tech-container">
       <style jsx>{`
-        .modern-race-pace-container {
-          background: 
-            radial-gradient(circle at 20% 30%, rgba(120, 160, 255, 0.15) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(180, 140, 255, 0.1) 0%, transparent 50%),
-            linear-gradient(135deg, #f0f2f5 0%, #e8eef4 100%);
+        /* =====================================================
+           🏁 SPORTS TECH - プロ仕様アナリティクスUI
+           ===================================================== */
+        
+        .sports-tech-container {
+          background: #0f172a;
           padding: 12px;
-          border-radius: 12px;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          border-radius: 8px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
           position: relative;
-          overflow: hidden;
+          overflow: visible;
+          border: 1px solid #334155;
+          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
         }
         
         @media (min-width: 640px) {
-          .modern-race-pace-container {
-            padding: 24px;
-            border-radius: 20px;
+          .sports-tech-container {
+            padding: 20px;
+            border-radius: 10px;
           }
         }
         
-        /* グレインテクスチャ */
-        .modern-race-pace-container::before {
+        /* ドットグリッド（戦術ボード風） */
+        .sports-tech-container::before {
           content: '';
           position: absolute;
           inset: 0;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.05'/%3E%3C/svg%3E");
-          opacity: 0.4;
-          mix-blend-mode: overlay;
+          background-image: radial-gradient(circle, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+          background-size: 16px 16px;
           pointer-events: none;
-          border-radius: 20px;
         }
         
-        /* 微妙なビネット効果 */
-        .modern-race-pace-container::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background: radial-gradient(
-            circle at 50% 50%,
-            transparent 0%,
-            rgba(0, 0, 0, 0.3) 100%
-          );
-          pointer-events: none;
-          border-radius: 20px;
-        }
-        
-        .glass-card {
-          background: rgba(255, 255, 255, 0.05);
-          backdrop-filter: blur(30px) saturate(180%);
-          -webkit-backdrop-filter: blur(30px) saturate(180%);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 18px;
-          box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        .card-section {
+          background: rgba(30, 41, 59, 0.6);
+          border: 1px solid #334155;
+          border-radius: 6px;
           position: relative;
           z-index: 1;
         }
         
         .header-card {
-          padding: 10px 12px;
+          padding: 12px 16px;
           margin-bottom: 12px;
-          animation: fadeIn 0.6s ease-out;
+          animation: fadeIn 0.4s ease-out;
         }
         
         @media (min-width: 640px) {
           .header-card {
-            padding: 20px 24px;
-            margin-bottom: 20px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
           }
         }
         
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
+          from { opacity: 0; transform: translateY(-8px); }
           to { opacity: 1; transform: translateY(0); }
         }
         
         .main-title {
-          font-size: 14px;
+          font-size: 15px;
           font-weight: 700;
-          color: #ffffff;
+          color: #f1f5f9;
           margin: 0;
-          letter-spacing: -0.02em;
+          letter-spacing: 0.02em;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        
+        .title-indicator {
+          width: 8px;
+          height: 8px;
+          background: #22c55e;
+          border-radius: 2px;
+          animation: indicatorPulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes indicatorPulse {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
         }
         
         @media (min-width: 640px) {
           .main-title {
-            font-size: 24px;
-            margin: 0 0 16px 0;
+            font-size: 18px;
+            margin: 0 0 12px 0;
           }
         }
         
         .meta-grid {
           display: flex;
           flex-wrap: wrap;
-          gap: 12px;
+          gap: 10px;
           align-items: center;
         }
         
         .pace-badge {
-          padding: 8px 16px;
-          border-radius: 20px;
+          padding: 5px 12px;
+          border-radius: 3px;
           font-weight: 700;
-          font-size: 13px;
+          font-size: 11px;
           color: #ffffff;
-          animation: fadeIn 0.8s ease-out;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          animation: fadeIn 0.4s ease-out;
         }
         
-        .pace-high { background: linear-gradient(135deg, #ff6b6b, #fa5252); }
-        .pace-middle { background: linear-gradient(135deg, #ffd43b, #ffa94d); }
-        .pace-slow { background: linear-gradient(135deg, #74c0fc, #4dabf7); }
+        .pace-high { 
+          background: #dc2626;
+        }
+        .pace-middle { 
+          background: #d97706;
+        }
+        .pace-slow { 
+          background: #0891b2;
+        }
         
         .meta-item {
           display: flex;
           align-items: center;
-          gap: 6px;
-          font-size: 13px;
-          color: rgba(255, 255, 255, 0.8);
+          gap: 5px;
+          font-size: 12px;
+          color: #94a3b8;
         }
         
         .meta-value {
-          font-weight: 700;
-          color: #ffffff;
-          background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
+          font-weight: 600;
+          color: #e2e8f0;
+          background: rgba(51, 65, 85, 0.5);
           padding: 4px 10px;
           border-radius: 8px;
           border: 1px solid rgba(255, 255, 255, 0.1);
@@ -670,38 +684,34 @@ export default function CourseStyleRacePace({
         }
         
         .bias-btn {
-          padding: 6px 12px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          padding: 4px 10px;
+          border-radius: 3px;
+          font-size: 11px;
+          font-weight: 500;
+          border: 1px solid #475569;
           cursor: pointer;
-          transition: all 0.2s;
-          background: rgba(255, 255, 255, 0.03);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-          color: rgba(255, 255, 255, 0.8);
+          transition: all 0.15s ease;
+          background: #1e293b;
+          color: #94a3b8;
         }
         
         .bias-btn:hover {
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(255, 255, 255, 0.25);
+          background: #334155;
+          border-color: #64748b;
+          color: #e2e8f0;
         }
         
         .bias-btn-active {
-          background: rgba(74, 222, 128, 0.15);
-          backdrop-filter: blur(15px) saturate(180%);
-          -webkit-backdrop-filter: blur(15px) saturate(180%);
-          border-color: rgba(74, 222, 128, 0.4);
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(74, 222, 128, 0.2);
+          background: #334155;
+          border-color: #22c55e;
+          color: #22c55e;
         }
         
         .course-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
-          margin-bottom: 20px;
+          gap: 12px;
+          margin-bottom: 16px;
         }
         
         @media (max-width: 768px) {
@@ -711,12 +721,13 @@ export default function CourseStyleRacePace({
         }
         
         .course-panel {
-          padding: 16px;
-          animation: slideIn 0.6s ease-out;
+          padding: 14px;
+          animation: slideIn 0.4s ease-out;
+          position: relative;
         }
         
         @keyframes slideIn {
-          from { opacity: 0; transform: translateX(-20px); }
+          from { opacity: 0; transform: translateX(-12px); }
           to { opacity: 1; transform: translateX(0); }
         }
         
@@ -724,44 +735,103 @@ export default function CourseStyleRacePace({
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 12px;
-          padding-bottom: 10px;
-          border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+          margin-bottom: 10px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #334155;
         }
         
         .panel-title {
-          font-size: 16px;
-          font-weight: 700;
-          color: #ffffff;
+          font-size: 13px;
+          font-weight: 600;
+          color: #e2e8f0;
           margin: 0;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        
+        .panel-title::before {
+          content: '';
+          width: 3px;
+          height: 14px;
+          background: #3b82f6;
+          border-radius: 1px;
         }
         
         .panel-meta {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.6);
-          background: rgba(255, 255, 255, 0.06);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          padding: 4px 10px;
-          border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          font-size: 10px;
+          color: #64748b;
+          background: #1e293b;
+          padding: 3px 8px;
+          border-radius: 3px;
+          border: 1px solid #334155;
         }
         
         .course-display {
           position: relative;
           min-height: 180px;
-          background: rgba(255, 255, 255, 0.03);
-          border-radius: 12px;
+          background: #1e293b;
+          border-radius: 6px;
           padding: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: 1px solid #334155;
+          overflow: visible;
+        }
+        
+        /* コースライン（破線） */
+        .course-display::before {
+          content: '';
+          position: absolute;
+          top: 25%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 8px,
+            #475569 8px,
+            #475569 16px
+          );
+        }
+        
+        .course-display::after {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 8px,
+            #475569 8px,
+            #475569 16px
+          );
+        }
+        
+        /* 追加のコースライン */
+        .course-line-extra {
+          position: absolute;
+          top: 75%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 8px,
+            #475569 8px,
+            #475569 16px
+          );
         }
         
         .direction-indicator {
           position: absolute;
-          bottom: 8px;
-          right: 12px;
+          bottom: 6px;
+          right: 10px;
           font-size: 10px;
-          color: rgba(255, 255, 255, 0.4);
+          color: #64748b;
         }
         
         .analysis-grid {
@@ -800,34 +870,35 @@ export default function CourseStyleRacePace({
         
         .detail-section {
           padding: 0;
-          overflow: hidden;
-          animation: fadeInUp 0.8s ease-out;
+          overflow: visible;
+          animation: fadeInUp 0.5s ease-out;
+          position: relative;
         }
         
         .detail-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 16px 20px;
+          padding: 12px 16px;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: background 0.15s;
         }
         
         .detail-header:hover {
-          background: rgba(255, 255, 255, 0.05);
+          background: rgba(51, 65, 85, 0.5);
         }
         
         .detail-title {
-          font-size: 14px;
-          font-weight: 700;
-          color: #ffffff;
+          font-size: 13px;
+          font-weight: 600;
+          color: #e2e8f0;
           margin: 0;
         }
         
         .toggle-icon {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.5);
-          transition: transform 0.3s;
+          font-size: 10px;
+          color: #64748b;
+          transition: transform 0.2s;
         }
         
         .toggle-icon-expanded {
@@ -846,91 +917,116 @@ export default function CourseStyleRacePace({
         }
         
         .detail-table th {
-          padding: 10px 6px;
+          padding: 8px 6px;
           text-align: left;
-          color: rgba(255, 255, 255, 0.6);
+          color: #64748b;
           font-weight: 600;
-          font-size: 11px;
-          border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+          font-size: 10px;
+          border-bottom: 1px solid #334155;
+          text-transform: uppercase;
+          letter-spacing: 0.3px;
         }
         
         .detail-table td {
-          padding: 10px 6px;
-          color: #ffffff;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          padding: 8px 6px;
+          color: #e2e8f0;
+          border-bottom: 1px solid rgba(51, 65, 85, 0.5);
         }
         
         .detail-table tbody tr {
-          transition: background 0.2s;
+          transition: background 0.15s;
         }
         
         .detail-table tbody tr:hover {
-          background: rgba(255, 255, 255, 0.05);
+          background: rgba(51, 65, 85, 0.4);
         }
         
         .horse-number-badge {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 28px;
-          height: 28px;
-          padding: 0 8px;
-          border-radius: 8px;
+          min-width: 24px;
+          height: 24px;
+          padding: 0 5px;
+          border-radius: 3px;
           font-weight: 700;
-          font-size: 13px;
-          background: linear-gradient(135deg, #ffa94d, #ffd89b);
-          color: #ffffff;
+          font-size: 11px;
+          background: #334155;
+          color: #e2e8f0;
+          border: 1px solid #475569;
         }
         
         .score-badge {
           display: inline-block;
-          padding: 4px 8px;
-          border-radius: 8px;
-          font-weight: 700;
-          font-size: 12px;
-          color: #ffffff;
+          padding: 2px 8px;
+          border-radius: 3px;
+          font-weight: 600;
+          font-size: 11px;
         }
         
-        .score-high { background: linear-gradient(135deg, #ff6b6b, #fa5252); }
-        .score-medium { background: linear-gradient(135deg, #ffd43b, #ffa94d); }
-        .score-low { background: linear-gradient(135deg, #74c0fc, #4dabf7); }
-        .score-minimal { background: rgba(255, 255, 255, 0.2); }
+        .score-high { 
+          background: #dc2626; 
+          color: #ffffff;
+        }
+        .score-medium { 
+          background: #d97706; 
+          color: #ffffff;
+        }
+        .score-low { 
+          background: #0891b2; 
+          color: #ffffff;
+        }
+        .score-minimal { 
+          background: #475569;
+          color: #94a3b8;
+        }
         
         .style-badge-table {
           display: inline-block;
-          padding: 4px 8px;
-          border-radius: 6px;
+          padding: 2px 6px;
+          border-radius: 3px;
           font-size: 10px;
-          font-weight: 700;
+          font-weight: 600;
           color: #ffffff;
         }
         
-        .style-badge-escape { background: linear-gradient(135deg, #ff6b6b, #fa5252); }
-        .style-badge-lead { background: linear-gradient(135deg, #ffd43b, #ffa94d); }
-        .style-badge-sashi { background: linear-gradient(135deg, #74c0fc, #4dabf7); }
-        .style-badge-oikomi { background: linear-gradient(135deg, #b197fc, #9775fa); }
+        .style-badge-escape { 
+          background: #dc2626;
+        }
+        .style-badge-lead { 
+          background: #ea580c;
+        }
+        .style-badge-sashi { 
+          background: #0891b2;
+        }
+        .style-badge-oikomi { 
+          background: #7c3aed;
+        }
         
         .rating-stars {
-          font-size: 14px;
-          color: #ffd43b;
+          font-size: 11px;
+          color: #fbbf24;
         }
       `}</style>
       
       {/* ヘッダーカード */}
-      <div className="glass-card header-card">
+      <div className="card-section header-card">
         <div 
           className="flex justify-between items-center cursor-pointer"
           onClick={() => isMobile && setCardExpanded(!cardExpanded)}
         >
-          <h2 className="main-title">🏇 展開予想カード</h2>
+          <h2 className="main-title">
+            <span className="title-indicator"></span>
+            展開予想
+          </h2>
           {isMobile && (
-            <span className={`text-white text-base transition-transform duration-300 ${cardExpanded ? 'rotate-180' : ''}`}>
+            <span className={`text-slate-500 text-sm transition-transform duration-200 ${cardExpanded ? 'rotate-180' : ''}`}>
               ▼
             </span>
           )}
         </div>
         {isMobile && !cardExpanded && (
-          <p className="text-xs text-white/60 mt-1">タップして展開</p>
+          <p className="text-xs text-slate-500 mt-1">タップして展開</p>
         )}
         {(cardExpanded || !isMobile) && (
           <>
@@ -958,22 +1054,43 @@ export default function CourseStyleRacePace({
               )}
             </div>
             <div className="bias-controls" style={{ marginTop: '12px' }}>
-              <span className="meta-item" style={{ fontSize: '12px' }}>馬場状態:</span>
-              {[
-                { key: '良', label: '良', color: 'rgba(74, 222, 128, 0.15)' },
-                { key: '稍', label: '稍重', color: 'rgba(251, 191, 36, 0.15)' },
-                { key: '重', label: '重', color: 'rgba(251, 146, 60, 0.15)' },
-                { key: '不', label: '不良', color: 'rgba(239, 68, 68, 0.15)' },
-              ].map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => handleConditionChange(opt.key as '良' | '稍' | '重' | '不')}
-                  className={`bias-btn ${trackCondition === opt.key ? 'bias-btn-active' : ''}`}
-                  style={trackCondition === opt.key ? { background: opt.color } : {}}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              <span className="meta-item" style={{ fontSize: '11px', color: '#64748b' }}>馬場:</span>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                {[
+                  { key: '良', label: '良', activeColor: '#22c55e' },
+                  { key: '稍', label: '稍', activeColor: '#eab308' },
+                  { key: '重', label: '重', activeColor: '#f97316' },
+                  { key: '不', label: '不', activeColor: '#ef4444' },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => handleConditionChange(opt.key as '良' | '稍' | '重' | '不')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 8px',
+                      borderRadius: '3px',
+                      fontSize: '10px',
+                      fontWeight: 500,
+                      border: trackCondition === opt.key ? `1px solid ${opt.activeColor}` : '1px solid #475569',
+                      background: trackCondition === opt.key ? `${opt.activeColor}20` : '#1e293b',
+                      color: trackCondition === opt.key ? opt.activeColor : '#94a3b8',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: trackCondition === opt.key ? opt.activeColor : '#475569',
+                      boxShadow: trackCondition === opt.key ? `0 0 6px ${opt.activeColor}` : 'none',
+                    }}></span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
               <span className="meta-item" style={{ fontSize: '12px', marginLeft: '16px' }}>バイアス:</span>
               {[
                 { key: 'none', label: '無し' },
@@ -1003,12 +1120,13 @@ export default function CourseStyleRacePace({
         <>
           <div className="course-grid">
         {/* スタート後 */}
-        <div className="glass-card course-panel">
+        <div className="card-section course-panel">
           <div className="panel-header">
-            <h3 className="panel-title">スタート後（2C）</h3>
-            <span className="panel-meta">{prediction.predictions.length}頭立て</span>
+            <h3 className="panel-title">スタート後</h3>
+            <span className="panel-meta">{prediction.predictions.length}頭</span>
           </div>
           <div className="course-display">
+            <div className="course-line-extra"></div>
             <div className="direction-indicator">← 進行方向</div>
             <div className="relative h-full pt-4">
               {startLayout.map(({ horse, xPercent, yOffset }) => (
@@ -1026,6 +1144,7 @@ export default function CourseStyleRacePace({
                     shortenName={shortenHorseName}
                     size="tiny"
                     kisoScore={kisouScores?.[horse.horseNumber] || 0}
+                    isGoalView={false}
                   />
                 </div>
               ))}
@@ -1034,13 +1153,23 @@ export default function CourseStyleRacePace({
         </div>
 
         {/* ゴール前 */}
-        <div className="glass-card course-panel">
+        <div className="card-section course-panel">
           <div className="panel-header">
             <h3 className="panel-title">ゴール前</h3>
             <span className="panel-meta">{groupedHorses.length}馬群</span>
           </div>
           <div className="course-display">
+            <div className="course-line-extra"></div>
             <div className="direction-indicator">← ゴール</div>
+            {/* ゴールライン（左端） */}
+            <div style={{ 
+              position: 'absolute', 
+              left: 0, 
+              top: 0, 
+              bottom: 0, 
+              width: '2px', 
+              background: '#475569',
+            }}></div>
             <div className="relative h-full pt-4">
               {goalLayout.map(({ horse, xPercent, yOffset }) => (
                 <div
@@ -1057,17 +1186,17 @@ export default function CourseStyleRacePace({
                     shortenName={shortenHorseName}
                     size="tiny"
                     kisoScore={kisouScores?.[horse.horseNumber] || 0}
+                    isGoalView={true}
                   />
                 </div>
               ))}
             </div>
-            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: '2px', background: 'rgba(255,255,255,0.5)' }}></div>
           </div>
         </div>
       </div>
 
       {/* 詳細テーブル */}
-      <div className="glass-card detail-section" style={{ marginTop: '20px' }}>
+      <div className="card-section detail-section" style={{ marginTop: '12px' }}>
         <div className="detail-header" onClick={() => setExpandedTable(!expandedTable)}>
           <h4 className="detail-title">詳細分析</h4>
           <span className={`toggle-icon ${expandedTable ? 'toggle-icon-expanded' : ''}`}>▼</span>
@@ -1120,10 +1249,10 @@ export default function CourseStyleRacePace({
                           </span>
                         </td>
                         <td>{horse.expectedPosition2C.toFixed(1)}</td>
-                        <td style={{ fontSize: '10px', color: 'rgba(255,255,255,0.7)' }}>
+                        <td style={{ fontSize: '10px', color: '#94a3b8' }}>
                           {t2fDisplay}
                         </td>
-                        <td style={{ fontSize: '10px', color: 'rgba(255,255,255,0.7)' }}>
+                        <td style={{ fontSize: '10px', color: '#94a3b8' }}>
                           {l4fDisplay}
                         </td>
                         <td>
@@ -1145,191 +1274,261 @@ export default function CourseStyleRacePace({
   );
 }
 
-// 馬アイコンコンポーネント（グラスモーフィズム版）
+// 馬アイコンコンポーネント（Sports Tech版 - しずく型ユニット）
 function HorseIcon({
   horse,
   surgeLevel,
   shortenName,
   size = 'normal',
   kisoScore,
+  isGoalView = false,
 }: {
   horse: HorsePositionPrediction;
   surgeLevel: 'strong' | 'medium' | 'weak' | null;
   shortenName: (name: string) => string;
   size?: 'tiny' | 'small' | 'normal';
   kisoScore: number;
+  isGoalView?: boolean;
 }) {
-  const wakuColor = WAKU_COLORS[horse.waku] || { bg: 'bg-gray-200', text: 'text-black' };
+  const wakuColor = WAKU_COLORS[horse.waku] || { bg: 'bg-gray-200', text: 'text-black', neon: 'rgba(200,200,200,0.9)', hex: '#c8c8c8' };
   
-  // スコアに応じた発光強度
-  const glowIntensity = Math.max(0, Math.min(1, kisoScore / 100));
-  const glowColor = kisoScore >= 70 ? '255, 107, 107' : kisoScore >= 60 ? '255, 212, 59' : kisoScore >= 50 ? '116, 192, 252' : '200, 200, 200';
+  // L4F（後半特化）判定
+  const isBackHalfSpecialist = (horse.avgL4F || 0) >= 5.0 || (horse.l4fPercentile || 100) <= 25;
+  
+  // 前半特化判定
+  const isFrontHalfSpecialist = surgeLevel !== null || (horse.t2fPercentile || 100) <= 25;
 
   return (
     <>
       <style jsx>{`
-        .horse-icon-modern {
+        /* =====================================================
+           🏁 Sports Tech - しずく型ユニット
+           ===================================================== */
+        
+        .sports-horse-unit {
           position: relative;
           cursor: pointer;
           flex-shrink: 0;
         }
         
-        .horse-circle {
+        /* しずく型の基本形状（左向き = 進行方向を指す） */
+        .droplet-icon {
           width: 32px;
-          height: 32px;
-          border-radius: 10px;
+          height: 24px;
           display: flex;
           align-items: center;
           justify-content: center;
           font-weight: 700;
-          font-size: 13px;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-          box-shadow: 0 0 ${10 + glowIntensity * 15}px rgba(${glowColor}, ${glowIntensity * 0.6}),
-                      0 4px 8px rgba(0, 0, 0, 0.2);
+          font-size: 11px;
+          border-radius: 50% 4px 4px 50%;
+          transition: all 0.2s ease;
+          position: relative;
+          z-index: 10;
+          border: 2px solid rgba(0, 0, 0, 0.3);
+          /* テキスト可読性 */
+          text-shadow: 
+            0 0 2px rgba(0,0,0,0.5);
         }
         
-        .horse-circle:hover {
-          transform: scale(1.15) translateY(-4px);
-          border-color: rgba(255, 255, 255, 0.6);
-          box-shadow: 0 0 ${15 + glowIntensity * 20}px rgba(${glowColor}, ${glowIntensity * 0.8}),
-                      0 6px 12px rgba(0, 0, 0, 0.3);
+        .droplet-icon:hover {
+          transform: scale(1.1) translateX(-2px);
         }
         
-        .surge-effect-strong {
-          animation: pulse 1.5s ease-in-out infinite;
+        /* 前半特化馬: 赤/オレンジのアクセント */
+        .front-half-specialist .droplet-icon {
+          box-shadow: 
+            0 0 0 2px rgba(234, 88, 12, 0.6),
+            0 2px 8px rgba(234, 88, 12, 0.4);
         }
         
-        @keyframes pulse {
-          0%, 100% { 
-            box-shadow: 0 0 20px rgba(255, 107, 107, 0.6),
-                        0 4px 8px rgba(0, 0, 0, 0.2);
-          }
-          50% { 
-            box-shadow: 0 0 30px rgba(255, 107, 107, 1),
-                        0 6px 12px rgba(0, 0, 0, 0.3);
-          }
+        /* 後半特化馬: 青のアクセント */
+        .back-half-specialist .droplet-icon {
+          box-shadow: 
+            0 0 0 2px rgba(14, 165, 233, 0.6),
+            0 2px 8px rgba(14, 165, 233, 0.4);
         }
         
-        .horse-tooltip {
+        /* =====================================================
+           🔥 前半特化 - オレンジの噴射（右側に配置）
+           ===================================================== */
+        
+        .front-trail {
+          position: absolute;
+          top: 50%;
+          left: 100%;
+          transform: translateY(-50%);
+          margin-left: 1px;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+        }
+        
+        .front-trail-line {
+          border-radius: 1px;
+          background: linear-gradient(to right, #ea580c, #f97316, transparent);
+        }
+        
+        .front-trail-1 { height: 4px; width: 24px; opacity: 0.9; }
+        .front-trail-2 { height: 3px; width: 18px; opacity: 0.7; }
+        .front-trail-3 { height: 2px; width: 12px; opacity: 0.5; }
+        
+        /* 強い前半特化 */
+        .front-trail-strong .front-trail-1 { width: 32px; height: 5px; }
+        .front-trail-strong .front-trail-2 { width: 24px; height: 4px; }
+        .front-trail-strong .front-trail-3 { width: 16px; height: 3px; }
+        
+        /* =====================================================
+           ⚡ 後半特化 - 青のインジケータ
+           ===================================================== */
+        
+        /* スタート後: 蓄積マーク（右側に配置） */
+        .energy-indicator {
+          position: absolute;
+          top: 50%;
+          left: 100%;
+          transform: translateY(-50%);
+          margin-left: 4px;
+          width: 6px;
+          height: 6px;
+          background: #0ea5e9;
+          border-radius: 50%;
+          animation: energyPulse 1.2s ease-in-out infinite;
+        }
+        
+        @keyframes energyPulse {
+          0%, 100% { opacity: 0.5; transform: translateY(-50%) scale(0.8); }
+          50% { opacity: 1; transform: translateY(-50%) scale(1.1); }
+        }
+        
+        /* ゴール前: 青い噴射（右側に配置） */
+        .back-trail {
+          position: absolute;
+          top: 50%;
+          left: 100%;
+          transform: translateY(-50%);
+          margin-left: 1px;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 2px;
+        }
+        
+        .back-trail-line {
+          border-radius: 1px;
+          background: linear-gradient(to right, #0ea5e9, #38bdf8, transparent);
+        }
+        
+        .back-trail-1 { height: 4px; width: 28px; opacity: 0.9; }
+        .back-trail-2 { height: 3px; width: 20px; opacity: 0.7; }
+        .back-trail-3 { height: 2px; width: 14px; opacity: 0.5; }
+        
+        /* ツールチップ */
+        .sports-tooltip {
           position: absolute;
           bottom: calc(100% + 8px);
           left: 50%;
           transform: translateX(-50%);
-          background: rgba(0, 0, 0, 0.95);
-          color: #ffffff;
+          background: #0f172a;
+          color: #e2e8f0;
           padding: 8px 12px;
-          border-radius: 8px;
-          font-size: 11px;
+          border-radius: 6px;
+          font-size: 10px;
           white-space: nowrap;
           pointer-events: none;
           opacity: 0;
-          transition: opacity 0.3s;
-          z-index: 30;
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          transition: opacity 0.2s;
+          z-index: 9999;
+          border: 1px solid #475569;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
         }
         
-        .horse-icon-modern:hover .horse-tooltip {
+        .sports-horse-unit:hover .sports-tooltip {
           opacity: 1;
         }
         
-        .surge-lines-strong {
-          position: absolute;
-          top: -2px;
-          right: -36px;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-          animation: surgePulse 1.5s ease-in-out infinite;
+        /* ツールチップの位置調整（コース表示エリア用） */
+        .course-display .sports-horse-unit {
+          position: relative;
+          z-index: 1;
         }
         
-        @keyframes surgePulse {
-          0%, 100% { opacity: 0.95; transform: scaleX(1); }
-          50% { opacity: 1; transform: scaleX(1.1); }
+        .course-display .sports-horse-unit:hover {
+          z-index: 100;
         }
         
-        .surge-line {
-          border-radius: 0 3px 3px 0;
-          background: linear-gradient(to left, transparent, rgba(255, 149, 43, 0.95), rgba(253, 82, 82, 0.95));
-          box-shadow: 0 0 8px rgba(255, 149, 43, 0.6);
+        .tooltip-name {
+          font-weight: 600;
+          color: #f1f5f9;
+          font-size: 11px;
         }
         
-        .surge-line-1 { height: 5px; width: 36px; }
-        .surge-line-2 { height: 4px; width: 32px; background: linear-gradient(to left, transparent, rgba(255, 184, 77, 0.9), rgba(255, 149, 43, 0.9)); }
-        .surge-line-3 { height: 3px; width: 28px; background: linear-gradient(to left, transparent, rgba(255, 212, 100, 0.85), rgba(255, 184, 77, 0.85)); }
-        .surge-line-4 { height: 3px; width: 24px; background: linear-gradient(to left, transparent, rgba(255, 235, 153, 0.75), rgba(255, 212, 100, 0.75)); }
-        .surge-line-5 { height: 2px; width: 20px; background: linear-gradient(to left, transparent, rgba(255, 245, 200, 0.65), rgba(255, 235, 153, 0.65)); }
-        
-        .surge-lines-medium {
-          position: absolute;
-          top: 2px;
-          right: -30px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5px;
-          animation: surgePulse 2s ease-in-out infinite;
+        .tooltip-stats {
+          margin-top: 3px;
+          color: #94a3b8;
+          font-size: 9px;
         }
         
-        .surge-line-med-1 { height: 4px; width: 30px; box-shadow: 0 0 6px rgba(255, 149, 43, 0.5); }
-        .surge-line-med-2 { height: 3px; width: 26px; background: linear-gradient(to left, transparent, rgba(255, 184, 77, 0.8), rgba(255, 149, 43, 0.8)); }
-        .surge-line-med-3 { height: 3px; width: 22px; background: linear-gradient(to left, transparent, rgba(255, 212, 100, 0.7), rgba(255, 184, 77, 0.7)); }
-        .surge-line-med-4 { height: 2px; width: 18px; background: linear-gradient(to left, transparent, rgba(255, 235, 153, 0.6), rgba(255, 212, 100, 0.6)); }
-        
-        .surge-lines-weak {
-          position: absolute;
-          top: 4px;
-          right: -24px;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
+        .tooltip-badge {
+          display: inline-block;
+          padding: 1px 4px;
+          border-radius: 2px;
+          font-size: 8px;
+          font-weight: 600;
+          margin-left: 4px;
         }
         
-        .surge-line-weak-1 { height: 3px; width: 24px; background: linear-gradient(to left, transparent, rgba(255, 184, 77, 0.75), rgba(255, 149, 43, 0.75)); box-shadow: 0 0 4px rgba(255, 149, 43, 0.4); }
-        .surge-line-weak-2 { height: 2px; width: 20px; background: linear-gradient(to left, transparent, rgba(255, 212, 100, 0.65), rgba(255, 184, 77, 0.65)); }
-        .surge-line-weak-3 { height: 2px; width: 16px; background: linear-gradient(to left, transparent, rgba(255, 235, 153, 0.55), rgba(255, 212, 100, 0.55)); }
+        .tooltip-badge-front {
+          background: #ea580c;
+          color: #ffffff;
+        }
+        
+        .tooltip-badge-back {
+          background: #0ea5e9;
+          color: #ffffff;
+        }
       `}</style>
       
-      <div className="horse-icon-modern">
+      <div className={`sports-horse-unit ${isFrontHalfSpecialist ? 'front-half-specialist' : ''} ${isBackHalfSpecialist ? 'back-half-specialist' : ''}`}>
+        {/* しずく型アイコン */}
         <div
-          className={`horse-circle ${wakuColor.bg} ${wakuColor.text} ${wakuColor.border || ''} ${surgeLevel === 'strong' ? 'surge-effect-strong' : ''}`}
+          className={`droplet-icon ${wakuColor.bg} ${wakuColor.text}`}
         >
           {horse.horseNumber}
         </div>
         
-        {/* 噴射エフェクト */}
-        {surgeLevel === 'strong' && (
-          <div className="surge-lines-strong">
-            <div className="surge-line surge-line-1"></div>
-            <div className="surge-line surge-line-2"></div>
-            <div className="surge-line surge-line-3"></div>
-            <div className="surge-line surge-line-4"></div>
-            <div className="surge-line surge-line-5"></div>
+        {/* 特化馬のみ噴射マーク（右側に配置） */}
+        {isFrontHalfSpecialist && (
+          // 前半特化: オレンジ噴射
+          <div className={`front-trail ${surgeLevel === 'strong' ? 'front-trail-strong' : ''}`}>
+            <div className="front-trail-line front-trail-1"></div>
+            <div className="front-trail-line front-trail-2"></div>
+            <div className="front-trail-line front-trail-3"></div>
           </div>
         )}
-        {surgeLevel === 'medium' && (
-          <div className="surge-lines-medium">
-            <div className="surge-line surge-line-med-1"></div>
-            <div className="surge-line surge-line-med-2"></div>
-            <div className="surge-line surge-line-med-3"></div>
-            <div className="surge-line surge-line-med-4"></div>
-          </div>
+        
+        {isBackHalfSpecialist && !isGoalView && (
+          // 後半特化（スタート後）: 蓄積インジケータ
+          <div className="energy-indicator"></div>
         )}
-        {surgeLevel === 'weak' && (
-          <div className="surge-lines-weak">
-            <div className="surge-line surge-line-weak-1"></div>
-            <div className="surge-line surge-line-weak-2"></div>
-            <div className="surge-line surge-line-weak-3"></div>
+        
+        {isBackHalfSpecialist && isGoalView && (
+          // 後半特化（ゴール前）: 青噴射
+          <div className="back-trail">
+            <div className="back-trail-line back-trail-1"></div>
+            <div className="back-trail-line back-trail-2"></div>
+            <div className="back-trail-line back-trail-3"></div>
           </div>
         )}
         
         {/* ツールチップ */}
-        <div className="horse-tooltip">
-          <strong>{horse.horseName}</strong>
-          <br />
-          スコア: {kisoScore.toFixed(1)}点
-          <br />
-          脚質: {RUNNING_STYLE_LABELS[horse.runningStyle]}
+        <div className="sports-tooltip">
+          <div className="tooltip-name">{horse.horseName}</div>
+          <div className="tooltip-stats">
+            {kisoScore.toFixed(1)}点 | {RUNNING_STYLE_LABELS[horse.runningStyle]}
+            {isFrontHalfSpecialist && <span className="tooltip-badge tooltip-badge-front">前半◎</span>}
+            {isBackHalfSpecialist && <span className="tooltip-badge tooltip-badge-back">後半◎</span>}
+          </div>
         </div>
       </div>
     </>

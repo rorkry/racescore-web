@@ -23,6 +23,9 @@ export interface HorsePositionPrediction {
   l4fPercentile?: number;        // メンバー内L4Fパーセンタイル（低いほど速い）
   t2fMemberCount?: number;       // T2Fデータがあるメンバー数
   l4fMemberCount?: number;       // L4Fデータがあるメンバー数
+  // 椅子取りゲーム（相対評価）情報
+  chairGameCutIn?: boolean;      // 内に切れ込んだか
+  chairGamePushedOut?: boolean;  // 外に押し出されたか
 }
 
 export interface RacePacePrediction {

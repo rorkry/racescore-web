@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
 import SagaAICard from '@/app/components/SagaAICard';
+import HorseDetailModal from '@/app/components/HorseDetailModal';
 import { useFeatureAccess } from '@/app/components/FloatingActionButton';
 import { getCourseInfo } from '@/lib/course-characteristics';
+import { 
+  getFromIndexedDB, 
+  setToIndexedDB, 
+  clearExpiredCache, 
+  isIndexedDBAvailable 
+} from '@/lib/indexeddb-cache';
 
 interface PastRaceIndices {
   L4F: number | null;
@@ -159,6 +166,30 @@ export default function RaceCardPage() {
   const showRacePace = useFeatureAccess('race-pace');
   const showSagaAI = useFeatureAccess('saga-ai');
 
+  // 馬詳細モーダル
+  const [selectedHorseDetail, setSelectedHorseDetail] = useState<Horse | null>(null);
+
+  // レースカードのクライアントキャッシュ（同じ日のレース切り替えを高速化）
+  const raceCardCache = useRef<Map<string, RaceCard>>(new Map());
+  
+  // バックグラウンドプリフェッチの進捗状態
+  const [prefetchProgress, setPrefetchProgress] = useState<{ current: number; total: number } | null>(null);
+  const prefetchAbortController = useRef<AbortController | null>(null);
+  
+  // ユーザー優先フェッチ制御（クリックしたレースを最優先）
+  const isPriorityFetchInProgress = useRef<boolean>(false);
+  const pendingPrefetchQueue = useRef<{ place: string; raceNumber: string }[]>([]);
+  const currentVenuesList = useRef<Venue[]>([]);
+  
+  // IndexedDB初期化（期限切れキャッシュをクリア）
+  useEffect(() => {
+    if (isIndexedDBAvailable()) {
+      clearExpiredCache().then((cleared) => {
+        if (cleared > 0) console.log(`[IndexedDB] ${cleared}件の期限切れキャッシュをクリア`);
+      });
+    }
+  }, []);
+
   // 利用可能な日付一覧を取得（年が変わったら再取得）
   useEffect(() => {
     fetchAvailableDates();
@@ -193,8 +224,23 @@ export default function RaceCardPage() {
 
   useEffect(() => {
     if (date && selectedYear) {
+      // 日付や年が変わったら既存のプリフェッチをキャンセル
+      if (prefetchAbortController.current) {
+        prefetchAbortController.current.abort();
+      }
+      // キャッシュをクリア（古いデータを防ぐ）
+      raceCardCache.current.clear();
+      setPrefetchProgress(null);
+      console.log('[Cache CLEAR] 日付/年が変更されたためキャッシュをクリア');
       fetchVenues();
     }
+    
+    // クリーンアップ: コンポーネントアンマウント時にプリフェッチをキャンセル
+    return () => {
+      if (prefetchAbortController.current) {
+        prefetchAbortController.current.abort();
+      }
+    };
   }, [date, selectedYear]);
 
   // おれAI & 展開予想 一括生成
@@ -283,6 +329,9 @@ export default function RaceCardPage() {
         if (data.venues[0].races && data.venues[0].races.length > 0) {
           setSelectedRace(data.venues[0].races[0].race_number);
         }
+        
+        // 全レースカードをバックグラウンドで先読み開始
+        prefetchAllRaceCards(data.venues);
       }
     } catch (err: any) {
       setError(err.message);
@@ -293,6 +342,41 @@ export default function RaceCardPage() {
   };
 
   const fetchRaceCard = async (place: string, raceNumber: string) => {
+    // キャッシュキーを生成（年_日付_会場_レース番号）
+    const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
+    
+    // 1. メモリキャッシュをチェック（最速）
+    const memoryCachedData = raceCardCache.current.get(cacheKey);
+    if (memoryCachedData) {
+      console.log(`[Memory Cache HIT] ${cacheKey} - メモリから即座に表示`);
+      setRaceCard(memoryCachedData);
+      setExpandedHorse(null);
+      prefetchPremiumData(place, raceNumber);
+      return;
+    }
+    
+    // 2. IndexedDB永続キャッシュをチェック（ページリロード後も有効）
+    if (isIndexedDBAvailable()) {
+      try {
+        const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
+        if (persistedData) {
+          console.log(`[IndexedDB HIT] ${cacheKey} - 永続キャッシュから表示`);
+          // メモリキャッシュにも保存（次回アクセス高速化）
+          raceCardCache.current.set(cacheKey, persistedData);
+          setRaceCard(persistedData);
+          setExpandedHorse(null);
+          prefetchPremiumData(place, raceNumber);
+          return;
+        }
+      } catch (err) {
+        console.warn('[IndexedDB] 読み取りエラー:', err);
+      }
+    }
+    
+    // 3. キャッシュがない場合はAPIリクエスト（優先フェッチとしてマーク）
+    console.log(`[Cache MISS] ${cacheKey} - APIからデータ取得（優先）`);
+    isPriorityFetchInProgress.current = true;
+    
     try {
       setLoading(true);
       setError(null);
@@ -311,13 +395,162 @@ export default function RaceCardPage() {
           console.log(`馬${idx + 1} (${horse.umamei}): past件数=${horse.past?.length || 0}, past_races件数=${horse.past_races?.length || 0}`);
         });
       }
+      
+      // メモリキャッシュに保存
+      raceCardCache.current.set(cacheKey, data);
+      console.log(`[Memory Cache SET] ${cacheKey} - メモリに保存（現在${raceCardCache.current.size}件）`);
+      
+      // IndexedDB永続キャッシュに保存（非同期、エラーは無視）
+      if (isIndexedDBAvailable()) {
+        setToIndexedDB(cacheKey, data, date).catch(() => {});
+      }
+      
       setRaceCard(data);
       setExpandedHorse(null);
+      
+      // バックグラウンドでプレミアム機能のデータをプリフェッチ
+      prefetchPremiumData(place, raceNumber);
     } catch (err: any) {
       console.error('fetchRaceCard error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
+      // 優先フェッチ完了、バックグラウンド先読み再開
+      isPriorityFetchInProgress.current = false;
+    }
+  };
+
+  // プレミアム機能のバックグラウンドプリフェッチ
+  const prefetchPremiumData = (place: string, raceNumber: string) => {
+    // おれAIデータをバックグラウンドで先読み
+    fetch('/api/saga-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        year: String(selectedYear),
+        date,
+        place,
+        raceNumber,
+        useAI: false,
+        trackCondition: '良',
+      }),
+    }).catch(() => {}); // エラーは無視（プリフェッチなので）
+
+    // 展開予想データをバックグラウンドで先読み
+    fetch(`/api/race-pace?year=${selectedYear}&date=${date}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`)
+      .catch(() => {}); // エラーは無視（プリフェッチなので）
+  };
+
+  // 優先フェッチが完了するまで待機するヘルパー関数
+  const waitForPriorityFetch = async (signal: AbortSignal): Promise<boolean> => {
+    while (isPriorityFetchInProgress.current) {
+      if (signal.aborted) return false;
+      console.log('[Prefetch] 優先フェッチ中... 待機');
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms待機
+    }
+    return true;
+  };
+
+  // 全レースカードをバックグラウンドで先読み（サイト表示時に自動実行）
+  const prefetchAllRaceCards = async (venuesList: Venue[]) => {
+    // 既存のプリフェッチをキャンセル
+    if (prefetchAbortController.current) {
+      prefetchAbortController.current.abort();
+    }
+    prefetchAbortController.current = new AbortController();
+    const signal = prefetchAbortController.current.signal;
+    currentVenuesList.current = venuesList;
+
+    // 全レースをリストアップ
+    const allRaces: { place: string; raceNumber: string }[] = [];
+    venuesList.forEach(venue => {
+      venue.races.forEach(race => {
+        allRaces.push({ place: venue.place, raceNumber: race.race_number });
+      });
+    });
+
+    if (allRaces.length === 0) return;
+
+    console.log(`[Prefetch ALL] 全${allRaces.length}レースのデータを先読み開始`);
+    setPrefetchProgress({ current: 0, total: allRaces.length });
+
+    let completed = 0;
+
+    // 並列度を制限して順次フェッチ（サーバー負荷軽減）
+    const CONCURRENCY = 5; // 同時に5件まで（ネットワーク帯域とサーバー負荷のバランス）
+    
+    for (let i = 0; i < allRaces.length; i += CONCURRENCY) {
+      if (signal.aborted) {
+        console.log('[Prefetch ALL] キャンセルされました');
+        break;
+      }
+
+      // 優先フェッチ（ユーザーがクリックしたレース）を待機
+      const canContinue = await waitForPriorityFetch(signal);
+      if (!canContinue) break;
+
+      const batch = allRaces.slice(i, i + CONCURRENCY);
+      
+      await Promise.all(batch.map(async ({ place, raceNumber }) => {
+        const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
+        
+        // 既にメモリキャッシュにあればスキップ
+        if (raceCardCache.current.has(cacheKey)) {
+          completed++;
+          setPrefetchProgress({ current: completed, total: allRaces.length });
+          return;
+        }
+        
+        // IndexedDBにあればメモリにロードしてスキップ
+        if (isIndexedDBAvailable()) {
+          try {
+            const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
+            if (persistedData) {
+              raceCardCache.current.set(cacheKey, persistedData);
+              console.log(`[Prefetch IndexedDB] ${place} ${raceNumber}R - 永続キャッシュから復元`);
+              completed++;
+              setPrefetchProgress({ current: completed, total: allRaces.length });
+              return;
+            }
+          } catch (err) {
+            // IndexedDBエラーは無視して続行
+          }
+        }
+
+        // フェッチ前に再度優先フェッチをチェック
+        if (isPriorityFetchInProgress.current || signal.aborted) {
+          return; // 優先フェッチ中はこのリクエストをスキップ（次のループで再試行される）
+        }
+
+        try {
+          const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
+          const res = await fetch(url, { signal });
+          
+          if (res.ok) {
+            const data = await res.json();
+            raceCardCache.current.set(cacheKey, data);
+            console.log(`[Prefetch API] ${place} ${raceNumber}R 完了 (${raceCardCache.current.size}/${allRaces.length})`);
+            
+            // IndexedDBにも保存（非同期、エラー無視）
+            if (isIndexedDBAvailable()) {
+              setToIndexedDB(cacheKey, data, date).catch(() => {});
+            }
+          }
+        } catch (err: any) {
+          if (err.name !== 'AbortError') {
+            console.error(`[Prefetch] ${place} ${raceNumber}R 失敗:`, err.message);
+          }
+        }
+        
+        completed++;
+        setPrefetchProgress({ current: completed, total: allRaces.length });
+      }));
+    }
+
+    if (!signal.aborted) {
+      console.log(`[Prefetch ALL] 完了！全${raceCardCache.current.size}件のレースをキャッシュ`);
+      // 完了後、少し待ってから進捗表示を消す
+      setTimeout(() => setPrefetchProgress(null), 2000);
     }
   };
 
@@ -1029,15 +1262,28 @@ export default function RaceCardPage() {
           <div className="mb-4 sm:mb-6">
             <label className="block text-xs sm:text-sm font-medium text-slate-800 mb-2">
               レース
-              <span className="ml-2 text-xs text-slate-500">
-                (⏱️ = 時計優秀な馬あり)
-              </span>
+              {showSagaAI && (
+                <span className="ml-2 text-xs text-slate-500">
+                  (⏱️ = 時計優秀な馬あり)
+                </span>
+              )}
+              {/* バックグラウンド先読み進捗 */}
+              {prefetchProgress && (
+                <span className="ml-2 text-xs text-green-600 animate-pulse">
+                  📥 レースデータ読み込み中 {prefetchProgress.current}/{prefetchProgress.total}
+                </span>
+              )}
+              {!prefetchProgress && raceCardCache.current.size > 0 && (
+                <span className="ml-2 text-xs text-green-600">
+                  ✓ {raceCardCache.current.size}件キャッシュ済
+                </span>
+              )}
             </label>
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 sm:gap-2">
               {currentRaces.map((race) => {
-                // 時計ハイライトをチェック
+                // 時計ハイライトをチェック（プレミアム機能: おれAIオン時のみ）
                 const highlightKey = `${selectedVenue}_${race.race_number}`;
-                const highlight = timeHighlights.get(highlightKey);
+                const highlight = showSagaAI ? timeHighlights.get(highlightKey) : null;
                 
                 return (
                   <button
@@ -1056,17 +1302,20 @@ export default function RaceCardPage() {
                         : ''
                     }
                   >
-                    <div className="flex items-center justify-center gap-0.5 sm:gap-1">
-                      <span className="font-medium">{race.race_number}R</span>
-                      {highlight && (
-                        <span className={`text-xs ${
-                          highlight.count >= 2 ? 'text-red-500' : 'text-orange-500'
-                        }`}>
-                          ⏱️
-                        </span>
-                      )}
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="flex items-center gap-0.5 sm:gap-1">
+                        <span className="font-medium">{race.race_number}R</span>
+                        {highlight && (
+                          <span className={`text-xs ${
+                            highlight.count >= 2 ? 'text-red-500' : 'text-orange-500'
+                          }`}>
+                            ⏱️
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[9px] sm:text-[10px] opacity-70 truncate max-w-full">{race.class_name || '未分類'}</span>
+                      <span className="text-[10px] sm:text-xs opacity-80">{race.track_type}{race.distance}m</span>
                     </div>
-                    <span className="text-[10px] sm:text-xs opacity-80">{race.track_type}{race.distance}m</span>
                   </button>
                 );
               })}
@@ -1128,7 +1377,7 @@ export default function RaceCardPage() {
               {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
             </p>
             <p className="text-xs sm:text-sm text-slate-500 mb-3 sm:mb-4">
-              ※馬名をクリックすると過去走詳細が表示されます
+              ※馬名をクリックすると馬の詳細情報が表示されます　|　▼をクリックすると過去走が展開されます
             </p>
 
             <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
@@ -1161,15 +1410,22 @@ export default function RaceCardPage() {
                       <td className="border border-slate-800 px-1 sm:px-2 py-2 text-center font-bold text-slate-800">
                         {horse.umaban}
                       </td>
-                      <td 
-                        className="border border-slate-800 px-2 sm:px-4 py-2 font-medium cursor-pointer hover:bg-green-50 text-slate-800"
-                        onClick={() => toggleHorseExpand(horse.umaban)}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="truncate max-w-[100px] sm:max-w-none">{normalizeHorseName(horse.umamei)}</span>
-                          <span className="text-green-600 text-xs sm:text-sm flex-shrink-0">
-                            {expandedHorse === horse.umaban ? '▲' : '▼'}
+                      <td className="border border-slate-800 px-2 sm:px-4 py-2 font-medium text-slate-800">
+                        <div className="flex items-center justify-between gap-2">
+                          <span 
+                            className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-cyan-600 hover:underline transition-colors"
+                            onClick={() => setSelectedHorseDetail(horse)}
+                            title="馬の詳細情報を表示"
+                          >
+                            {normalizeHorseName(horse.umamei)}
                           </span>
+                          <button
+                            className="text-green-600 hover:text-green-800 text-xs sm:text-sm px-1 flex-shrink-0"
+                            onClick={() => toggleHorseExpand(horse.umaban)}
+                            title="過去走を表示"
+                          >
+                            {expandedHorse === horse.umaban ? '▲' : '▼'}
+                          </button>
                         </div>
                       </td>
                       <td className="border border-slate-800 px-2 sm:px-4 py-2 text-slate-800 whitespace-nowrap">
@@ -1199,6 +1455,19 @@ export default function RaceCardPage() {
             </div>
             </div>
           </div>
+        )}
+        
+        {/* 馬詳細モーダル */}
+        {selectedHorseDetail && (
+          <HorseDetailModal
+            horse={selectedHorseDetail}
+            onClose={() => setSelectedHorseDetail(null)}
+            raceInfo={raceCard ? {
+              place: raceCard.raceInfo.place,
+              surface: raceCard.raceInfo.trackType.includes('芝') ? '芝' : 'ダ',
+              distance: parseInt(raceCard.raceInfo.distance) || 0
+            } : undefined}
+          />
         )}
       </div>
     </div>

@@ -50,35 +50,37 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
 
   // 機能のトグル
   const toggleFeature = useCallback((featureId: string) => {
+    // 現在の状態を取得して、次の状態を計算
+    const willBeActive = !activeFeatures.has(featureId);
+    
+    // 状態を更新
     setActiveFeatures(prev => {
       const newSet = new Set(prev);
-      const isActive = !newSet.has(featureId);
-      
-      if (isActive) {
+      if (willBeActive) {
         newSet.add(featureId);
       } else {
         newSet.delete(featureId);
       }
-
-      // カスタムイベントを発行
-      window.dispatchEvent(new CustomEvent<FeatureToggleEvent>(FEATURE_TOGGLE_EVENT, {
-        detail: { featureId, isActive }
-      }));
-
-      // 有効にした場合、少し遅れてスクロール
-      if (isActive) {
-        setTimeout(() => {
-          const element = document.getElementById(`${featureId}-card`);
-          if (element) {
-            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }, 100);
-      }
-
       return newSet;
     });
+    
+    // イベント発行を次のティックに遅延（レンダリング中のsetState回避）
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent<FeatureToggleEvent>(FEATURE_TOGGLE_EVENT, {
+        detail: { featureId, isActive: willBeActive }
+      }));
+      
+      // 有効にした場合、スクロール
+      if (willBeActive) {
+        const element = document.getElementById(`${featureId}-card`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    }, 0);
+    
     setIsOpen(false);
-  }, []);
+  }, [activeFeatures]);
 
   // デフォルトメニュー項目
   const defaultMenuItems: MenuItem[] = [
@@ -92,7 +94,7 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
     {
       id: 'saga-ai',
       label: 'おれAI',
-      icon: '🤖',
+      icon: '🧠',
       description: 'AI分析を表示',
       isActive: activeFeatures.has('saga-ai'),
     },
@@ -214,7 +216,7 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
           background: #ffffff;
           border-radius: 12px;
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15), 0 4px 8px rgba(0, 0, 0, 0.1);
-          min-width: 200px;
+          min-width: 240px;
           padding: 8px;
           opacity: 0;
           transform: translateY(10px) scale(0.95);
