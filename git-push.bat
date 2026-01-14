@@ -12,7 +12,7 @@ git add -A
 
 echo.
 echo [2/3] Committing...
-git commit -m "perf: SQLiteインデックス追加でクエリ高速化"
+git commit -m "✨ Notion風FAB実装とプレミアム機能アクセス制御、OpenAI設定追加"
 
 echo.
 echo [3/3] Pushing to origin...
@@ -23,4 +23,6 @@ echo ========================================
 echo Done! GitHub Actions will deploy to VPS.
 echo ========================================
 pause
+
+
 

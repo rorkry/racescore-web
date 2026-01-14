@@ -21,8 +21,11 @@ jobs:
             git pull origin main
             npm install
             npm run build
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env.local
             pm2 restart racescore
             echo "✅ Deploy completed at $(date)"
+
+
 
 
 

@@ -5,6 +5,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
 import SagaAICard from '@/app/components/SagaAICard';
+import { useFeatureAccess } from '@/app/components/FloatingActionButton';
 import { getCourseInfo } from '@/lib/course-characteristics';
 
 interface PastRaceIndices {
@@ -153,6 +154,10 @@ export default function RaceCardPage() {
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ current: number; total: number } | null>(null);
   const [bulkGenerateResult, setBulkGenerateResult] = useState<{ success: number; error: number; time: number } | null>(null);
+
+  // プレミアム機能のアクセス制御（FABから切り替え）
+  const showRacePace = useFeatureAccess('race-pace');
+  const showSagaAI = useFeatureAccess('saga-ai');
 
   // 利用可能な日付一覧を取得（年が変わったら再取得）
   useEffect(() => {
@@ -1084,30 +1089,34 @@ export default function RaceCardPage() {
 
         {raceCard && !loading && (
           <div className="space-y-6">
-            {/* ★ AI展開予想（新規追加） */}
-            {selectedRace && (
-              <CourseStyleRacePace
-                year={String(selectedYear)}
-                date={date}
-                place={selectedVenue}
-                raceNumber={selectedRace}
-                kisouScores={
-                  raceCard.horses?.reduce((acc, horse) => {
-                    acc[parseInt(horse.umaban, 10)] = horse.score || 0;
-                    return acc;
-                  }, {} as Record<number, number>)
-                }
-              />
+            {/* ★ AI展開予想（FABから有効化） */}
+            {selectedRace && showRacePace && (
+              <div id="race-pace-card">
+                <CourseStyleRacePace
+                  year={String(selectedYear)}
+                  date={date}
+                  place={selectedVenue}
+                  raceNumber={selectedRace}
+                  kisouScores={
+                    raceCard.horses?.reduce((acc, horse) => {
+                      acc[parseInt(horse.umaban, 10)] = horse.score || 0;
+                      return acc;
+                    }, {} as Record<number, number>)
+                  }
+                />
+              </div>
             )}
 
-            {/* ★ 俺AI分析（コース適性・ローテーション） */}
-            {selectedRace && (
-              <SagaAICard
-                year={String(selectedYear)}
-                date={date}
-                place={selectedVenue}
-                raceNumber={selectedRace}
-              />
+            {/* ★ 俺AI分析（FABから有効化） */}
+            {selectedRace && showSagaAI && (
+              <div id="saga-ai-card">
+                <SagaAICard
+                  year={String(selectedYear)}
+                  date={date}
+                  place={selectedVenue}
+                  raceNumber={selectedRace}
+                />
+              </div>
             )}
 
             {/* 既存のレースカード表示 */}

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import FloatingActionButton from "./components/FloatingActionButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head suppressHydrationWarning />
       <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <main>{children}</main>
+        <FloatingActionButton />
         {/* Service Worker登録 */}
         <script
           dangerouslySetInnerHTML={{

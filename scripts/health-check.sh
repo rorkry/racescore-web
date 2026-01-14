@@ -45,3 +45,5 @@ else
     log "Server still not responding after restart. HTTP: $HTTP_CODE"
 fi
 
+
+
