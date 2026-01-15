@@ -1,7 +1,7 @@
 // Service Worker for RaceScore PWA
-const CACHE_NAME = 'racescore-v2';
-const STATIC_CACHE_NAME = 'racescore-static-v2';
-const API_CACHE_NAME = 'racescore-api-v2';
+const CACHE_NAME = 'racescore-v3';
+const STATIC_CACHE_NAME = 'racescore-static-v3';
+const API_CACHE_NAME = 'racescore-api-v3';
 
 // 静的アセット（長期キャッシュ）- 存在するファイルのみ
 const STATIC_ASSETS = [
@@ -33,7 +33,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => !name.includes('-v2'))
+          .filter((name) => !name.includes('-v3'))
           .map((name) => {
             console.log('[SW] Deleting old cache:', name);
             return caches.delete(name);
