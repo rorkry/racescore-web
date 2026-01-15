@@ -48,6 +48,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} turf-bg turf-pattern min-h-screen`} suppressHydrationWarning>
         {/* ヘッダー */}
         <header className="sticky top-0 z-40 glass-card border-b border-green-900/50">
+          {/* PWAセーフエリアスペーサー */}
+          <div className="pwa-safe-spacer"></div>
           <div className="container mx-auto px-4 py-3 md:py-4">
             <div className="flex items-center justify-between">
               {/* ロゴ */}
@@ -74,19 +76,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <nav className="flex items-center gap-2 md:gap-4">
                 <Link 
                   href="/card" 
-                  className="px-3 py-2 md:px-4 text-sm md:text-base text-green-100 hover:text-gold-400 transition font-medium rounded-lg hover:bg-green-900/30"
+                  className="inline-flex items-center justify-center px-3 py-2 md:px-4 text-sm md:text-base text-green-100 hover:text-gold-400 transition font-medium rounded-lg hover:bg-green-900/30"
                 >
                   レース
                 </Link>
                 <Link 
                   href="/about" 
-                  className="px-3 py-2 md:px-4 text-sm md:text-base text-green-100 hover:text-gold-400 transition font-medium rounded-lg hover:bg-green-900/30"
+                  className="inline-flex items-center justify-center px-3 py-2 md:px-4 text-sm md:text-base text-green-100 hover:text-gold-400 transition font-medium rounded-lg hover:bg-green-900/30"
                 >
                   使い方
                 </Link>
                 <Link 
                   href="/admin"
-                  className="px-3 py-2 md:px-4 text-sm md:text-base btn-gold rounded-lg"
+                  className="inline-flex items-center justify-center px-3 py-2 md:px-4 text-sm md:text-base btn-gold rounded-lg"
                 >
                   管理
                 </Link>

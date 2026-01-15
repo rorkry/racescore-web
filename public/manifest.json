@@ -1,11 +1,11 @@
 {
-  "name": "RaceScore - 競馬出馬表分析",
-  "short_name": "RaceScore",
-  "description": "日本の競馬出馬表を分析し、合成オッズと予想指数を表示するWebアプリケーション",
+  "name": "ストライド - データを、直感に。",
+  "short_name": "ストライド",
+  "description": "競馬データをビジュアル化。AI分析と独自スコアで予想をサポート。",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1f2937",
+  "background_color": "#0a1f13",
+  "theme_color": "#0a1f13",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [

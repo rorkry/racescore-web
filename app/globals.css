@@ -44,6 +44,28 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
   -webkit-text-size-adjust: 100%;
   overflow-x: hidden;
+  /* PWAセーフエリア対応 */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* PWA用セーフエリアスペーサー */
+.pwa-safe-spacer {
+  height: 0;
+  width: 100%;
+}
+
+/* スタンドアロンモード（PWA）検出 */
+@media all and (display-mode: standalone) {
+  body {
+    padding-top: 0;
+  }
+  
+  .pwa-safe-spacer {
+    height: env(safe-area-inset-top);
+    background: inherit;
+  }
 }
 
 /* 芝テクスチャ背景 */
@@ -111,6 +133,9 @@ body {
 
 /* ボタンスタイル */
 .btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%);
   color: #0a1f13;
   font-weight: 700;
@@ -125,6 +150,9 @@ body {
 }
 
 .btn-turf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #166534 0%, #14532d 100%);
   color: #f0fdf4;
   font-weight: 600;
