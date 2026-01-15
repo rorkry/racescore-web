@@ -47,6 +47,10 @@ jobs:
         run: |
           echo "=== Checking standalone directory ==="
           ls -la .next/standalone || echo "standalone not found"
+          echo "=== Checking standalone .next ==="
+          ls -la .next/standalone/.next || echo "standalone .next not found"
+          echo "=== Checking BUILD_ID ==="
+          cat .next/standalone/.next/BUILD_ID || cat .next/BUILD_ID || echo "BUILD_ID not found"
           echo "=== Checking static files ==="
           ls -la .next/static || echo "static not found"
           echo "=== Checking public ==="
@@ -75,6 +79,12 @@ jobs:
           echo "=== Deployment package created ==="
           du -sh deploy
           ls -la deploy
+          echo "=== Deploy .next contents ==="
+          ls -la deploy/.next/
+          echo "=== Deploy BUILD_ID ==="
+          cat deploy/.next/BUILD_ID || echo "No BUILD_ID in deploy"
+          echo "=== Deploy .next/server check ==="
+          ls -la deploy/.next/server/ 2>/dev/null | head -10 || echo "No server dir"
       
       # ========================================
       # 7. SSH秘密鍵をセットアップ
@@ -112,6 +122,12 @@ jobs:
           port: 10022
           script: |
             cd /var/www/racescore-web
+            
+            # 転送されたファイルを確認
+            echo "=== Server: .next contents ==="
+            ls -la .next/
+            echo "=== Server: BUILD_ID ==="
+            cat .next/BUILD_ID || echo "No BUILD_ID"
             
             # .env.localが無ければ作成
             if [ ! -f .env.local ]; then
