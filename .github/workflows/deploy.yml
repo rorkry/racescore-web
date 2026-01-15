@@ -4,13 +4,106 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Deploy to server
+      # ========================================
+      # 1. リポジトリをチェックアウト
+      # ========================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # ========================================
+      # 2. Node.jsセットアップ
+      # ========================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      # ========================================
+      # 3. 依存関係のインストール
+      # ========================================
+      - name: Install dependencies
+        run: npm ci
+      
+      # ========================================
+      # 4. Next.jsビルド（GitHub Actionsの豊富なメモリで実行）
+      # ========================================
+      - name: Build Next.js application
+        run: npm run build
+        env:
+          NODE_ENV: production
+      
+      # ========================================
+      # 5. standaloneディレクトリの確認
+      # ========================================
+      - name: Verify standalone build
+        run: |
+          echo "=== Checking standalone directory ==="
+          ls -la .next/standalone || echo "standalone not found"
+          echo "=== Checking static files ==="
+          ls -la .next/static || echo "static not found"
+          echo "=== Checking public ==="
+          ls -la public || echo "public not found"
+      
+      # ========================================
+      # 6. デプロイパッケージを作成
+      # ========================================
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy
+          
+          # standalone本体をコピー
+          cp -r .next/standalone/* deploy/
+          
+          # staticファイルをコピー
+          mkdir -p deploy/.next/static
+          cp -r .next/static/* deploy/.next/static/
+          
+          # publicファイルをコピー
+          if [ -d "public" ]; then
+            mkdir -p deploy/public
+            cp -r public/* deploy/public/
+          fi
+          
+          echo "=== Deployment package created ==="
+          du -sh deploy
+          ls -la deploy
+      
+      # ========================================
+      # 7. SSH秘密鍵をセットアップ
+      # ========================================
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p 10022 -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      
+      # ========================================
+      # 8. サーバーにrsyncで転送
+      # ========================================
+      - name: Deploy to VPS
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            --exclude='*.db' \
+            --exclude='*.db-shm' \
+            --exclude='*.db-wal' \
+            --exclude='.env.local' \
+            --exclude='logs' \
+            deploy/ ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:/var/www/racescore-web/
+      
+      # ========================================
+      # 9. サーバー上で環境設定とpm2再起動
+      # ========================================
+      - name: Setup and restart application
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -19,19 +112,40 @@ jobs:
           port: 10022
           script: |
             cd /var/www/racescore-web
-            git fetch origin main
-            git reset --hard origin/main
-            git clean -fd
-            npm install
-            npm run build
-            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env.local
-            pm2 restart racescore
+            
+            # .env.localが無ければ作成
+            if [ ! -f .env.local ]; then
+              echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env.local
+            fi
+            
+            # ログディレクトリ作成
+            mkdir -p /var/log/pm2
+            
+            # pm2でアプリケーションを再起動
+            pm2 delete racescore 2>/dev/null || true
+            pm2 start server.js --name racescore --max-memory-restart 400M
+            pm2 save
+            
+            # ステータス確認
+            echo "=== PM2 Status ==="
+            pm2 status
+            
+            echo "=== Health Check ==="
+            sleep 3
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 || echo "App starting..."
+            
+            echo ""
             echo "✅ Deploy completed at $(date)"
-
-
-
-
-
-
-
-
+      
+      # ========================================
+      # 10. デプロイ結果サマリー
+      # ========================================
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "================================"
+          echo "Deployment Summary"
+          echo "================================"
+          echo "Build size: $(du -sh deploy 2>/dev/null | cut -f1 || echo 'N/A')"
+          echo "Deployment time: $(date)"
+          echo "================================"
