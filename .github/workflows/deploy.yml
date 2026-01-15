@@ -97,11 +97,29 @@ jobs:
           ssh-keyscan -p 10022 -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
       
       # ========================================
-      # 8. サーバーにrsyncで転送
+      # 8. サーバー側の古いビルドを削除
+      # ========================================
+      - name: Clean old build on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 10022
+          script: |
+            # 古い.nextディレクトリを削除（データベースは保持）
+            rm -rf /var/www/racescore-web/.next
+            rm -rf /var/www/racescore-web/node_modules
+            rm -f /var/www/racescore-web/server.js
+            mkdir -p /var/www/racescore-web
+            echo "Old build cleaned"
+      
+      # ========================================
+      # 9. サーバーにrsyncで転送
       # ========================================
       - name: Deploy to VPS
         run: |
-          rsync -avz --delete \
+          rsync -avz \
             -e "ssh -p 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             --exclude='*.db' \
             --exclude='*.db-shm' \
@@ -111,7 +129,7 @@ jobs:
             deploy/ ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:/var/www/racescore-web/
       
       # ========================================
-      # 9. サーバー上で環境設定とpm2再起動
+      # 10. サーバー上で環境設定とpm2再起動
       # ========================================
       - name: Setup and restart application
         uses: appleboy/ssh-action@v1.0.3
@@ -154,7 +172,7 @@ jobs:
             echo "✅ Deploy completed at $(date)"
       
       # ========================================
-      # 10. デプロイ結果サマリー
+      # 11. デプロイ結果サマリー
       # ========================================
       - name: Deployment summary
         if: always()
