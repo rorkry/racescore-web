@@ -696,11 +696,13 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
   const characteristicData = useMemo(() => {
     try {
     const {
-      pastRaces, courseMap, exactMap, flatWins, flatTotal, flatRate, isFlatMaster,
-      steepWins, steepTotal, steepRate, isSteepMaster,
-      freshWins, freshTotal, highComebackRaces, highPotentialRaces,
-      rightTurnWins, rightTurnTotal, rightTurnRate, isRightTurnMaster,
-      leftTurnWins, leftTurnTotal, leftTurnRate, isLeftTurnMaster
+      pastRaces, courseMap, exactMap, 
+      flatWins, flatTotal, flatRate, isFlatMaster, flatRecordStr,
+      steepWins, steepTotal, steepRate, isSteepMaster, steepRecordStr,
+      freshWins, freshTotal, freshRecordStr, 
+      highComebackRaces, highPotentialRaces,
+      rightTurnWins, rightTurnTotal, rightTurnRate, isRightTurnMaster, rightTurnRecordStr,
+      leftTurnWins, leftTurnTotal, leftTurnRate, isLeftTurnMaster, leftTurnRecordStr
     } = analysisData;
 
     // 得意コース（着度数追加）
@@ -776,7 +778,8 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
     } catch (error) {
       console.error('HorseDetailModal characteristicData error:', error);
       return {
-        favoriteCourse: null, excellentCourse: null, flatMaster: null, steepMaster: null,
+        favoriteCourse: null, exactCourse: null, excellentCourse: null, 
+        flatMaster: null, steepMaster: null,
         rightTurnMaster: null, leftTurnMaster: null, restMaster: null, restNegative: null,
         isCurrentlyDifficult: false, hasMegaIndex: false, megaIndexValue: 0
       };
