@@ -557,10 +557,44 @@ export default function RaceCardPage() {
 
   const currentRaces = venues.find(v => v.place === selectedVenue)?.races || [];
 
+  // レース切り替え時のデータ取得
   useEffect(() => {
-    if (selectedVenue && selectedRace) {
+    if (!selectedVenue || !selectedRace) return;
+    
+    const loadRaceCard = async () => {
+      const cacheKey = `${selectedYear}_${date}_${selectedVenue}_${selectedRace}`;
+      
+      // メモリキャッシュチェック
+      const memoryCachedData = raceCardCache.current.get(cacheKey);
+      if (memoryCachedData) {
+        console.log('[useEffect] Memory cache hit:', cacheKey);
+        setRaceCard(memoryCachedData);
+        setExpandedHorse(null);
+        return;
+      }
+      
+      // IndexedDBキャッシュチェック
+      if (isIndexedDBAvailable()) {
+        try {
+          const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
+          if (persistedData) {
+            console.log('[useEffect] IndexedDB cache hit:', cacheKey);
+            raceCardCache.current.set(cacheKey, persistedData);
+            setRaceCard(persistedData);
+            setExpandedHorse(null);
+            return;
+          }
+        } catch (err) {
+          console.warn('[useEffect] IndexedDB error:', err);
+        }
+      }
+      
+      // キャッシュにない場合はAPIから取得
+      console.log('[useEffect] Fetching from API:', cacheKey);
       fetchRaceCard(selectedVenue, selectedRace);
-    }
+    };
+    
+    loadRaceCard();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVenue, selectedRace, date, selectedYear]);
 
