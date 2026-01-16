@@ -12,7 +12,7 @@ git add -A
 
 echo.
 echo [2/3] Committing...
-git commit -m "fix: PDF出力の枠カラム削除・馬番に枠色適用・ヘッダー色修正、SagaAIレース切替時の再取得修正"
+git commit -m "feat: おれAI馬名クリックで詳細表示・お気に入り追加対応、バックグラウンドプリフェッチ"
 
 echo.
 echo [3/3] Pushing to origin...

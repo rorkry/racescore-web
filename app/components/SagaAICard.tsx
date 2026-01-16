@@ -45,12 +45,25 @@ interface OpenAISagaResult {
   tags: string[];
 }
 
+// SagaAI APIレスポンスの型（キャッシュ用にエクスポート）
+export interface SagaAIResponse {
+  analyses: SagaAnalysis[];
+  summary: string;
+  aiEnabled: boolean;
+}
+
 interface Props {
   year: string;
   date: string;
   place: string;
   raceNumber: string;
   trackCondition?: '良' | '稍' | '重' | '不';
+  // キャッシュされたデータ（プリフェッチ済みの場合）
+  cachedData?: SagaAIResponse | null;
+  // 馬名クリック時のコールバック（馬番を渡す）
+  onHorseClick?: (horseNumber: number) => void;
+  // 馬アクション（お気に入り/メモ）のコールバック
+  onHorseAction?: (horseName: string, horseNumber: string) => void;
 }
 
 const RATING_COLORS: Record<string, string> = {
@@ -151,15 +164,17 @@ function adjustRating(
   return RATING_ORDER[newIndex];
 }
 
-export default function SagaAICard({ year, date, place, raceNumber, trackCondition: propTrackCondition = '良' }: Props) {
-  const [analyses, setAnalyses] = useState<SagaAnalysis[]>([]);
+export default function SagaAICard({ year, date, place, raceNumber, trackCondition: propTrackCondition = '良', cachedData, onHorseClick, onHorseAction }: Props) {
+  // キャッシュデータがあれば初期値として使用
+  const [analyses, setAnalyses] = useState<SagaAnalysis[]>(cachedData?.analyses || []);
   const [aiAnalyses, setAiAnalyses] = useState<OpenAISagaResult[] | null>(null);
-  const [summary, setSummary] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<string>(cachedData?.summary || '');
+  // キャッシュがあればloadingはfalseから開始
+  const [loading, setLoading] = useState(!cachedData);
   const [error, setError] = useState<string | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(cachedData?.aiEnabled || false);
   const [expanded, setExpanded] = useState(false);
   const [useAI, setUseAI] = useState(false);
-  const [aiEnabled, setAiEnabled] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   
   // スマホ判定とカード開閉状態
@@ -288,13 +303,24 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   }, [year, date, place, raceNumber, trackCondition]);
 
   // 初回読み込み
-  // propsが変わったらデータを再取得
+  // propsが変わったらデータを再取得（またはキャッシュを使用）
   useEffect(() => {
     // レース変更時は降格状態をリセット
     setDemotedHorses(new Map());
     setBias('none');
-    fetchRuleBasedAnalysis('none');
-  }, [year, date, place, raceNumber]);  // eslint-disable-line react-hooks/exhaustive-deps
+    
+    // キャッシュデータがある場合はそれを使用
+    if (cachedData) {
+      setAnalyses(cachedData.analyses);
+      setSummary(cachedData.summary);
+      setAiEnabled(cachedData.aiEnabled);
+      setLoading(false);
+      setError(null);
+    } else {
+      // キャッシュがない場合はAPIから取得
+      fetchRuleBasedAnalysis('none');
+    }
+  }, [year, date, place, raceNumber, cachedData]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // AIモード切替時
   useEffect(() => {
@@ -589,9 +615,33 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
                   {isDemoted && (
                     <span className="text-[10px] text-red-400 flex-shrink-0">↓{demotion}</span>
                   )}
-                  <span className="text-white font-bold text-sm sm:text-lg truncate">
-                    {horseNumber}番 {horseName}
+                  {/* 馬番 */}
+                  <span className="text-white font-bold text-sm sm:text-lg flex-shrink-0">
+                    {horseNumber}番
                   </span>
+                  {/* 馬名（クリック可能） */}
+                  <span 
+                    className={`text-white font-bold text-sm sm:text-lg truncate ${onHorseClick ? 'cursor-pointer hover:text-yellow-400 hover:underline transition-colors' : ''}`}
+                    onClick={() => onHorseClick?.(horseNumber)}
+                    title={onHorseClick ? '馬の詳細情報を表示' : undefined}
+                  >
+                    {horseName}
+                  </span>
+                  {/* お気に入り/メモボタン */}
+                  {onHorseAction && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHorseAction(horseName, String(horseNumber));
+                      }}
+                      className="flex-shrink-0 size-6 sm:size-7 flex items-center justify-center rounded-full bg-slate-700/50 hover:bg-slate-600 transition-colors"
+                      title="お気に入り・メモ"
+                    >
+                      <svg className="size-3.5 sm:size-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    </button>
+                  )}
                   {/* 総合レーティングバッジ */}
                   <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold flex-shrink-0 ${RATING_COLORS[rating]}`}>
                     {rating}

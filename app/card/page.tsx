@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
-import SagaAICard from '@/app/components/SagaAICard';
+import SagaAICard, { type SagaAIResponse } from '@/app/components/SagaAICard';
 import HorseDetailModal from '@/app/components/HorseDetailModal';
 import HorseActionPopup from '@/app/components/HorseActionPopup';
 import BabaMemoForm from '@/app/components/BabaMemoForm';
@@ -187,6 +187,9 @@ export default function RaceCardPage() {
   );
 
   const raceCardCache = useRef<Map<string, RaceCard>>(new Map());
+  // SagaAI（おれAI）のキャッシュ
+  const sagaAICache = useRef<Map<string, SagaAIResponse>>(new Map());
+  const [currentSagaAIData, setCurrentSagaAIData] = useState<SagaAIResponse | null>(null);
   
   const [prefetchProgress, setPrefetchProgress] = useState<{ current: number; total: number } | null>(null);
   const prefetchAbortController = useRef<AbortController | null>(null);
@@ -448,22 +451,81 @@ export default function RaceCardPage() {
     }
   };
 
-  const prefetchPremiumData = (place: string, raceNumber: string) => {
-    fetch('/api/saga-ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        year: String(selectedYear),
-        date,
-        place,
-        raceNumber,
-        useAI: false,
-        trackCondition: '良',
-      }),
-    }).catch(() => {});
+  // SagaAIデータを取得してキャッシュに保存
+  const fetchSagaAIData = async (place: string, raceNumber: string, isCurrentRace: boolean = false): Promise<SagaAIResponse | null> => {
+    const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
+    
+    // キャッシュチェック
+    const cached = sagaAICache.current.get(cacheKey);
+    if (cached) {
+      if (isCurrentRace) {
+        setCurrentSagaAIData(cached);
+      }
+      return cached;
+    }
+    
+    try {
+      const res = await fetch('/api/saga-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: String(selectedYear),
+          date,
+          place,
+          raceNumber,
+          useAI: false,
+          trackCondition: '良',
+        }),
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        const sagaData: SagaAIResponse = {
+          analyses: data.analyses || [],
+          summary: data.summary || '',
+          aiEnabled: data.aiEnabled || false,
+        };
+        sagaAICache.current.set(cacheKey, sagaData);
+        
+        // 現在選択中のレースならstateに反映
+        if (isCurrentRace) {
+          setCurrentSagaAIData(sagaData);
+        }
+        return sagaData;
+      }
+    } catch (err) {
+      console.warn('[SagaAI] プリフェッチエラー:', place, raceNumber);
+    }
+    return null;
+  };
 
+  const prefetchPremiumData = (place: string, raceNumber: string) => {
+    // SagaAIデータを取得（現在のレース）
+    fetchSagaAIData(place, raceNumber, true);
+
+    // RacePaceも取得
     fetch(`/api/race-pace?year=${selectedYear}&date=${date}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`)
       .catch(() => {});
+  };
+  
+  // 全レースのSagaAIをバックグラウンドでプリフェッチ（プロプランユーザー用）
+  const prefetchAllSagaAI = async (venuesList: Venue[], currentPlace: string, currentRace: string) => {
+    for (const venue of venuesList) {
+      for (const race of venue.races) {
+        // 現在表示中のレースはスキップ（既に取得済み）
+        if (venue.place === currentPlace && race.race_number === currentRace) {
+          continue;
+        }
+        
+        const cacheKey = `${selectedYear}_${date}_${venue.place}_${race.race_number}`;
+        if (!sagaAICache.current.has(cacheKey)) {
+          // 少し間隔を空けてAPI負荷を軽減
+          await new Promise(resolve => setTimeout(resolve, 200));
+          await fetchSagaAIData(venue.place, race.race_number, false);
+        }
+      }
+    }
+    console.log('[SagaAI] 全レースのプリフェッチ完了');
   };
 
   const waitForPriorityFetch = async (signal: AbortSignal): Promise<boolean> => {
@@ -564,14 +626,27 @@ export default function RaceCardPage() {
     const loadRaceCard = async () => {
       const cacheKey = `${selectedYear}_${date}_${selectedVenue}_${selectedRace}`;
       
+      // SagaAIキャッシュをチェックしてstateに反映
+      const sagaCacheKey = `${selectedYear}_${date}_${selectedVenue}_${selectedRace}`;
+      const cachedSagaData = sagaAICache.current.get(sagaCacheKey);
+      if (cachedSagaData) {
+        console.log('[SagaAI] キャッシュヒット:', sagaCacheKey);
+        setCurrentSagaAIData(cachedSagaData);
+      } else {
+        // キャッシュがない場合はnullにしておく（SagaAICardが自分で取得）
+        setCurrentSagaAIData(null);
+      }
+      
       // メモリキャッシュチェック
       const memoryCachedData = raceCardCache.current.get(cacheKey);
       if (memoryCachedData) {
         console.log('[useEffect] Memory cache hit:', cacheKey);
         setRaceCard(memoryCachedData);
         setExpandedHorse(null);
-        // SagaAI等のプレミアムデータも取得
-        prefetchPremiumData(selectedVenue, selectedRace);
+        // SagaAI等のプレミアムデータも取得（キャッシュになければ）
+        if (!cachedSagaData) {
+          prefetchPremiumData(selectedVenue, selectedRace);
+        }
         return;
       }
       
@@ -584,8 +659,10 @@ export default function RaceCardPage() {
             raceCardCache.current.set(cacheKey, persistedData);
             setRaceCard(persistedData);
             setExpandedHorse(null);
-            // SagaAI等のプレミアムデータも取得
-            prefetchPremiumData(selectedVenue, selectedRace);
+            // SagaAI等のプレミアムデータも取得（キャッシュになければ）
+            if (!cachedSagaData) {
+              prefetchPremiumData(selectedVenue, selectedRace);
+            }
             return;
           }
         } catch (err) {
@@ -633,35 +710,31 @@ export default function RaceCardPage() {
     fetchTimeHighlights();
   }, [date, selectedYear, selectedVenue]);
 
+  // SagaAI（おれAI）のバックグラウンドプリフェッチ（プロプランユーザー用）
   useEffect(() => {
-    const prefetchSagaAI = async () => {
-      if (!date || !selectedVenue || currentRaces.length === 0) return;
-      
-      const racesToPrefetch = currentRaces.slice(0, 3);
-      
-      for (const race of racesToPrefetch) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        try {
-          fetch('/api/saga-ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              year: String(selectedYear),
-              date,
-              place: selectedVenue,
-              raceNumber: race.race_number,
-              useAI: false,
-              trackCondition: '良',
-            }),
-          }).catch(() => {});
-        } catch {}
+    // プロプランでSagaAIが有効な場合のみ
+    if (!showSagaAI) return;
+    if (!date || !selectedVenue || !selectedRace || venues.length === 0) return;
+    
+    const startPrefetch = async () => {
+      // 現在のレースを最優先で取得
+      const currentCacheKey = `${selectedYear}_${date}_${selectedVenue}_${selectedRace}`;
+      if (!sagaAICache.current.has(currentCacheKey)) {
+        console.log('[SagaAI] 現在のレースを取得:', selectedVenue, selectedRace);
+        await fetchSagaAIData(selectedVenue, selectedRace, true);
       }
+      
+      // 少し遅延してから他のレースをバックグラウンドでプリフェッチ
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // 全会場・全レースをプリフェッチ
+      prefetchAllSagaAI(venues, selectedVenue, selectedRace);
     };
     
-    const timer = setTimeout(prefetchSagaAI, 500);
+    const timer = setTimeout(startPrefetch, 200);
     return () => clearTimeout(timer);
-  }, [date, selectedYear, selectedVenue, currentRaces]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSagaAI, date, selectedYear, selectedVenue, selectedRace, venues]);
 
   const getScoreTextColor = (score: number, hasData: boolean) => {
     if (!hasData) return 'text-green-600/50';
@@ -1269,6 +1342,17 @@ export default function RaceCardPage() {
                   date={date}
                   place={selectedVenue}
                   raceNumber={selectedRace}
+                  cachedData={currentSagaAIData}
+                  onHorseClick={(horseNumber) => {
+                    // raceCardから馬番に対応する馬を見つける
+                    const horse = raceCard?.horses.find(h => h.umaban === String(horseNumber));
+                    if (horse) {
+                      setSelectedHorseDetail(horse);
+                    }
+                  }}
+                  onHorseAction={(horseName, horseNumber) => {
+                    setHorseActionTarget({ name: horseName, number: horseNumber });
+                  }}
                 />
               </div>
             )}
