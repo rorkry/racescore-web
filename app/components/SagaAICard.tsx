@@ -288,9 +288,13 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
   }, [year, date, place, raceNumber, trackCondition]);
 
   // 初回読み込み
+  // propsが変わったらデータを再取得
   useEffect(() => {
-    fetchRuleBasedAnalysis(bias);
-  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+    // レース変更時は降格状態をリセット
+    setDemotedHorses(new Map());
+    setBias('none');
+    fetchRuleBasedAnalysis('none');
+  }, [year, date, place, raceNumber]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // AIモード切替時
   useEffect(() => {

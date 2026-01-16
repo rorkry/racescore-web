@@ -570,6 +570,8 @@ export default function RaceCardPage() {
         console.log('[useEffect] Memory cache hit:', cacheKey);
         setRaceCard(memoryCachedData);
         setExpandedHorse(null);
+        // SagaAI等のプレミアムデータも取得
+        prefetchPremiumData(selectedVenue, selectedRace);
         return;
       }
       
@@ -582,6 +584,8 @@ export default function RaceCardPage() {
             raceCardCache.current.set(cacheKey, persistedData);
             setRaceCard(persistedData);
             setExpandedHorse(null);
+            // SagaAI等のプレミアムデータも取得
+            prefetchPremiumData(selectedVenue, selectedRace);
             return;
           }
         } catch (err) {
@@ -769,9 +773,9 @@ export default function RaceCardPage() {
           const horseName = normalizeHorseName(horse.umamei);
           const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
+          // 馬番の背景色を枠番の色に設定
           return `<tr>
-            <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
-            <td style="border:2px solid #333;padding:10px;text-align:center;background:#ffffff;color:#000000;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};color:${frameColor.text};font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
             <td style="border:2px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#ffffff;color:#000000;">${horseName}</td>
             <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#ffffff;color:#333333;">${horse.kishu.trim()}</td>
             <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#ffffff;color:#333333;">${horse.kinryo.trim()}</td>
@@ -779,11 +783,11 @@ export default function RaceCardPage() {
           </tr>`;
         }).join('');
 
+        // ヘッダー色を薄め紺色(#B8C9E0)に設定、枠カラムを削除
         tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#ffffff;padding:20px;">
           <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#1a365d;">${raceTitle}</h2>
           <table style="width:100%;border-collapse:collapse;border:2px solid #333;">
-            <thead><tr style="background:#87CEEB;color:#000000;">
-              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
+            <thead><tr style="background:#B8C9E0;color:#1a365d;">
               <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
               <th style="border:2px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
               <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
@@ -877,9 +881,9 @@ export default function RaceCardPage() {
             const horseName = normalizeHorseName(horse.umamei);
             const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
+            // 馬番の背景色を枠番の色に設定
             return `<tr>
-              <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
-              <td style="border:2px solid #333;padding:10px;text-align:center;background:#ffffff;color:#000000;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};color:${frameColor.text};font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
               <td style="border:2px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#ffffff;color:#000000;">${horseName}</td>
               <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#ffffff;color:#333333;">${horse.kishu.trim()}</td>
               <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#ffffff;color:#333333;">${horse.kinryo.trim()}</td>
@@ -887,11 +891,11 @@ export default function RaceCardPage() {
             </tr>`;
           }).join('');
 
+          // ヘッダー色を薄め紺色(#B8C9E0)に設定、枠カラムを削除
           tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#ffffff;padding:20px;">
             <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#1a365d;">${raceTitle}</h2>
             <table style="width:100%;border-collapse:collapse;border:2px solid #333;">
-              <thead><tr style="background:#87CEEB;color:#000000;">
-                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
+              <thead><tr style="background:#B8C9E0;color:#1a365d;">
                 <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
                 <th style="border:2px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
                 <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
