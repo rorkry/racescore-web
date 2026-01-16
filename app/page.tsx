@@ -86,12 +86,12 @@ export default function HomePage() {
             </span>
           </div>
           
-          <h2 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6">
+          <h2 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
             <span className="text-green-800">データを、</span>
             <span className="gold-text">直感に。</span>
           </h2>
           
-          <p className="text-lg md:text-xl text-gray-700 mb-10 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-lg md:text-xl text-gray-700 mb-10 max-w-2xl mx-auto leading-relaxed text-pretty">
             複雑な競馬データをビジュアル化。<br className="hidden md:block" />
             AI分析と独自スコアで、あなたの予想をサポートします。
           </p>
@@ -115,15 +115,15 @@ export default function HomePage() {
           {/* 統計 */}
           <div className="mt-10 grid grid-cols-3 gap-4 max-w-xl mx-auto">
             <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
-              <div className="text-2xl md:text-3xl font-bold text-green-700">7年+</div>
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">7年+</div>
               <div className="text-xs text-gray-600 font-medium">データ蓄積</div>
             </div>
             <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
-              <div className="text-2xl md:text-3xl font-bold text-green-700">AI</div>
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">AI</div>
               <div className="text-xs text-gray-600 font-medium">展開予想</div>
             </div>
             <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
-              <div className="text-2xl md:text-3xl font-bold text-green-700">6指数</div>
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">6指数</div>
               <div className="text-xs text-gray-600 font-medium">独自分析</div>
             </div>
           </div>
@@ -134,7 +134,7 @@ export default function HomePage() {
       <section className="py-10 md:py-12">
         <div className="container mx-auto px-4">
           <div className="text-center mb-8">
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
               {todayDate ? `${todayDate}` : '今日'} の注目レース
             </h3>
             <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
@@ -142,7 +142,7 @@ export default function HomePage() {
           
           {loading ? (
             <div className="text-center py-12">
-              <div className="inline-block w-12 h-12 border-4 border-green-700 border-t-gold-500 rounded-full animate-spin"></div>
+              <div className="inline-block size-12 border-4 border-green-700 border-t-gold-500 rounded-full animate-spin"></div>
               <p className="mt-4 text-gray-500">レース情報を取得中...</p>
             </div>
           ) : todayRaces.length > 0 ? (
@@ -157,7 +157,7 @@ export default function HomePage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                      <div className={`size-12 rounded-lg flex items-center justify-center ${
                         race.isGrade 
                           ? 'gold-gradient' 
                           : 'bg-green-100 border border-green-200'
@@ -223,7 +223,7 @@ export default function HomePage() {
       <section className="py-10 md:py-14 bg-gray-50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-8">
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
               ストライドの特徴
             </h3>
             <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
@@ -232,33 +232,33 @@ export default function HomePage() {
           <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
             {/* 特徴1 */}
             <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
-              <div className="w-14 h-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
                 <span className="text-2xl">📊</span>
               </div>
-              <h4 className="font-bold text-lg text-gray-800 mb-3">独自スコアで一目で分かる</h4>
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">独自スコアで一目で分かる</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
                 複雑な数字を「競うスコア」「ポテンシャル」「巻き返し指数」で視覚化。初心者でも直感的に理解できます。
               </p>
             </div>
             
             {/* 特徴2 */}
             <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
-              <div className="w-14 h-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
                 <span className="text-2xl">🧠</span>
               </div>
-              <h4 className="font-bold text-lg text-gray-800 mb-3">AI分析で多角的に評価</h4>
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">AI分析で多角的に評価</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
                 過去のレースデータから学習したAIが、コース適性・ローテーション・展開を総合的に分析します。
               </p>
             </div>
             
             {/* 特徴3 */}
             <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
-              <div className="w-14 h-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
                 <span className="text-2xl">🎯</span>
               </div>
-              <h4 className="font-bold text-lg text-gray-800 mb-3">展開予想を可視化</h4>
-              <p className="text-gray-600 text-sm leading-relaxed">
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">展開予想を可視化</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
                 スタート後とゴール前の隊列を予測。レース展開が視覚的に分かり、戦略が立てやすくなります。
               </p>
             </div>
@@ -270,7 +270,7 @@ export default function HomePage() {
       <section className="py-10 md:py-14 bg-white">
         <div className="container mx-auto px-4">
           <div className="text-center mb-8">
-            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
               かんたん3ステップ
             </h3>
             <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
@@ -288,12 +288,12 @@ export default function HomePage() {
                     <div className="hidden md:block absolute top-8 left-[60%] w-[80%] h-0.5 bg-gradient-to-r from-green-300 to-transparent"></div>
                   )}
                   <div className="relative z-10">
-                    <div className="w-16 h-16 rounded-full gold-gradient flex items-center justify-center mx-auto mb-4 shadow-xl">
+                    <div className="size-16 rounded-full gold-gradient flex items-center justify-center mx-auto mb-4 shadow-xl">
                       <span className="text-2xl">{step.icon}</span>
                     </div>
-                    <div className="text-xs text-yellow-600 font-bold mb-2">STEP {step.num}</div>
-                    <h4 className="font-bold text-lg text-gray-800 mb-2">{step.title}</h4>
-                    <p className="text-gray-600 text-sm">{step.desc}</p>
+                    <div className="text-xs text-yellow-600 font-bold mb-2 tabular-nums">STEP {step.num}</div>
+                    <h4 className="font-bold text-lg text-gray-800 mb-2 text-balance">{step.title}</h4>
+                    <p className="text-gray-600 text-sm text-pretty">{step.desc}</p>
                   </div>
                 </div>
               ))}

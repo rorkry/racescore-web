@@ -808,7 +808,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
   return (
     <AnimatePresence>
       <motion.div 
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-2 md:p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4"
         variants={overlayVariants}
         initial="hidden"
         animate="visible"
@@ -842,7 +842,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
           <div className="px-4 py-3 border-b border-cyan-500/30 flex items-center justify-between">
             <div>
               <h2 
-                className="text-xl md:text-2xl font-black text-white tracking-wide"
+                className="text-xl md:text-2xl font-black text-white"
                 style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6), 0 0 40px rgba(168, 85, 247, 0.3)' }}
               >
                 {horse.umamei}

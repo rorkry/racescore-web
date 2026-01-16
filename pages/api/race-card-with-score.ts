@@ -184,7 +184,8 @@ function mapWakujunToRecordRow(dbRow: any): RecordRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { date, place, raceNumber, year } = req.query;
+  const { date, place, raceNumber, year, mode } = req.query;
+  const fastMode = mode === 'fast'; // 高速モード（スコア計算なし）
 
   if (!date || !place || !raceNumber) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -193,7 +194,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // ========================================
   // キャッシュチェック（ヒットすればDB問い合わせをスキップ）
   // ========================================
-  const yearFilter = year ? parseInt(year as string, 10) : null;
+  // yearFilterを文字列として扱う（wakujunテーブルのyearはTEXT型）
+  const yearFilter = year ? String(year) : null;
   const cacheKey = getCacheKey(yearFilter, String(date), String(place), String(raceNumber));
   
   const cachedData = getFromCache(cacheKey);
@@ -218,7 +220,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ORDER BY CAST(umaban AS INTEGER)
     `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
+    // デバッグ：取得された馬の数を確認
+    console.log(`[race-card-with-score] date=${date}, place=${place}, race_number=${raceNumber}, year=${yearFilter}`);
+    console.log(`[race-card-with-score] 取得馬数: ${horses.length}頭`);
+    if (horses.length > 0) {
+      console.log(`[race-card-with-score] 馬番範囲: ${horses[0].umaban} - ${horses[horses.length - 1].umaban}`);
+    }
+
     if (!horses || horses.length === 0) {
+      // yearフィルタなしでも試行
+      const horsesWithoutYear = db.prepare(`
+        SELECT * FROM wakujun
+        WHERE date = ? AND place = ? AND race_number = ?
+        ORDER BY CAST(umaban AS INTEGER)
+      `).all(date, place, raceNumber) as any[];
+      console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
+      
       return res.status(404).json({ error: 'No horses found for this race' });
     }
 
@@ -226,6 +243,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const horseNames = horses.map((h: any) => normalizeHorseName(GET(h, 'umamei')));
     const horseNameSet = new Set(horseNames);
     const uniqueHorseNames = Array.from(horseNameSet);
+
+    // ========================================
+    // 高速モード: スコア計算なしで基本情報のみを返す
+    // ========================================
+    if (fastMode) {
+      const firstHorse = horses[0];
+      const fastResult = {
+        raceInfo: {
+          date: String(date),
+          place: String(place),
+          raceNumber: String(raceNumber),
+          raceName: GET(firstHorse, 'race_name', 'race_name_1') || `${raceNumber}R`,
+          distance: GET(firstHorse, 'distance'),
+          track: GET(firstHorse, 'track'),
+          condition: GET(firstHorse, 'baba', 'condition') || '良',
+          classCode: GET(firstHorse, 'class_name_1', 'class_name'),
+          weather: GET(firstHorse, 'weather') || '晴',
+          fieldSize: horses.length,
+        },
+        horses: horses.map((h: any) => ({
+          umaban: GET(h, 'umaban'),
+          waku: GET(h, 'waku'),
+          horseName: GET(h, 'umamei'),
+          jockey: GET(h, 'kishu'),
+          weight: GET(h, 'kinryo'),
+          hasData: false, // スコアなし
+          score: null,
+          potential: null,
+          comeback: null,
+        })),
+        fastMode: true,
+      };
+      
+      console.log(`[race-card-with-score] 高速モード: ${Date.now() - startTime}ms`);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      return res.status(200).json(fastResult);
+    }
 
     // ========================================
     // STEP 2: 全馬の過去走データを一括取得（1クエリ）
@@ -242,7 +296,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 重要: 現在表示中のレース日付以前のデータのみを使用
     // （当日や未来のデータを含めると、結果を知った上での評価になってしまう）
     // ========================================
-    const currentRaceDateNum = getCurrentRaceDateNumber(String(date), yearFilter);
+    const currentRaceDateNum = getCurrentRaceDateNumber(String(date), yearFilter ? parseInt(yearFilter, 10) : null);
     console.log(`[race-card-with-score] 現在のレース日付: ${currentRaceDateNum} - この日付より前のデータのみ使用`);
 
     // 馬名をキーにしてMapに振り分け（日付フィルタリング適用）

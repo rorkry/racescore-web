@@ -6,7 +6,12 @@ import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
 import SagaAICard from '@/app/components/SagaAICard';
 import HorseDetailModal from '@/app/components/HorseDetailModal';
+import HorseActionPopup from '@/app/components/HorseActionPopup';
+import BabaMemoForm from '@/app/components/BabaMemoForm';
+import InlineMarkSelector, { type MarkType, getMarkColor } from '@/app/components/InlineMarkSelector';
 import { useFeatureAccess } from '@/app/components/FloatingActionButton';
+import { useRacePredictions } from '@/hooks/useRacePredictions';
+import { useSession } from '@/app/components/Providers';
 import { 
   getFromIndexedDB, 
   setToIndexedDB, 
@@ -163,6 +168,23 @@ export default function RaceCardPage() {
   const showSagaAI = useFeatureAccess('saga-ai');
 
   const [selectedHorseDetail, setSelectedHorseDetail] = useState<Horse | null>(null);
+  const [horseActionTarget, setHorseActionTarget] = useState<{ name: string; number: string } | null>(null);
+  const [showBabaMemo, setShowBabaMemo] = useState(false);
+  const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
+
+  // セッション状態
+  const { status: sessionStatus } = useSession();
+
+  // レースキーを生成
+  const raceKey = raceCard 
+    ? `${raceCard.raceInfo.date}_${raceCard.raceInfo.place}_${raceCard.raceInfo.raceNumber}` 
+    : null;
+
+  // 予想（印）管理フック
+  const { predictions, setPrediction, isRaceFinished, loading: predictionsLoading } = useRacePredictions(
+    raceKey,
+    raceCard?.raceInfo.date
+  );
 
   const raceCardCache = useRef<Map<string, RaceCard>>(new Map());
   
@@ -215,6 +237,10 @@ export default function RaceCardPage() {
       }
       raceCardCache.current.clear();
       setPrefetchProgress(null);
+      // 日付変更時にレースカードをリセット
+      setSelectedRace('');
+      setRaceCard(null);
+      setSelectedVenue('');
       fetchVenues();
     }
     
@@ -636,12 +662,13 @@ export default function RaceCardPage() {
           return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
         };
 
+        // 【PDF出力UI - 白背景＋淡い青色ヘッダー版（固定）】
         const getScoreColorForPDF = (rank: number, totalHorses: number) => {
-          if (rank === 0) return '#d4af37';
-          if (rank === 1) return '#c0c0c0';
-          if (rank === 2) return '#cd7f32';
-          if (rank < totalHorses / 2) return '#166534';
-          return '#1a1a1a';
+          if (rank === 0) return '#FF6B6B'; // 1位：赤
+          if (rank === 1) return '#FF8844'; // 2位：オレンジ
+          if (rank === 2) return '#FFD93D'; // 3位：黄色
+          if (rank < totalHorses / 2) return '#90EE90'; // 上位半分：緑
+          return '#DDDDDD'; // それ以下：グレー
         };
 
         const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
@@ -651,25 +678,25 @@ export default function RaceCardPage() {
           const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
           return `<tr>
-            <td style="border:1px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
-            <td style="border:1px solid #333;padding:10px;text-align:center;background:#0a1f13;color:#fff;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
-            <td style="border:1px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#0f1a14;color:#f0fdf4;">${horseName}</td>
-            <td style="border:1px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#0f1a14;color:#86efac;">${horse.kishu.trim()}</td>
-            <td style="border:1px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#0f1a14;color:#86efac;">${horse.kinryo.trim()}</td>
-            <td style="border:1px solid #333;padding:10px;text-align:center;background:${scoreColor};font-size:18px;font-weight:bold;width:80px;color:#fff;">${scoreDisplay}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;background:#ffffff;color:#000000;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#ffffff;color:#000000;">${horseName}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#ffffff;color:#333333;">${horse.kishu.trim()}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#ffffff;color:#333333;">${horse.kinryo.trim()}</td>
+            <td style="border:2px solid #333;padding:10px;text-align:center;background:${scoreColor};font-size:18px;font-weight:bold;width:80px;color:#000000;">${scoreDisplay}</td>
           </tr>`;
         }).join('');
 
-        tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#0a1f13;padding:20px;">
-          <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#d4af37;">${raceTitle}</h2>
-          <table style="width:100%;border-collapse:collapse;">
-            <thead><tr style="background:#166534;color:white;">
-              <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
-              <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
-              <th style="border:1px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
-              <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
-              <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:60px;">斤量</th>
-              <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:80px;">競う<br/>スコア</th>
+        tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#ffffff;padding:20px;">
+          <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#1a365d;">${raceTitle}</h2>
+          <table style="width:100%;border-collapse:collapse;border:2px solid #333;">
+            <thead><tr style="background:#87CEEB;color:#000000;">
+              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
+              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
+              <th style="border:2px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
+              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
+              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:60px;">斤量</th>
+              <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:80px;">競う<br/>スコア</th>
             </tr></thead>
             <tbody>${tableRows}</tbody>
           </table>
@@ -743,12 +770,13 @@ export default function RaceCardPage() {
             return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
           };
 
+          // 【PDF出力UI - 白背景＋淡い青色ヘッダー版（固定）】
           const getScoreColorForPDF = (rank: number, totalHorses: number) => {
-            if (rank === 0) return '#d4af37';
-            if (rank === 1) return '#c0c0c0';
-            if (rank === 2) return '#cd7f32';
-            if (rank < totalHorses / 2) return '#166534';
-            return '#1a1a1a';
+            if (rank === 0) return '#FF6B6B'; // 1位：赤
+            if (rank === 1) return '#FF8844'; // 2位：オレンジ
+            if (rank === 2) return '#FFD93D'; // 3位：黄色
+            if (rank < totalHorses / 2) return '#90EE90'; // 上位半分：緑
+            return '#DDDDDD'; // それ以下：グレー
           };
 
           const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
@@ -758,25 +786,25 @@ export default function RaceCardPage() {
             const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
 
             return `<tr>
-              <td style="border:1px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
-              <td style="border:1px solid #333;padding:10px;text-align:center;background:#0a1f13;color:#fff;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
-              <td style="border:1px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#0f1a14;color:#f0fdf4;">${horseName}</td>
-              <td style="border:1px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#0f1a14;color:#86efac;">${horse.kishu.trim()}</td>
-              <td style="border:1px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#0f1a14;color:#86efac;">${horse.kinryo.trim()}</td>
-              <td style="border:1px solid #333;padding:10px;text-align:center;background:${scoreColor};font-size:18px;font-weight:bold;width:80px;color:#fff;">${scoreDisplay}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;background:${frameColor.bg};width:25px;"></td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;background:#ffffff;color:#000000;font-size:18px;font-weight:bold;width:50px;">${horse.umaban}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:left;font-size:18px;font-weight:bold;background:#ffffff;color:#000000;">${horseName}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:100px;background:#ffffff;color:#333333;">${horse.kishu.trim()}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;font-size:14px;width:60px;background:#ffffff;color:#333333;">${horse.kinryo.trim()}</td>
+              <td style="border:2px solid #333;padding:10px;text-align:center;background:${scoreColor};font-size:18px;font-weight:bold;width:80px;color:#000000;">${scoreDisplay}</td>
             </tr>`;
           }).join('');
 
-          tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#0a1f13;padding:20px;">
-            <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#d4af37;">${raceTitle}</h2>
-            <table style="width:100%;border-collapse:collapse;">
-              <thead><tr style="background:#166534;color:white;">
-                <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
-                <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
-                <th style="border:1px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
-                <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
-                <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:60px;">斤量</th>
-                <th style="border:1px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:80px;">競う<br/>スコア</th>
+          tempDiv.innerHTML = `<div style="font-family:'Noto Sans JP',sans-serif;background:#ffffff;padding:20px;">
+            <h2 style="font-size:24px;font-weight:bold;margin-bottom:15px;color:#1a365d;">${raceTitle}</h2>
+            <table style="width:100%;border-collapse:collapse;border:2px solid #333;">
+              <thead><tr style="background:#87CEEB;color:#000000;">
+                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:25px;">枠</th>
+                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:50px;">馬番</th>
+                <th style="border:2px solid #333;padding:10px;text-align:left;font-size:16px;font-weight:bold;">馬名</th>
+                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:100px;">騎手</th>
+                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:60px;">斤量</th>
+                <th style="border:2px solid #333;padding:10px;text-align:center;font-size:16px;font-weight:bold;width:80px;">競う<br/>スコア</th>
               </tr></thead>
               <tbody>${tableRows}</tbody>
             </table>
@@ -1127,83 +1155,159 @@ export default function RaceCardPage() {
             )}
 
             <div className="gold-border-card rounded-xl p-3 sm:p-6">
-              <h2 className="text-lg sm:text-2xl font-bold mb-2 sm:mb-4 gold-text">
-                {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
-              </h2>
-              <p className="text-green-400/70 mb-2 sm:mb-4 text-sm sm:text-base">
-                {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
-              </p>
-              <p className="text-xs sm:text-sm text-green-500/50 mb-3 sm:mb-4">
-                ※馬名をクリックすると馬の詳細情報が表示されます　|　▼をクリックすると過去走が展開されます
-              </p>
+              <div className="flex items-start justify-between gap-3 mb-2 sm:mb-4">
+                <div>
+                  <h2 className="text-lg sm:text-2xl font-bold gold-text text-balance">
+                    {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
+                  </h2>
+                  <p className="text-green-400/70 text-sm sm:text-base">
+                    {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowBabaMemo(true)}
+                  className="flex-shrink-0 bg-green-700/50 hover:bg-green-600/60 text-green-100 text-xs sm:text-sm px-3 py-2 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  🌿 馬場メモ
+                </button>
+              </div>
+              {/* 並び替えトグル */}
+              <div className="flex items-center gap-2 mb-3 sm:mb-4">
+                <span className="text-xs text-green-400">並び順:</span>
+                <div className="flex bg-green-900/50 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setSortMode('score')}
+                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
+                      sortMode === 'score'
+                        ? 'bg-gold-500 text-green-900 font-bold'
+                        : 'text-green-300 hover:text-white'
+                    }`}
+                  >
+                    🔥 スコア順
+                  </button>
+                  <button
+                    onClick={() => setSortMode('umaban')}
+                    className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
+                      sortMode === 'umaban'
+                        ? 'bg-gold-500 text-green-900 font-bold'
+                        : 'text-green-300 hover:text-white'
+                    }`}
+                  >
+                    📋 馬番順
+                  </button>
+                </div>
+                {sessionStatus === 'authenticated' && !isRaceFinished && (
+                  <span className="text-xs text-green-500 ml-auto">印をタップで予想登録</span>
+                )}
+                {isRaceFinished && (
+                  <span className="text-xs text-yellow-500/70 ml-auto">🔒 確定済み</span>
+                )}
+              </div>
 
               <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
-                <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                <table className="w-full border-collapse min-w-[600px] sm:min-w-0">
                   <thead>
                     <tr className="bg-green-800 text-white text-xs sm:text-base">
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3">枠</th>
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3">馬番</th>
+                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-10">馬番</th>
+                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-10">印</th>
+                      <th className="border border-green-700 px-1 py-2 sm:py-3 w-10" title="お気に入り">★</th>
                       <th className="border border-green-700 px-2 sm:px-4 py-2 sm:py-3">馬名</th>
-                      <th className="border border-green-700 px-2 sm:px-4 py-2 sm:py-3">騎手</th>
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3">斤量</th>
-                      <th className="border border-green-700 px-2 sm:px-4 py-2 sm:py-3 whitespace-nowrap">競う<br className="sm:hidden"/>スコア</th>
+                      <th className="border border-green-700 px-2 sm:px-3 py-2 sm:py-3">騎手</th>
+                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-12">斤量</th>
+                      <th className="border border-green-700 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-16">競う<br className="sm:hidden"/>スコア</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...raceCard.horses].sort((a, b) => {
+                      if (sortMode === 'umaban') {
+                        // 馬番順：全馬を馬番順で表示
+                        return parseInt(a.umaban) - parseInt(b.umaban);
+                      }
+                      // スコア順：データがある馬を上に
                       if (a.hasData && !b.hasData) return -1;
                       if (!a.hasData && b.hasData) return 1;
                       if (a.hasData && b.hasData) return b.score - a.score;
                       return parseInt(a.umaban) - parseInt(b.umaban);
-                    }).map((horse, index) => (
-                      <React.Fragment key={horse.umaban}>
-                        <tr className={`${index % 2 === 0 ? 'bg-green-950/50' : 'bg-green-900/30'} text-xs sm:text-base`}>
-                          <td className={`border border-green-800 px-1 sm:px-2 py-2 text-center ${getWakuColor(horse.waku)}`}>
-                            {horse.waku}
-                          </td>
-                          <td className="border border-green-800 px-1 sm:px-2 py-2 text-center font-bold text-green-100">
-                            {horse.umaban}
-                          </td>
-                          <td className="border border-green-800 px-2 sm:px-4 py-2 font-medium text-green-100">
-                            <div className="flex items-center justify-between gap-2">
-                              <span 
-                                className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-yellow-400 hover:underline transition-colors"
-                                onClick={() => setSelectedHorseDetail(horse)}
-                                title="馬の詳細情報を表示"
-                              >
-                                {normalizeHorseName(horse.umamei)}
-                              </span>
+                    }).map((horse, index) => {
+                      const currentMark = predictions.get(horse.umaban) || null;
+                      return (
+                        <React.Fragment key={horse.umaban}>
+                          <tr className={`${index % 2 === 0 ? 'bg-green-950/50' : 'bg-green-900/30'} text-xs sm:text-base`}>
+                            {/* 馬番（枠色付き） */}
+                            <td className={`border border-green-800 px-1 sm:px-2 py-2 text-center font-bold ${getWakuColor(horse.waku)}`}>
+                              {horse.umaban}
+                            </td>
+                            {/* 印 */}
+                            <td className="border border-green-800 px-1 py-1 text-center">
+                              {sessionStatus === 'authenticated' ? (
+                                <InlineMarkSelector
+                                  currentMark={currentMark}
+                                  onMarkChange={(mark) => setPrediction(horse.umaban, mark)}
+                                  disabled={isRaceFinished}
+                                  compact
+                                />
+                              ) : (
+                                <span className="text-gray-600 text-lg">-</span>
+                              )}
+                            </td>
+                            {/* ★ お気に入り */}
+                            <td className="border border-green-800 px-1 py-1 text-center">
                               <button
-                                className="text-green-500 hover:text-yellow-400 text-xs sm:text-sm px-1 flex-shrink-0"
-                                onClick={() => toggleHorseExpand(horse.umaban)}
-                                title="過去走を表示"
+                                onClick={() => setHorseActionTarget({ 
+                                  name: normalizeHorseName(horse.umamei), 
+                                  number: horse.umaban 
+                                })}
+                                className="text-yellow-400/60 hover:text-yellow-400 hover:scale-110 transition-all text-lg"
+                                title="お気に入り・メモ"
                               >
-                                {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                ☆
                               </button>
-                            </div>
-                          </td>
-                          <td className="border border-green-800 px-2 sm:px-4 py-2 text-green-300 whitespace-nowrap">
-                            {horse.kishu.trim()}
-                          </td>
-                          <td className="border border-green-800 px-1 sm:px-2 py-2 text-center text-green-300">
-                            {horse.kinryo.trim()}
-                          </td>
-                          <td className={`border border-green-800 px-2 sm:px-4 py-2 text-center text-sm sm:text-lg font-bold ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                            {horse.hasData && horse.score != null ? Math.round(horse.score) : 'N/A'}
-                          </td>
-                        </tr>
-                        {expandedHorse === horse.umaban && (
-                          <tr key={`${horse.umaban}-detail`}>
-                            <td colSpan={6} className="border border-green-800 p-2 sm:p-4 bg-green-950/50">
-                              <div className="text-xs sm:text-sm font-bold mb-2 gold-text">
-                                {normalizeHorseName(horse.umamei)} の過去走詳細
+                            </td>
+                            {/* 馬名 */}
+                            <td className="border border-green-800 px-2 sm:px-4 py-2 font-medium text-green-100">
+                              <div className="flex items-center gap-1">
+                                <span 
+                                  className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-yellow-400 hover:underline transition-colors"
+                                  onClick={() => setSelectedHorseDetail(horse)}
+                                  title="馬の詳細情報を表示"
+                                >
+                                  {normalizeHorseName(horse.umamei)}
+                                </span>
+                                <button
+                                  className="text-green-500 hover:text-yellow-400 text-xs px-1 flex-shrink-0 ml-auto"
+                                  onClick={() => toggleHorseExpand(horse.umaban)}
+                                  title="過去走を表示"
+                                >
+                                  {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                </button>
                               </div>
-                              <PastRaceDetail pastRaces={horse.past} />
+                            </td>
+                            {/* 騎手 */}
+                            <td className="border border-green-800 px-2 sm:px-3 py-2 text-green-300 whitespace-nowrap text-xs sm:text-sm">
+                              {horse.kishu.trim()}
+                            </td>
+                            {/* 斤量 */}
+                            <td className="border border-green-800 px-1 sm:px-2 py-2 text-center text-green-300 text-xs sm:text-sm">
+                              {horse.kinryo.trim()}
+                            </td>
+                            {/* 競うスコア - データがない場合は「-」表示 */}
+                            <td className={`border border-green-800 px-2 sm:px-3 py-2 text-center text-sm sm:text-lg font-bold tabular-nums ${getScoreTextColor(horse.score, horse.hasData)}`}>
+                              {horse.hasData && horse.score != null ? Math.round(horse.score) : '-'}
                             </td>
                           </tr>
-                        )}
-                      </React.Fragment>
-                    ))}
+                          {expandedHorse === horse.umaban && (
+                            <tr key={`${horse.umaban}-detail`}>
+                              <td colSpan={7} className="border border-green-800 p-2 sm:p-4 bg-green-950/50">
+                                <div className="text-xs sm:text-sm font-bold mb-2 gold-text">
+                                  {normalizeHorseName(horse.umamei)} の過去走詳細
+                                </div>
+                                <PastRaceDetail pastRaces={horse.past} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1222,6 +1326,52 @@ export default function RaceCardPage() {
             } : undefined}
           />
         )}
+
+        {/* お気に入り・メモポップアップ */}
+        {horseActionTarget && raceCard && (
+          <HorseActionPopup
+            horseName={horseActionTarget.name}
+            horseNumber={horseActionTarget.number}
+            raceKey={`${raceCard.raceInfo.date}_${raceCard.raceInfo.place}_${raceCard.raceInfo.raceNumber}`}
+            isOpen={true}
+            onClose={() => setHorseActionTarget(null)}
+          />
+        )}
+
+        {/* 馬場メモフォーム */}
+        {showBabaMemo && raceCard && (() => {
+          const isShiba = raceCard.raceInfo.trackType.includes('芝');
+          const trackType = isShiba ? '芝' : 'ダート';
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-black/60" onClick={() => setShowBabaMemo(false)} />
+              <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+                <div className={`px-5 py-4 flex items-center justify-between ${isShiba ? 'bg-green-800' : 'bg-amber-700'}`}>
+                  <h2 className="text-lg font-bold text-white">
+                    {isShiba ? '🌿' : '🏜️'} 馬場メモ（{trackType}）
+                  </h2>
+                  <button
+                    onClick={() => setShowBabaMemo(false)}
+                    className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                    aria-label="閉じる"
+                  >
+                    <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-4 overflow-y-auto flex-1">
+                  <BabaMemoForm
+                    trackType={trackType}
+                    place={raceCard.raceInfo.place}
+                    date={raceCard.raceInfo.date}
+                    onSaved={() => setShowBabaMemo(false)}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

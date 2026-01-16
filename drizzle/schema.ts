@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 /**
  * umadataテーブル
@@ -143,4 +143,138 @@ export const wakujun = sqliteTable('wakujun', {
   
   // タイムスタンプ
   created_at: text('created_at'),
+});
+
+// ============================================
+// 認証関連テーブル（NextAuth.js v5）
+// ============================================
+
+/**
+ * usersテーブル
+ * ユーザー情報を保存
+ */
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: text('name'),
+  email: text('email').notNull().unique(),
+  emailVerified: integer('email_verified', { mode: 'timestamp' }),
+  image: text('image'),
+  password: text('password'), // bcrypt ハッシュ化されたパスワード
+  role: text('role', { enum: ['user', 'admin'] }).default('user').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+/**
+ * accountsテーブル
+ * OAuth プロバイダー連携情報
+ */
+export const accounts = sqliteTable('accounts', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  provider: text('provider').notNull(),
+  providerAccountId: text('provider_account_id').notNull(),
+  refresh_token: text('refresh_token'),
+  access_token: text('access_token'),
+  expires_at: integer('expires_at'),
+  token_type: text('token_type'),
+  scope: text('scope'),
+  id_token: text('id_token'),
+  session_state: text('session_state'),
+});
+
+export type Account = typeof accounts.$inferSelect;
+export type NewAccount = typeof accounts.$inferInsert;
+
+/**
+ * sessionsテーブル
+ * セッション情報
+ */
+export const sessions = sqliteTable('sessions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  sessionToken: text('session_token').notNull().unique(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  expires: integer('expires', { mode: 'timestamp' }).notNull(),
+});
+
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
+
+/**
+ * verificationTokensテーブル
+ * メール認証トークン
+ */
+export const verificationTokens = sqliteTable('verification_tokens', {
+  identifier: text('identifier').notNull(),
+  token: text('token').notNull(),
+  expires: integer('expires', { mode: 'timestamp' }).notNull(),
+}, (vt) => ({
+  pk: primaryKey({ columns: [vt.identifier, vt.token] }),
+}));
+
+// ============================================
+// ユーザー機能関連テーブル
+// ============================================
+
+/**
+ * subscriptionsテーブル
+ * 課金状況
+ */
+export const subscriptions = sqliteTable('subscriptions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  plan: text('plan', { enum: ['free', 'premium', 'pro'] }).default('free').notNull(),
+  status: text('status', { enum: ['active', 'cancelled', 'expired'] }).default('active').notNull(),
+  expiresAt: integer('expires_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type NewSubscription = typeof subscriptions.$inferInsert;
+
+/**
+ * userPointsテーブル
+ * ユーザーポイント残高
+ */
+export const userPoints = sqliteTable('user_points', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
+  balance: integer('balance').default(0).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
+
+export type UserPoints = typeof userPoints.$inferSelect;
+export type NewUserPoints = typeof userPoints.$inferInsert;
+
+/**
+ * pointHistoryテーブル
+ * ポイント履歴
+ */
+export const pointHistory = sqliteTable('point_history', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  amount: integer('amount').notNull(), // +/- で増減
+  type: text('type', { enum: ['purchase', 'use', 'bonus', 'refund'] }).notNull(),
+  description: text('description'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+});
+
+export type PointHistory = typeof pointHistory.$inferSelect;
+export type NewPointHistory = typeof pointHistory.$inferInsert;
+
+/**
+ * userHorseMarksテーブル
+ * ユーザーの馬印（お気に入り）
+ */
+export const userHorseMarks = sqliteTable('user_horse_marks', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  horseName: text('horse_name').notNull(),
+  markType: text('mark_type', { enum: ['favorite', 'watch', 'avoid'] }).default('favorite').notNull(),
+  memo: text('memo'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 });

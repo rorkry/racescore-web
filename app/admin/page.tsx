@@ -1,47 +1,55 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-
-// 管理者パスワード（変更してください）
-const ADMIN_PASSWORD = 'racescore2026';
+import { useSession } from '../components/Providers';
 
 export default function AdminPage() {
+  const { data: session, status } = useSession();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const router = useRouter();
-  
-  // 認証状態
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [checkingAuth, setCheckingAuth] = useState(true);
 
-  // 初回ロード時に認証状態をチェック
-  useEffect(() => {
-    const authToken = sessionStorage.getItem('admin_auth');
-    if (authToken === 'authenticated') {
-      setIsAuthenticated(true);
-    }
-    setCheckingAuth(false);
-  }, []);
+  const isAdmin = (session?.user as any)?.role === 'admin';
 
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      sessionStorage.setItem('admin_auth', 'authenticated');
-      setIsAuthenticated(true);
-      setAuthError('');
-    } else {
-      setAuthError('パスワードが違います');
-    }
-  };
+  // ローディング中
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="size-12 border-4 border-green-700 border-t-gold-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-500">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('admin_auth');
-    setIsAuthenticated(false);
-    setPassword('');
-  };
+  // 未ログインまたは管理者でない場合
+  if (!session || !isAdmin) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4 text-center">
+          <div className="size-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="size-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">アクセス権限がありません</h1>
+          <p className="text-gray-600 mb-6">
+            このページは管理者のみアクセスできます。
+            {!session && 'ログインしてください。'}
+          </p>
+          <button
+            onClick={() => router.push('/')}
+            className="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+          >
+            トップページに戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -86,95 +94,34 @@ export default function AdminPage() {
     }
   };
 
-  // 認証チェック中
-  if (checkingAuth) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">読み込み中...</div>
-      </div>
-    );
-  }
-
-  // 未認証の場合はログイン画面を表示
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
-          <h1 className="text-2xl font-bold text-center mb-6">🔒 管理者ログイン</h1>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">パスワード</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="パスワードを入力"
-                autoFocus
-              />
-            </div>
-            
-            {authError && (
-              <div className="p-3 bg-red-100 text-red-700 rounded-lg text-sm">
-                {authError}
-              </div>
-            )}
-            
-            <button
-              onClick={handleLogin}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-            >
-              ログイン
-            </button>
-            
-            <button
-              onClick={() => router.push('/')}
-              className="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-3 px-4 rounded-lg transition-colors"
-            >
-              トップページに戻る
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // 認証済みの場合は管理画面を表示
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ヘッダー */}
-      <header className="bg-blue-800 text-white shadow-md">
+      <div className="bg-green-800 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">管理者画面</h1>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 rounded transition-colors text-sm"
-            >
-              🔓 ログアウト
-            </button>
-            <button
-              onClick={() => router.push('/')}
-              className="flex items-center gap-2 px-3 py-2 bg-blue-700 hover:bg-blue-600 rounded transition-colors"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-              </svg>
-              <span className="text-sm">トップページ</span>
-            </button>
+          <div>
+            <h1 className="text-2xl font-bold">管理者画面</h1>
+            <p className="text-green-200 text-sm">{session.user?.email}</p>
           </div>
+          <button
+            onClick={() => router.push('/')}
+            className="flex items-center gap-2 px-4 py-2 bg-green-700 hover:bg-green-600 rounded-lg transition-colors"
+          >
+            <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span className="text-sm">戻る</span>
+          </button>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-4xl mx-auto p-8">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-2xl font-bold mb-6">CSVファイルアップロード</h2>
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">CSVファイルアップロード</h2>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium mb-2 text-gray-700">
                 CSVファイル（umadata.csv または wakujun.csv）
               </label>
               <input
@@ -186,8 +133,8 @@ export default function AdminPage() {
                   file:mr-4 file:py-2 file:px-4
                   file:rounded file:border-0
                   file:text-sm file:font-semibold
-                  file:bg-blue-50 file:text-blue-700
-                  hover:file:bg-blue-100
+                  file:bg-green-50 file:text-green-700
+                  hover:file:bg-green-100
                   disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
@@ -201,14 +148,14 @@ export default function AdminPage() {
             <button
               onClick={handleUpload}
               disabled={!file || uploading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded
+              className="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg
                 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {uploading ? 'アップロード中...' : 'アップロード'}
             </button>
 
             {message && (
-              <div className={`p-4 rounded ${
+              <div className={`p-4 rounded-lg ${
                 message.startsWith('✅') ? 'bg-green-100 text-green-800' : 
                 message.startsWith('❌') ? 'bg-red-100 text-red-800' : 
                 'bg-blue-100 text-blue-800'
@@ -218,8 +165,8 @@ export default function AdminPage() {
             )}
           </div>
 
-          <div className="mt-8 p-4 bg-gray-50 rounded">
-            <h3 className="font-bold mb-2">使い方</h3>
+          <div className="mt-8 p-4 bg-gray-50 rounded-lg">
+            <h3 className="font-bold mb-2 text-gray-900">使い方</h3>
             <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
               <li>umadata.csv（過去走データ）またはwakujun.csv（当日の出走データ）を選択</li>
               <li>「アップロード」ボタンをクリック</li>

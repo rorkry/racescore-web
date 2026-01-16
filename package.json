@@ -7,15 +7,19 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "generate-courses": "node scripts/generate-course-db.js"
+    "generate-courses": "node scripts/generate-course-db.js",
+    "setup-admin": "tsx scripts/setup-admin.ts"
   },
   "dependencies": {
+    "@auth/drizzle-adapter": "^1.11.1",
     "@headlessui/react": "^2.2.2",
     "@prisma/client": "^6.7.0",
     "@tanstack/react-query": "^5.90.12",
     "@trpc/client": "^11.0.0",
     "@trpc/react-query": "^11.0.0",
     "@trpc/server": "^11.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",
     "chart.js": "^4.4.9",
     "drizzle-kit": "^0.31.8",
@@ -27,6 +31,7 @@
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.503.0",
     "next": "15.3.1",
+    "next-auth": "^5.0.0-beta.30",
     "openai": "^6.15.0",
     "papaparse": "^5.5.3",
     "react": "^19.0.0",

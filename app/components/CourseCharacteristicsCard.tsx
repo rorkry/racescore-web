@@ -93,7 +93,7 @@ export function CourseCharacteristicsCard({
 
       {/* 特徴リスト */}
       <div className="mb-4">
-        <h4 className="text-slate-400 text-xs font-medium mb-2 uppercase tracking-wider">
+        <h4 className="text-slate-400 text-xs font-medium mb-2 uppercase">
           コース特徴
         </h4>
         <div className="space-y-1">
@@ -112,7 +112,7 @@ export function CourseCharacteristicsCard({
       {/* ペース傾向 */}
       {courseData.paceTendency && (
         <div className="mb-4 p-3 bg-slate-800/50 rounded-lg">
-          <h4 className="text-slate-400 text-xs font-medium mb-1 uppercase tracking-wider">
+          <h4 className="text-slate-400 text-xs font-medium mb-1 uppercase">
             ペース傾向
           </h4>
           <p className="text-amber-400 text-sm font-medium">
@@ -152,7 +152,7 @@ export function CourseCharacteristicsCard({
       {/* 時期別特性 */}
       {courseData.seasonalNotes && Object.keys(courseData.seasonalNotes).length > 0 && (
         <div className="mb-4 p-3 bg-slate-800/50 rounded-lg">
-          <h4 className="text-slate-400 text-xs font-medium mb-2 uppercase tracking-wider">
+          <h4 className="text-slate-400 text-xs font-medium mb-2 uppercase">
             時期別特性
           </h4>
           <div className="space-y-1">
