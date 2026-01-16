@@ -504,7 +504,8 @@ export default function RaceCardPage() {
     if (selectedVenue && selectedRace) {
       fetchRaceCard(selectedVenue, selectedRace);
     }
-  }, [selectedVenue, selectedRace]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVenue, selectedRace, date, selectedYear]);
 
   useEffect(() => {
     const fetchTimeHighlights = async () => {
