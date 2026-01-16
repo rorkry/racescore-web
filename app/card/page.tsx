@@ -322,16 +322,73 @@ export default function RaceCardPage() {
       setVenues(data.venues || []);
       
       if (data.venues && data.venues.length > 0) {
-        setSelectedVenue(data.venues[0].place);
-        if (data.venues[0].races && data.venues[0].races.length > 0) {
-          setSelectedRace(data.venues[0].races[0].race_number);
-        }
-        prefetchAllRaceCards(data.venues);
+        const firstVenue = data.venues[0].place;
+        const firstRace = data.venues[0].races?.[0]?.race_number || '1';
+        
+        setSelectedVenue(firstVenue);
+        setSelectedRace(firstRace);
+        
+        // 案1: 選択中のレースを即座に取得（最優先）
+        await fetchRaceCardImmediate(firstVenue, firstRace);
+        
+        // ローディング解除後、残りを完全にバックグラウンドで取得（UIブロックなし）
+        setLoading(false);
+        
+        // 案1: 他のレースを裏で取得（Promise.resolveで完全に非同期化）
+        Promise.resolve().then(() => {
+          prefetchAllRaceCards(data.venues);
+        });
+        return; // finallyのsetLoading(false)をスキップ
       }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // 案1: 即座にレースカードを取得（ローディング表示なし）
+  const fetchRaceCardImmediate = async (place: string, raceNumber: string) => {
+    const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
+    
+    // メモリキャッシュチェック
+    const memoryCachedData = raceCardCache.current.get(cacheKey);
+    if (memoryCachedData) {
+      setRaceCard(memoryCachedData);
+      setExpandedHorse(null);
+      return;
+    }
+    
+    // IndexedDBキャッシュチェック
+    if (isIndexedDBAvailable()) {
+      try {
+        const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
+        if (persistedData) {
+          raceCardCache.current.set(cacheKey, persistedData);
+          setRaceCard(persistedData);
+          setExpandedHorse(null);
+          return;
+        }
+      } catch (err) {
+        console.warn('[IndexedDB] 読み取りエラー:', err);
+      }
+    }
+    
+    // APIから取得
+    try {
+      const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        raceCardCache.current.set(cacheKey, data);
+        if (isIndexedDBAvailable()) {
+          setToIndexedDB(cacheKey, data, date).catch(() => {});
+        }
+        setRaceCard(data);
+        setExpandedHorse(null);
+      }
+    } catch (err: any) {
+      console.error('[fetchRaceCardImmediate] Error:', err.message);
     }
   };
 
@@ -1118,10 +1175,33 @@ export default function RaceCardPage() {
           <div className="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>
         )}
 
+        {/* 案3: スケルトンUI */}
         {loading && (
-          <div className="text-center py-8">
-            <div className="inline-block w-12 h-12 border-4 border-green-700 border-t-yellow-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-green-400/70">読み込み中...</p>
+          <div className="space-y-4">
+            {/* レースヘッダースケルトン */}
+            <div className="glass-card rounded-2xl p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="h-7 w-48 bg-green-800/50 rounded animate-pulse"></div>
+                <div className="h-6 w-24 bg-green-800/50 rounded animate-pulse"></div>
+              </div>
+              <div className="h-5 w-64 bg-green-800/30 rounded animate-pulse"></div>
+            </div>
+            
+            {/* 馬リストスケルトン */}
+            <div className="glass-card rounded-2xl p-4 sm:p-6">
+              <div className="space-y-3">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 bg-green-900/30 rounded-lg">
+                    <div className="w-8 h-8 bg-green-800/50 rounded-full animate-pulse"></div>
+                    <div className="flex-1 space-y-2">
+                      <div className="h-5 w-32 bg-green-800/50 rounded animate-pulse"></div>
+                      <div className="h-4 w-48 bg-green-800/30 rounded animate-pulse"></div>
+                    </div>
+                    <div className="h-8 w-16 bg-green-800/50 rounded animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
