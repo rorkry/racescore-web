@@ -669,7 +669,7 @@ function generateSummary(topHorses: SagaAnalysis[], aiResults?: OpenAISagaResult
 
     if (useAIResults) {
       const aiH = h as OpenAISagaResult;
-      let comment = `${mark}${aiH.horseNumber}番 ${aiH.horseName}`;
+      let comment = `${mark}${aiH.horseNumber}番 ${normalizeHorseName(aiH.horseName)}`;
 
       if (aiH.tags.length > 0) {
         comment += `（${aiH.tags.slice(0, 3).join('、')}）`;
@@ -689,7 +689,7 @@ function generateSummary(topHorses: SagaAnalysis[], aiResults?: OpenAISagaResult
       }
     } else {
       const ruleH = h as SagaAnalysis;
-      let comment = `${mark}${ruleH.horseNumber}番 ${ruleH.horseName}`;
+      let comment = `${mark}${ruleH.horseNumber}番 ${normalizeHorseName(ruleH.horseName)}`;
 
       if (ruleH.tags.length > 0) {
         comment += `（${ruleH.tags.slice(0, 3).join('、')}）`;
@@ -1011,7 +1011,7 @@ export default async function handler(
       }
 
       const input: HorseAnalysisInput = {
-        horseName: (horse.umamei || '').trim(),
+        horseName: normalizeHorseName(horse.umamei || ''),
         horseNumber: horseNum,
         waku: parseInt(horse.waku || '0', 10),
         raceDate: date,
