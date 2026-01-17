@@ -188,11 +188,11 @@ export default function RaceCardPage() {
       return;
     }
     try {
-      const res = await fetch('/api/user/me');
+      const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
-        // horse_marksから馬名を抽出
-        const names = (data.horseMarks || []).map((m: { horse_name: string }) => m.horse_name);
+        // favorite_horsesから馬名を抽出
+        const names = (data.favorites || []).map((f: { horse_name: string }) => f.horse_name);
         setFavoriteHorses(names);
       }
     } catch (err) {
