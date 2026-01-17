@@ -1530,6 +1530,20 @@ export default function RaceCardPage() {
                             {/* 馬名 */}
                             <td className="border border-slate-300 px-1 sm:px-4 py-2 font-semibold text-slate-900">
                               <div className="flex items-center gap-1">
+                                <button
+                                  className={`
+                                    flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
+                                    text-[10px] sm:text-xs transition-all active:scale-95
+                                    ${expandedHorse === horse.umaban 
+                                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                                      : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                                    }
+                                  `}
+                                  onClick={() => toggleHorseExpand(horse.umaban)}
+                                  title="過去走を表示"
+                                >
+                                  {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                </button>
                                 <span 
                                   className="truncate max-w-[80px] sm:max-w-none cursor-pointer hover:text-emerald-600 hover:underline transition-colors"
                                   onClick={() => setSelectedHorseDetail(horse)}
@@ -1537,20 +1551,6 @@ export default function RaceCardPage() {
                                 >
                                   {normalizeHorseName(horse.umamei)}
                                 </span>
-                                <button
-                                  className={`
-                                    flex-shrink-0 size-5 sm:size-6 rounded-full flex items-center justify-center
-                                    text-xs font-bold transition-all active:scale-95
-                                    ${expandedHorse === horse.umaban 
-                                      ? 'bg-emerald-600 text-white' 
-                                      : 'bg-slate-200 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'
-                                    }
-                                  `}
-                                  onClick={() => toggleHorseExpand(horse.umaban)}
-                                  title="過去走を表示"
-                                >
-                                  {expandedHorse === horse.umaban ? '−' : '+'}
-                                </button>
                               </div>
                             </td>
                             {/* 騎手 */}
