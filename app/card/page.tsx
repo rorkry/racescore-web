@@ -171,9 +171,32 @@ export default function RaceCardPage() {
   const [horseActionTarget, setHorseActionTarget] = useState<{ name: string; number: string } | null>(null);
   const [showBabaMemo, setShowBabaMemo] = useState(false);
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
+  const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
 
   // セッション状態
   const { status: sessionStatus } = useSession();
+
+  // お気に入り馬リストを取得
+  useEffect(() => {
+    const fetchFavoriteHorses = async () => {
+      if (sessionStatus !== 'authenticated') {
+        setFavoriteHorses([]);
+        return;
+      }
+      try {
+        const res = await fetch('/api/user/me');
+        if (res.ok) {
+          const data = await res.json();
+          // horse_marksから馬名を抽出
+          const names = (data.horseMarks || []).map((m: { horse_name: string }) => m.horse_name);
+          setFavoriteHorses(names);
+        }
+      } catch (err) {
+        console.warn('[FavoriteHorses] 取得エラー:', err);
+      }
+    };
+    fetchFavoriteHorses();
+  }, [sessionStatus]);
 
   // レースキーを生成
   const raceKey = raceCard 
@@ -1353,6 +1376,7 @@ export default function RaceCardPage() {
                   onHorseAction={(horseName, horseNumber) => {
                     setHorseActionTarget({ name: horseName, number: horseNumber });
                   }}
+                  favoriteHorses={favoriteHorses}
                 />
               </div>
             )}
