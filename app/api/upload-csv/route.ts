@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     // ファイル名でテーブルを判定
     if (file.name.includes('wakujun')) {
       // wakujunテーブルにインポート（日付ごとに保持）
-      const result = importWakujun(db, data.slice(1)); // ヘッダー行をスキップ
+      // 注意: CSVにはヘッダー行がないため、data.slice(1)ではなくdataをそのまま渡す
+      const result = importWakujun(db, data);
       return NextResponse.json({ 
         success: true, 
         count: result.count, 
