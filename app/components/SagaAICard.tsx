@@ -1,14 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-
-// 馬名を正規化（$, *, スペースを除去）
-function normalizeHorseName(name: string): string {
-  return name
-    .replace(/^[\$\*＄＊\s　]+/, '')
-    .replace(/[\s　]+$/, '')
-    .trim();
-}
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface SagaAnalysis {
   horseName: string;

@@ -20,6 +20,7 @@ import {
   clearExpiredCache, 
   isIndexedDBAvailable 
 } from '@/lib/indexeddb-cache';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface PastRaceIndices {
   L4F: number | null;
@@ -105,12 +106,7 @@ function toHalfWidth(str: string): string {
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 }
 
-function normalizeHorseName(name: string): string {
-  return name
-    .replace(/^[\$\*＄＊\s　]+/, '')  // 半角・全角の$*とスペースを先頭から除去
-    .replace(/[\s　]+$/, '')           // 末尾のスペースを除去
-    .trim();
-}
+// normalizeHorseNameは@/utils/normalize-horse-nameからインポート
 
 function formatDateForQuery(dateStr: string): string {
   const match = dateStr.match(/(\d{4})\.?\s*(\d{1,2})\.?\s*(\d{1,2})/);

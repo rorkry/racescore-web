@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSession } from '../../components/Providers';
 import Link from 'next/link';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface FavoriteHorse {
   id: string;
@@ -228,11 +229,11 @@ export default function MyHorsesPage() {
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => selectSuggestion(name)}
+                    onClick={() => selectSuggestion(normalizeHorseName(name))}
                     className="w-full px-4 py-2.5 text-left hover:bg-green-50 text-gray-800 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                   >
                     <span className="text-green-600">🐴</span>
-                    <span className="font-medium">{name}</span>
+                    <span className="font-medium">{normalizeHorseName(name)}</span>
                   </button>
                 ))}
               </div>
@@ -274,7 +275,7 @@ export default function MyHorsesPage() {
                   <div className="flex items-center gap-4">
                     <span className="text-2xl">🏇</span>
                     <div>
-                      <h3 className="font-bold text-amber-600">{horse.horse_name}</h3>
+                      <h3 className="font-bold text-amber-600">{normalizeHorseName(horse.horse_name)}</h3>
                       <p className="text-xs text-gray-400">
                         登録日: {new Date(horse.created_at).toLocaleDateString('ja-JP')}
                       </p>

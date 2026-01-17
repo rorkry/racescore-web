@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSession, signOut } from '../components/Providers';
 import Link from 'next/link';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface UserData {
   user: {
@@ -282,7 +283,7 @@ export default function MyPage() {
             <div className="space-y-2">
               {userData.horseMarks.slice(0, 5).map((mark, idx) => (
                 <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                  <span className="font-medium text-gray-800">{mark.horse_name}</span>
+                  <span className="font-medium text-gray-800">{normalizeHorseName(mark.horse_name)}</span>
                   <span className="text-xl">{mark.mark}</span>
                 </div>
               ))}

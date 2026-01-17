@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, YAxis, Tooltip as RechartsTooltip } from 'recharts';
 import { getCourseData, COURSE_DATABASE } from '@/lib/course-data/index';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface PastRace {
   date: string;
@@ -845,7 +846,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                 className="text-xl md:text-2xl font-black text-white"
                 style={{ textShadow: '0 0 20px rgba(6, 182, 212, 0.6), 0 0 40px rgba(168, 85, 247, 0.3)' }}
               >
-                {horse.umamei}
+                {normalizeHorseName(horse.umamei)}
               </h2>
               <p className="text-cyan-300/70 text-xs font-mono">
                 {horse.kishu} / {horse.kinryo}kg

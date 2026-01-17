@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from './Providers';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface HorseActionPopupProps {
   horseName: string;
@@ -38,7 +39,8 @@ export default function HorseActionPopup({
       const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
-        const favorite = data.favorites?.find((f: { horse_name: string; note?: string }) => f.horse_name === horseName);
+        const normalizedName = normalizeHorseName(horseName);
+        const favorite = data.favorites?.find((f: { horse_name: string; note?: string }) => normalizeHorseName(f.horse_name) === normalizedName);
         if (favorite) {
           setIsFavorite(true);
           if (favorite.note) {
@@ -67,12 +69,13 @@ export default function HorseActionPopup({
 
     setSaving(true);
     setMessage('');
+    const normalizedName = normalizeHorseName(horseName);
     try {
       if (isFavorite) {
         const res = await fetch('/api/user/favorites', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ horseName })
+          body: JSON.stringify({ horseName: normalizedName })
         });
         if (res.ok) {
           setIsFavorite(false);
@@ -85,7 +88,7 @@ export default function HorseActionPopup({
         const res = await fetch('/api/user/favorites', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ horseName, notifyOnRace: true })
+          body: JSON.stringify({ horseName: normalizedName, notifyOnRace: true })
         });
         const data = await res.json();
         if (res.ok) {
@@ -121,11 +124,12 @@ export default function HorseActionPopup({
 
     setSaving(true);
     setMessage('');
+    const normalizedName = normalizeHorseName(horseName);
     try {
       const res = await fetch('/api/user/favorites', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ horseName, note: memo.trim() })
+        body: JSON.stringify({ horseName: normalizedName, note: memo.trim() })
       });
       const data = await res.json();
       if (res.ok) {
@@ -155,7 +159,7 @@ export default function HorseActionPopup({
             <div className="flex items-center gap-3">
               <span className="text-xl">🐴</span>
               <div>
-                <h2 className="text-base font-bold text-white">{horseName}</h2>
+                <h2 className="text-base font-bold text-white">{normalizeHorseName(horseName)}</h2>
                 <p className="text-emerald-200 text-xs">{horseNumber}番</p>
               </div>
             </div>
