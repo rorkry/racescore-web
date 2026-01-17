@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import type { MarkType } from '@/app/components/InlineMarkSelector';
 
 interface Prediction {
-  horseNumber: string;
+  horse_number: string;  // APIからはスネークケース
   mark: MarkType;
-  resultPosition?: number;
-  isHit?: boolean;
+  result_position?: number;
+  is_hit?: number;
 }
 
 interface UseRacePredictionsResult {
@@ -59,7 +59,7 @@ export function useRacePredictions(raceKey: string | null, raceDate?: string): U
           const newPredictions = new Map<string, MarkType>();
           data.predictions?.forEach((p: Prediction) => {
             if (p.mark) {
-              newPredictions.set(p.horseNumber, p.mark as MarkType);
+              newPredictions.set(p.horse_number, p.mark as MarkType);
             }
           });
           setPredictions(newPredictions);
