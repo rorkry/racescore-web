@@ -1468,7 +1468,11 @@ export default function RaceCardPage() {
                 )}
               </div>
 
-              <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
+              <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0 relative">
+                {/* スマホ用スクロールインジケーター */}
+                <div className="sm:hidden absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white/90 to-transparent pointer-events-none z-10 flex items-center justify-center">
+                  <span className="text-slate-400 text-xs animate-pulse">›</span>
+                </div>
                 <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
                   <thead>
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
