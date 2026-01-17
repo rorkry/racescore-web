@@ -30,39 +30,34 @@ export default function HorseActionPopup({
 
   useEffect(() => {
     if (isOpen && status === 'authenticated') {
-      checkFavoriteStatus();
-      fetchExistingMemo();
+      checkFavoriteStatusAndMemo();
     }
-  }, [isOpen, status, horseName, raceKey]);
+  }, [isOpen, status, horseName]);
 
-  const checkFavoriteStatus = async () => {
+  const checkFavoriteStatusAndMemo = async () => {
     try {
       const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
-        const exists = data.favorites?.some((f: { horse_name: string }) => f.horse_name === horseName);
-        setIsFavorite(exists);
-      }
-    } catch {
-      console.error('Failed to check favorite status');
-    }
-  };
-
-  // 馬ごとのメモキー（レースキー_馬番）
-  const horseMemoKey = `${raceKey}_horse_${horseNumber}`;
-
-  const fetchExistingMemo = async () => {
-    try {
-      const res = await fetch(`/api/user/race-memos?raceKey=${encodeURIComponent(horseMemoKey)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.memos && data.memos.length > 0) {
-          setExistingMemo(data.memos[0].memo);
-          setMemo(data.memos[0].memo);
+        const favorite = data.favorites?.find((f: { horse_name: string; note?: string }) => f.horse_name === horseName);
+        if (favorite) {
+          setIsFavorite(true);
+          // favorite_horsesのnoteからメモを取得
+          if (favorite.note) {
+            setExistingMemo(favorite.note);
+            setMemo(favorite.note);
+          } else {
+            setExistingMemo('');
+            setMemo('');
+          }
+        } else {
+          setIsFavorite(false);
+          setExistingMemo('');
+          setMemo('');
         }
       }
     } catch {
-      console.error('Failed to fetch memo');
+      console.error('Failed to check favorite status');
     }
   };
 
@@ -121,13 +116,20 @@ export default function HorseActionPopup({
       return;
     }
 
+    // お気に入りに登録されていない場合は先に登録
+    if (!isFavorite) {
+      setMessage('先にお気に入りに登録してください');
+      return;
+    }
+
     setSaving(true);
     setMessage('');
     try {
-      const res = await fetch('/api/user/race-memos', {
-        method: 'POST',
+      // favorite_horsesのnoteを更新
+      const res = await fetch('/api/user/favorites', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raceKey: horseMemoKey, memo: memo.trim() })
+        body: JSON.stringify({ horseName, note: memo.trim() })
       });
       const data = await res.json();
       if (res.ok) {
