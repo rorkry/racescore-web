@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 印のバリデーション
-    const validMarks = ['◎', '○', '▲', '△', '☆', '×', '注'];
+    const validMarks = ['◎', '○', '▲', '△', '☆', '紐', '消', '注'];
     if (!validMarks.includes(mark)) {
       return NextResponse.json({ error: '無効な印です' }, { status: 400 });
     }

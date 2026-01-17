@@ -153,6 +153,17 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   result['レースID'] = result['race_id_new_no_horse_num'] || '';
   result['レースID(新/馬番無)'] = result['race_id_new_no_horse_num'] || '';
   result['raceId'] = result['race_id_new_no_horse_num'] || '';
+  
+  // レースIDからレース番号を抽出（最後の2桁）
+  // 形式: 20260112060501 → 01 (1R)
+  const raceId = result['race_id_new_no_horse_num'] || '';
+  if (raceId.length >= 2) {
+    const raceNumberStr = raceId.slice(-2);
+    result['race_number'] = String(parseInt(raceNumberStr, 10)); // "01" → "1"
+  } else {
+    result['race_number'] = '';
+  }
+  
   // indicesオブジェクトを保持（computeKisoScoreで使用）
   if (dbRow.indices) {
     result['indices'] = dbRow.indices;

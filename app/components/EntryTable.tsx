@@ -339,7 +339,9 @@ export default function EntryTable({
                     <option value="○">○</option>
                     <option value="▲">▲</option>
                     <option value="△">△</option>
-                    <option value="×">×</option>
+                    <option value="☆">☆</option>
+                    <option value="紐">紐</option>
+                    <option value="消">消</option>
                   </select>
                 </td>
                 <td className="horse-name">

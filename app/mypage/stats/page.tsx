@@ -131,7 +131,7 @@ export default function StatsPage() {
       <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
         <h2 className="font-bold text-gray-800 mb-4">印別成績</h2>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-          {['◎', '○', '▲', '△', '☆', '×'].map((mark) => {
+          {['◎', '○', '▲', '△', '☆', '紐', '消'].map((mark) => {
             const markPredictions = predictions.filter(p => p.mark === mark);
             const hits = markPredictions.filter(p => p.result_position === 1).length;
             const total = markPredictions.filter(p => p.result_position !== null).length;

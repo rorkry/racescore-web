@@ -8,7 +8,8 @@ const MARKS = [
   { value: '▲', label: '単穴', color: 'text-green-500' },
   { value: '△', label: '連下', color: 'text-yellow-500' },
   { value: '☆', label: '穴', color: 'text-purple-500' },
-  { value: '×', label: '消し', color: 'text-gray-400' },
+  { value: '紐', label: '紐', color: 'text-cyan-500' },
+  { value: '消', label: '消し', color: 'text-gray-400' },
 ];
 
 interface MarkSelectorProps {
@@ -57,8 +58,8 @@ export default function MarkSelector({ currentMark, onSelect, disabled, compact 
             className="fixed inset-0 z-40" 
             onClick={() => setIsOpen(false)} 
           />
-          <div className="absolute left-0 top-full mt-1 z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-2 min-w-[140px]">
-            <div className="grid grid-cols-3 gap-1">
+          <div className="absolute left-0 top-full mt-1 z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-2 min-w-[180px]">
+            <div className="grid grid-cols-4 gap-1">
               {MARKS.map((mark) => (
                 <button
                   key={mark.value}

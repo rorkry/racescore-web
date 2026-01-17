@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, deleted: true });
     }
 
-    const validMarks = ['◎', '○', '▲', '△', '×'];
+    const validMarks = ['◎', '○', '▲', '△', '☆', '紐', '消'];
     if (!validMarks.includes(mark)) {
       return NextResponse.json({ error: '無効な印です' }, { status: 400 });
     }

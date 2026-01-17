@@ -2,16 +2,18 @@
 
 import { useState, useRef, useEffect } from 'react';
 
-// 印の種類と色
+// 印の種類と色（7種類）
 const MARKS = [
   { mark: '◎', label: '本命', color: 'text-red-500', bgColor: 'bg-red-500' },
   { mark: '○', label: '対抗', color: 'text-blue-500', bgColor: 'bg-blue-500' },
   { mark: '▲', label: '単穴', color: 'text-green-500', bgColor: 'bg-green-500' },
   { mark: '△', label: '連下', color: 'text-yellow-500', bgColor: 'bg-yellow-500' },
-  { mark: '×', label: '消し', color: 'text-gray-400', bgColor: 'bg-gray-400' },
+  { mark: '☆', label: '穴', color: 'text-purple-500', bgColor: 'bg-purple-500' },
+  { mark: '紐', label: '紐', color: 'text-cyan-500', bgColor: 'bg-cyan-500' },
+  { mark: '消', label: '消し', color: 'text-gray-400', bgColor: 'bg-gray-400' },
 ] as const;
 
-type MarkType = '◎' | '○' | '▲' | '△' | '×' | null;
+type MarkType = '◎' | '○' | '▲' | '△' | '☆' | '紐' | '消' | null;
 
 interface InlineMarkSelectorProps {
   currentMark: MarkType;
@@ -84,13 +86,13 @@ export default function InlineMarkSelector({
 
       {/* ドロップダウン */}
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 z-50 bg-gray-900 rounded-lg shadow-xl border border-gray-700 p-1 flex gap-1">
+        <div className="absolute left-0 top-full mt-1 z-50 bg-gray-900 rounded-lg shadow-xl border border-gray-700 p-1.5 flex flex-wrap gap-1 max-w-[200px]">
           {MARKS.map(({ mark, label, color }) => (
             <button
               key={mark}
               onClick={() => handleSelect(mark)}
               className={`
-                size-8 flex items-center justify-center font-bold text-lg rounded
+                size-7 flex items-center justify-center font-bold text-base rounded
                 transition-all hover:scale-110
                 ${mark === currentMark ? 'ring-2 ring-white' : ''}
                 ${color} hover:bg-white/20
@@ -100,14 +102,14 @@ export default function InlineMarkSelector({
               {mark}
             </button>
           ))}
-          {/* クリアボタン */}
+          {/* 無印に戻すボタン */}
           {currentMark && (
             <button
               onClick={() => handleSelect(null)}
-              className="size-8 flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 rounded text-xs"
-              title="印を消す"
+              className="size-7 flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 rounded font-bold text-lg"
+              title="無印に戻す"
             >
-              ✕
+              -
             </button>
           )}
         </div>

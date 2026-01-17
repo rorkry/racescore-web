@@ -8,6 +8,7 @@ import SagaAICard, { type SagaAIResponse } from '@/app/components/SagaAICard';
 import HorseDetailModal from '@/app/components/HorseDetailModal';
 import HorseActionPopup from '@/app/components/HorseActionPopup';
 import BabaMemoForm from '@/app/components/BabaMemoForm';
+import RaceMemoForm from '@/app/components/RaceMemoForm';
 import InlineMarkSelector, { type MarkType, getMarkColor } from '@/app/components/InlineMarkSelector';
 import { useFeatureAccess } from '@/app/components/FloatingActionButton';
 import { useRacePredictions } from '@/hooks/useRacePredictions';
@@ -43,6 +44,7 @@ interface PastRace {
   popularity: string;
   track_condition: string;
   place: string;
+  race_number?: string;
   indices?: PastRaceIndices | null;
   indexRaceId?: string;
 }
@@ -170,6 +172,9 @@ export default function RaceCardPage() {
   const [selectedHorseDetail, setSelectedHorseDetail] = useState<Horse | null>(null);
   const [horseActionTarget, setHorseActionTarget] = useState<{ name: string; number: string } | null>(null);
   const [showBabaMemo, setShowBabaMemo] = useState(false);
+  const [showRaceMemo, setShowRaceMemo] = useState(false);
+  const [raceMemos, setRaceMemos] = useState<Map<string, string>>(new Map()); // raceKey -> memo内容
+  const [pastRaceMemoPopup, setPastRaceMemoPopup] = useState<{ raceKey: string; raceTitle: string; memo: string } | null>(null);
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
 
@@ -208,6 +213,44 @@ export default function RaceCardPage() {
     raceKey,
     raceCard?.raceInfo.date
   );
+
+  // 過去走のレースメモを取得
+  useEffect(() => {
+    if (!raceCard || sessionStatus !== 'authenticated') return;
+    
+    // 全馬の過去走からユニークなレースキーを収集
+    const pastRaceKeys = new Set<string>();
+    raceCard.horses.forEach(horse => {
+      horse.past?.forEach(race => {
+        if (race.date && race.place && race.race_number) {
+          const key = `${race.date}_${race.place}_${race.race_number}`;
+          pastRaceKeys.add(key);
+        }
+      });
+    });
+    
+    if (pastRaceKeys.size === 0) return;
+    
+    // メモを一括取得
+    const fetchMemos = async () => {
+      try {
+        const keysParam = Array.from(pastRaceKeys).join(',');
+        const res = await fetch(`/api/user/race-memos?raceKeys=${encodeURIComponent(keysParam)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const memoMap = new Map<string, string>();
+          data.memos?.forEach((m: { race_key: string; memo: string }) => {
+            memoMap.set(m.race_key, m.memo);
+          });
+          setRaceMemos(memoMap);
+        }
+      } catch (error) {
+        console.error('Failed to fetch race memos:', error);
+      }
+    };
+    
+    fetchMemos();
+  }, [raceCard, sessionStatus]);
 
   const raceCardCache = useRef<Map<string, RaceCard>>(new Map());
   // SagaAI（おれAI）のキャッシュ
@@ -785,9 +828,9 @@ export default function RaceCardPage() {
 
   const getFinishColor = (finish: string) => {
     const finishNum = parseInt(toHalfWidth(finish));
-    if (finishNum === 1) return 'text-amber-500 font-bold';
-    if (finishNum === 2) return 'text-slate-500 font-bold';
-    if (finishNum === 3) return 'text-amber-700 font-bold';
+    if (finishNum === 1) return 'text-red-500 font-bold';
+    if (finishNum === 2) return 'text-blue-500 font-bold';
+    if (finishNum === 3) return 'text-green-500 font-bold';
     return 'text-slate-700';
   };
 
@@ -1060,6 +1103,13 @@ export default function RaceCardPage() {
                 .join('-');
               const clickable = isDateClickable(race.date);
               
+              // レースメモの存在チェック
+              const pastRaceKey = race.date && race.place && race.race_number 
+                ? `${race.date}_${race.place}_${race.race_number}` 
+                : null;
+              const hasMemo = pastRaceKey ? raceMemos.has(pastRaceKey) : false;
+              const memoContent = pastRaceKey ? raceMemos.get(pastRaceKey) : null;
+              
               return (
                 <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-100'}>
                   <td 
@@ -1068,7 +1118,25 @@ export default function RaceCardPage() {
                     }`}
                     onClick={() => clickable && navigateToDate(race.date)}
                   >
-                    {race.date || '-'}
+                    <div className="flex items-center justify-center gap-1">
+                      <span>{race.date || '-'}</span>
+                      {hasMemo && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPastRaceMemoPopup({
+                              raceKey: pastRaceKey!,
+                              raceTitle: `${race.place} ${race.race_number}R ${race.class_name || ''}`,
+                              memo: memoContent || ''
+                            });
+                          }}
+                          className="text-amber-500 hover:text-amber-600 text-xs"
+                          title="レースメモを見る"
+                        >
+                          📝
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.place || '-'}</td>
                   <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.class_name || '-'}</td>
@@ -1144,7 +1212,7 @@ export default function RaceCardPage() {
                 <option value={2027}>2027</option>
               </select>
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold text-emerald-700">
+                <div className="text-2xl sm:text-3xl font-bold text-slate-800">
                   {formatDateForDisplay(date)}
                 </div>
                 <div className="text-xs text-slate-500">
@@ -1171,45 +1239,6 @@ export default function RaceCardPage() {
             </button>
           </div>
         </div>
-
-        {venues.length > 0 && (
-          <div className="mb-4 flex flex-wrap gap-2 sm:gap-3">
-            <button
-              onClick={bulkGenerateAnalysis}
-              disabled={bulkGenerating || pdfGenerating}
-              className="px-4 sm:px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50 transition-colors"
-            >
-              {bulkGenerating ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  {bulkGenerateProgress ? `${bulkGenerateProgress.current}/${bulkGenerateProgress.total}` : '生成中...'}
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">🧠 一括生成</span>
-              )}
-            </button>
-            
-            {bulkGenerateResult && (
-              <span className="flex items-center px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-sm border border-emerald-200">
-                ✅ {bulkGenerateResult.success}レース生成完了 ({bulkGenerateResult.time}秒)
-                {bulkGenerateResult.error > 0 && (
-                  <span className="ml-2 text-red-600">({bulkGenerateResult.error}件エラー)</span>
-                )}
-              </span>
-            )}
-            
-            <button
-              onClick={generateAllRacesPDF}
-              disabled={pdfGenerating || bulkGenerating}
-              className="px-4 sm:px-6 py-3 bg-slate-600 hover:bg-slate-700 text-white font-semibold rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50 transition-colors"
-            >
-              {pdfGenerating ? 'PDF生成中...' : '📄 全レースPDF'}
-            </button>
-          </div>
-        )}
 
         {venues.length > 0 && (
           <div className="mb-4">
@@ -1384,29 +1413,37 @@ export default function RaceCardPage() {
             <div className="racecard-card rounded-xl p-3 sm:p-6">
               <div className="flex items-start justify-between gap-3 mb-2 sm:mb-4">
                 <div>
-                  <h2 className="text-lg sm:text-2xl font-bold text-emerald-800 text-balance">
+                  <h2 className="text-lg sm:text-2xl font-bold text-slate-800 text-balance">
                     {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
                   </h2>
-                  <p className="text-slate-700 text-sm sm:text-base font-medium">
+                  <p className="text-slate-600 text-sm sm:text-base font-medium">
                     {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowBabaMemo(true)}
-                  className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm px-4 py-2.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium shadow-md"
-                >
-                  🌿 馬場メモ
-                </button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => setShowRaceMemo(true)}
+                    className="bg-slate-600 hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-2.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium shadow-md"
+                  >
+                    📝 レースメモ
+                  </button>
+                  <button
+                    onClick={() => setShowBabaMemo(true)}
+                    className="bg-slate-600 hover:bg-slate-700 text-white text-xs sm:text-sm px-3 py-2.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium shadow-md"
+                  >
+                    🌿 馬場メモ
+                  </button>
+                </div>
               </div>
               {/* 並び替えトグル */}
               <div className="flex items-center gap-2 mb-3 sm:mb-4">
                 <span className="text-xs text-slate-600 font-medium">並び順:</span>
-                <div className="flex bg-slate-200 rounded-lg p-0.5 shadow-inner">
+                <div className="flex bg-slate-200 rounded-lg p-0.5 shadow-inner border border-slate-300">
                   <button
                     onClick={() => setSortMode('score')}
                     className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
                       sortMode === 'score'
-                        ? 'bg-emerald-600 text-white font-bold shadow-md'
+                        ? 'bg-slate-600 text-white font-bold shadow-md'
                         : 'text-slate-700 hover:text-slate-900 font-medium'
                     }`}
                   >
@@ -1416,7 +1453,7 @@ export default function RaceCardPage() {
                     onClick={() => setSortMode('umaban')}
                     className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
                       sortMode === 'umaban'
-                        ? 'bg-emerald-600 text-white font-bold shadow-md'
+                        ? 'bg-slate-600 text-white font-bold shadow-md'
                         : 'text-slate-700 hover:text-slate-900 font-medium'
                     }`}
                   >
@@ -1427,7 +1464,7 @@ export default function RaceCardPage() {
                   <span className="text-xs text-emerald-700 font-medium ml-auto">印をタップで予想登録</span>
                 )}
                 {isRaceFinished && (
-                  <span className="text-xs bg-amber-100 text-amber-700 font-semibold ml-auto px-2 py-1 rounded border border-amber-300">🔒 確定済み</span>
+                  <span className="text-xs bg-slate-100 text-slate-700 font-semibold ml-auto px-2 py-1 rounded border border-slate-300">🔒 確定済み</span>
                 )}
               </div>
 
@@ -1599,6 +1636,67 @@ export default function RaceCardPage() {
             </div>
           );
         })()}
+
+        {/* レースメモフォーム */}
+        {showRaceMemo && raceCard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60" onClick={() => setShowRaceMemo(false)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="px-5 py-4 flex items-center justify-between bg-slate-700">
+                <h2 className="text-lg font-bold text-white">
+                  📝 レースメモ
+                </h2>
+                <button
+                  onClick={() => setShowRaceMemo(false)}
+                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="閉じる"
+                >
+                  <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1">
+                <RaceMemoForm
+                  raceKey={`${raceCard.raceInfo.date}_${raceCard.raceInfo.place}_${raceCard.raceInfo.raceNumber}`}
+                  raceTitle={`${raceCard.raceInfo.place} ${raceCard.raceInfo.raceNumber}R ${raceCard.raceInfo.className}`}
+                  onSaved={() => setShowRaceMemo(false)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 過去走レースメモ表示ポップアップ */}
+        {pastRaceMemoPopup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60" onClick={() => setPastRaceMemoPopup(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="px-5 py-4 flex items-center justify-between bg-amber-500">
+                <h2 className="text-lg font-bold text-white">
+                  📝 {pastRaceMemoPopup.raceTitle}
+                </h2>
+                <button
+                  onClick={() => setPastRaceMemoPopup(null)}
+                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="閉じる"
+                >
+                  <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-4 overflow-y-auto flex-1">
+                <div className="bg-amber-50 rounded-lg p-4">
+                  <p className="text-slate-800 whitespace-pre-wrap">{pastRaceMemoPopup.memo}</p>
+                </div>
+                <p className="text-xs text-slate-500 mt-3 text-center">
+                  このレースで記録したメモです
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
