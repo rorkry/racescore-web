@@ -29,7 +29,9 @@ export default function InlineMarkSelector({
   compact = false 
 }: InlineMarkSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // 外側クリック/タップで閉じる（遅延登録でタップ直後の誤閉じを防ぐ）
   useEffect(() => {
@@ -60,8 +62,18 @@ export default function InlineMarkSelector({
   const handleToggle = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // 開く前に位置を計算
+    if (!isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom;
+      // 下の余白が60px未満なら上に開く
+      setOpenUpward(spaceBelow < 60);
+    }
+    
     setIsOpen(prev => !prev);
-  }, []);
+  }, [isOpen]);
 
   // 印を選択
   const handleSelect = useCallback((mark: MarkType, e: React.MouseEvent | React.TouchEvent) => {
@@ -88,6 +100,7 @@ export default function InlineMarkSelector({
     <div ref={containerRef} className="relative">
       {/* 現在の印表示 / クリック/タップで開く */}
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleToggle}
         onTouchEnd={handleToggle}
@@ -105,10 +118,12 @@ export default function InlineMarkSelector({
         {currentMark || '＋'}
       </button>
 
-      {/* ドロップダウン：横長 */}
+      {/* ドロップダウン：横長、位置は動的に上下切り替え */}
       {isOpen && (
         <div 
-          className="absolute left-0 top-full mt-1 z-[100] bg-white rounded-lg shadow-xl border border-slate-300 p-2 flex items-center gap-1 whitespace-nowrap"
+          className={`absolute left-0 z-[100] bg-white rounded-lg shadow-xl border border-slate-300 p-2 flex items-center gap-1 whitespace-nowrap ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
           onClick={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
         >
