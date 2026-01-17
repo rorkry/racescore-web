@@ -182,24 +182,25 @@ export default function RaceCardPage() {
   const { status: sessionStatus } = useSession();
 
   // お気に入り馬リストを取得
+  const fetchFavoriteHorses = async () => {
+    if (sessionStatus !== 'authenticated') {
+      setFavoriteHorses([]);
+      return;
+    }
+    try {
+      const res = await fetch('/api/user/me');
+      if (res.ok) {
+        const data = await res.json();
+        // horse_marksから馬名を抽出
+        const names = (data.horseMarks || []).map((m: { horse_name: string }) => m.horse_name);
+        setFavoriteHorses(names);
+      }
+    } catch (err) {
+      console.warn('[FavoriteHorses] 取得エラー:', err);
+    }
+  };
+
   useEffect(() => {
-    const fetchFavoriteHorses = async () => {
-      if (sessionStatus !== 'authenticated') {
-        setFavoriteHorses([]);
-        return;
-      }
-      try {
-        const res = await fetch('/api/user/me');
-        if (res.ok) {
-          const data = await res.json();
-          // horse_marksから馬名を抽出
-          const names = (data.horseMarks || []).map((m: { horse_name: string }) => m.horse_name);
-          setFavoriteHorses(names);
-        }
-      } catch (err) {
-        console.warn('[FavoriteHorses] 取得エラー:', err);
-      }
-    };
     fetchFavoriteHorses();
   }, [sessionStatus]);
 
@@ -1522,43 +1523,59 @@ export default function RaceCardPage() {
                             </td>
                             {/* ★ お気に入り */}
                             <td className="border border-slate-300 px-1 py-1 text-center">
-                              <button
-                                onClick={() => setHorseActionTarget({ 
-                                  name: normalizeHorseName(horse.umamei), 
-                                  number: horse.umaban 
-                                })}
-                                className="text-amber-500 hover:text-amber-600 hover:scale-110 transition-all text-lg"
-                                title="お気に入り・メモ"
-                              >
-                                ☆
-                              </button>
+                              {(() => {
+                                const horseName = normalizeHorseName(horse.umamei);
+                                const isFavorite = favoriteHorses.includes(horseName);
+                                return (
+                                  <button
+                                    onClick={() => setHorseActionTarget({ 
+                                      name: horseName, 
+                                      number: horse.umaban 
+                                    })}
+                                    className={`hover:scale-110 transition-all text-lg ${
+                                      isFavorite 
+                                        ? 'text-amber-500' 
+                                        : 'text-slate-300 hover:text-amber-400'
+                                    }`}
+                                    title="お気に入り・メモ"
+                                  >
+                                    {isFavorite ? '★' : '☆'}
+                                  </button>
+                                );
+                              })()}
                             </td>
                             {/* 馬名 */}
-                            <td className="border border-slate-300 px-1 sm:px-4 py-2 font-semibold text-slate-900">
-                              <div className="flex items-center gap-1">
-                                <button
-                                  className={`
-                                    flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
-                                    text-[10px] sm:text-xs transition-all active:scale-95
-                                    ${expandedHorse === horse.umaban 
-                                      ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
-                                      : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
-                                    }
-                                  `}
-                                  onClick={() => toggleHorseExpand(horse.umaban)}
-                                  title="過去走を表示"
-                                >
-                                  {expandedHorse === horse.umaban ? '▲' : '▼'}
-                                </button>
-                                <span 
-                                  className="truncate max-w-[80px] sm:max-w-none cursor-pointer hover:text-emerald-600 hover:underline transition-colors"
-                                  onClick={() => setSelectedHorseDetail(horse)}
-                                  title="馬の詳細情報を表示"
-                                >
-                                  {normalizeHorseName(horse.umamei)}
-                                </span>
-                              </div>
-                            </td>
+                            {(() => {
+                              const horseName = normalizeHorseName(horse.umamei);
+                              const isFavorite = favoriteHorses.includes(horseName);
+                              return (
+                                <td className={`border border-slate-300 px-1 sm:px-4 py-2 font-semibold ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      className={`
+                                        flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
+                                        text-[10px] sm:text-xs transition-all active:scale-95
+                                        ${expandedHorse === horse.umaban 
+                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                                          : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                                        }
+                                      `}
+                                      onClick={() => toggleHorseExpand(horse.umaban)}
+                                      title="過去走を表示"
+                                    >
+                                      {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                    </button>
+                                    <span 
+                                      className={`truncate max-w-[80px] sm:max-w-none cursor-pointer hover:underline transition-colors ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                      onClick={() => setSelectedHorseDetail(horse)}
+                                      title="馬の詳細情報を表示"
+                                    >
+                                      {horseName}
+                                    </span>
+                                  </div>
+                                </td>
+                              );
+                            })()}
                             {/* 騎手 */}
                             <td className="border border-slate-300 px-2 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-xs sm:text-sm">
                               {horse.kishu.trim()}
@@ -1612,6 +1629,7 @@ export default function RaceCardPage() {
             raceKey={`${raceCard.raceInfo.date}_${raceCard.raceInfo.place}_${raceCard.raceInfo.raceNumber}`}
             isOpen={true}
             onClose={() => setHorseActionTarget(null)}
+            onFavoriteChange={fetchFavoriteHorses}
           />
         )}
 

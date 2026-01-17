@@ -9,6 +9,7 @@ interface HorseActionPopupProps {
   raceKey: string;
   isOpen: boolean;
   onClose: () => void;
+  onFavoriteChange?: () => void;
 }
 
 export default function HorseActionPopup({ 
@@ -16,7 +17,8 @@ export default function HorseActionPopup({
   horseNumber, 
   raceKey, 
   isOpen, 
-  onClose 
+  onClose,
+  onFavoriteChange
 }: HorseActionPopupProps) {
   const { status } = useSession();
   const [isFavorite, setIsFavorite] = useState(false);
@@ -46,15 +48,17 @@ export default function HorseActionPopup({
     }
   };
 
+  // 馬ごとのメモキー（レースキー_馬番）
+  const horseMemoKey = `${raceKey}_horse_${horseNumber}`;
+
   const fetchExistingMemo = async () => {
     try {
-      const res = await fetch(`/api/user/race-memos?raceKey=${raceKey}`);
+      const res = await fetch(`/api/user/race-memos?raceKey=${encodeURIComponent(horseMemoKey)}`);
       if (res.ok) {
         const data = await res.json();
-        const horseMemo = data.memos?.find((m: { horse_number: string }) => m.horse_number === horseNumber);
-        if (horseMemo) {
-          setExistingMemo(horseMemo.memo);
-          setMemo(horseMemo.memo);
+        if (data.memos && data.memos.length > 0) {
+          setExistingMemo(data.memos[0].memo);
+          setMemo(data.memos[0].memo);
         }
       }
     } catch {
@@ -81,6 +85,7 @@ export default function HorseActionPopup({
         if (res.ok) {
           setIsFavorite(false);
           setMessage('お気に入りから削除しました');
+          onFavoriteChange?.();
         }
       } else {
         // 追加
@@ -93,6 +98,7 @@ export default function HorseActionPopup({
         if (res.ok) {
           setIsFavorite(true);
           setMessage('お気に入りに追加しました！');
+          onFavoriteChange?.();
         } else {
           setMessage(data.error || '追加に失敗しました');
         }
@@ -121,7 +127,7 @@ export default function HorseActionPopup({
       const res = await fetch('/api/user/race-memos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raceKey, horseNumber, memo: memo.trim() })
+        body: JSON.stringify({ raceKey: horseMemoKey, memo: memo.trim() })
       });
       const data = await res.json();
       if (res.ok) {
