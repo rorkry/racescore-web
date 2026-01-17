@@ -1469,13 +1469,13 @@ export default function RaceCardPage() {
               </div>
 
               <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
-                <table className="w-full border-collapse min-w-[600px] sm:min-w-0">
+                <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
                   <thead>
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">馬番</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">印</th>
                       <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-10 font-semibold" title="お気に入り">★</th>
-                      <th className="border-2 border-emerald-800 px-2 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
                       <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 font-semibold">騎手</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-12 font-semibold">斤量</th>
                       <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-16 font-semibold">競う<br className="sm:hidden"/>スコア</th>
@@ -1528,21 +1528,28 @@ export default function RaceCardPage() {
                               </button>
                             </td>
                             {/* 馬名 */}
-                            <td className="border border-slate-300 px-2 sm:px-4 py-2 font-semibold text-slate-900">
+                            <td className="border border-slate-300 px-1 sm:px-4 py-2 font-semibold text-slate-900">
                               <div className="flex items-center gap-1">
                                 <span 
-                                  className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-emerald-600 hover:underline transition-colors"
+                                  className="truncate max-w-[80px] sm:max-w-none cursor-pointer hover:text-emerald-600 hover:underline transition-colors"
                                   onClick={() => setSelectedHorseDetail(horse)}
                                   title="馬の詳細情報を表示"
                                 >
                                   {normalizeHorseName(horse.umamei)}
                                 </span>
                                 <button
-                                  className="text-slate-500 hover:text-emerald-600 text-xs px-1 flex-shrink-0 ml-auto font-bold"
+                                  className={`
+                                    flex-shrink-0 size-5 sm:size-6 rounded-full flex items-center justify-center
+                                    text-xs font-bold transition-all active:scale-95
+                                    ${expandedHorse === horse.umaban 
+                                      ? 'bg-emerald-600 text-white' 
+                                      : 'bg-slate-200 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'
+                                    }
+                                  `}
                                   onClick={() => toggleHorseExpand(horse.umaban)}
                                   title="過去走を表示"
                                 >
-                                  {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                  {expandedHorse === horse.umaban ? '−' : '+'}
                                 </button>
                               </div>
                             </td>
