@@ -866,11 +866,18 @@ export function analyzeRaceLap(
       result.isRecoveryCandidate = true;
       result.disadvantagePattern = disadvantage.pattern;
       
-      const wideNote = ranWide ? `4角外${horse.corner4Wide}番手で` : '';
-      const styleNote = wasAffected ? `${getStyleName(horse.runningStyle)}で不利な展開` : '';
+      // コメント生成（日本語として自然な表現に）
+      const parts: string[] = [];
+      if (ranWide) {
+        parts.push(`4角${horse.corner4Wide}番手の競馬で`);
+      }
+      if (wasAffected) {
+        parts.push(`${getStyleName(horse.runningStyle)}には不利な展開ながら`);
+      }
+      parts.push(`着差${horse.margin.toFixed(1)}秒以内は優秀`);
       
       result.recoveryReason = `${disadvantage.description}`;
-      result.recoveryComment = `${wideNote}${styleNote}。着差${horse.margin.toFixed(1)}秒なら巻き返し候補。`;
+      result.recoveryComment = parts.join('');
       result.scoreAdjustment += 5;
     }
   }
