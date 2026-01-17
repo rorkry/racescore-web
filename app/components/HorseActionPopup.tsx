@@ -110,6 +110,8 @@ export default function HorseActionPopup({
   };
 
   const saveMemo = async () => {
+    console.log('[HorseActionPopup] saveMemo called, status:', status, 'memo:', memo, 'isFavorite:', isFavorite);
+    
     if (status !== 'authenticated') {
       setMessage('ログインが必要です');
       return;
@@ -129,6 +131,7 @@ export default function HorseActionPopup({
     setSaving(true);
     setMessage('');
     try {
+      console.log('[HorseActionPopup] Saving memo for:', horseName, 'memo:', memo.trim());
       // favorite_horsesのnoteを更新
       const res = await fetch('/api/user/favorites', {
         method: 'PATCH',
@@ -136,13 +139,15 @@ export default function HorseActionPopup({
         body: JSON.stringify({ horseName, note: memo.trim() })
       });
       const data = await res.json();
+      console.log('[HorseActionPopup] Save response:', res.status, data);
       if (res.ok) {
         setExistingMemo(memo.trim());
         setMessage('メモを保存しました！');
       } else {
         setMessage(data.error || '保存に失敗しました');
       }
-    } catch {
+    } catch (err) {
+      console.error('[HorseActionPopup] Save error:', err);
       setMessage('エラーが発生しました');
     } finally {
       setSaving(false);
