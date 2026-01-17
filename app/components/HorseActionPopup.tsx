@@ -26,7 +26,6 @@ export default function HorseActionPopup({
   const [existingMemo, setExistingMemo] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'favorite' | 'memo'>('favorite');
 
   useEffect(() => {
     if (isOpen && status === 'authenticated') {
@@ -36,17 +35,12 @@ export default function HorseActionPopup({
 
   const checkFavoriteStatusAndMemo = async () => {
     try {
-      console.log('[HorseActionPopup] Fetching favorites for:', horseName);
       const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
-        console.log('[HorseActionPopup] API response:', JSON.stringify(data, null, 2));
         const favorite = data.favorites?.find((f: { horse_name: string; note?: string }) => f.horse_name === horseName);
-        console.log('[HorseActionPopup] Found favorite:', favorite);
         if (favorite) {
           setIsFavorite(true);
-          // favorite_horsesのnoteからメモを取得
-          console.log('[HorseActionPopup] Note value:', favorite.note);
           if (favorite.note) {
             setExistingMemo(favorite.note);
             setMemo(favorite.note);
@@ -75,7 +69,6 @@ export default function HorseActionPopup({
     setMessage('');
     try {
       if (isFavorite) {
-        // 削除
         const res = await fetch('/api/user/favorites', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
@@ -83,11 +76,12 @@ export default function HorseActionPopup({
         });
         if (res.ok) {
           setIsFavorite(false);
+          setMemo('');
+          setExistingMemo('');
           setMessage('お気に入りから削除しました');
           onFavoriteChange?.();
         }
       } else {
-        // 追加
         const res = await fetch('/api/user/favorites', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -110,8 +104,6 @@ export default function HorseActionPopup({
   };
 
   const saveMemo = async () => {
-    console.log('[HorseActionPopup] saveMemo called, status:', status, 'memo:', memo, 'isFavorite:', isFavorite);
-    
     if (status !== 'authenticated') {
       setMessage('ログインが必要です');
       return;
@@ -122,7 +114,6 @@ export default function HorseActionPopup({
       return;
     }
 
-    // お気に入りに登録されていない場合は先に登録
     if (!isFavorite) {
       setMessage('先にお気に入りに登録してください');
       return;
@@ -131,15 +122,12 @@ export default function HorseActionPopup({
     setSaving(true);
     setMessage('');
     try {
-      console.log('[HorseActionPopup] Saving memo for:', horseName, 'memo:', memo.trim());
-      // favorite_horsesのnoteを更新
       const res = await fetch('/api/user/favorites', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ horseName, note: memo.trim() })
       });
       const data = await res.json();
-      console.log('[HorseActionPopup] Save response:', res.status, data);
       if (res.ok) {
         setExistingMemo(memo.trim());
         setMessage('メモを保存しました！');
@@ -162,13 +150,13 @@ export default function HorseActionPopup({
       
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         {/* ヘッダー */}
-        <div className="bg-green-800 px-5 py-4">
+        <div className="bg-emerald-700 px-5 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-2xl">🐴</span>
+              <span className="text-xl">🐴</span>
               <div>
-                <h2 className="text-lg font-bold text-white">{horseName}</h2>
-                <p className="text-green-200 text-sm">{horseNumber}番</p>
+                <h2 className="text-base font-bold text-white">{horseName}</h2>
+                <p className="text-emerald-200 text-xs">{horseNumber}番</p>
               </div>
             </div>
             <button
@@ -183,98 +171,72 @@ export default function HorseActionPopup({
           </div>
         </div>
 
-        {/* タブ */}
-        <div className="flex border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('favorite')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'favorite'
-                ? 'text-green-700 border-b-2 border-green-700'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            ⭐ お気に入り
-          </button>
-          <button
-            onClick={() => setActiveTab('memo')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'memo'
-                ? 'text-green-700 border-b-2 border-green-700'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            📝 メモ
-          </button>
-        </div>
-
-        <div className="p-5">
+        <div className="p-4">
           {status !== 'authenticated' ? (
-            <div className="text-center py-4 text-gray-500">
+            <div className="text-center py-6 text-gray-500">
               <span className="text-3xl">🔐</span>
               <p className="mt-2">ログインが必要です</p>
             </div>
-          ) : activeTab === 'favorite' ? (
-            /* お気に入りタブ */
+          ) : (
             <div className="space-y-4">
-              <div className="text-center">
-                <button
-                  onClick={toggleFavorite}
-                  disabled={saving}
-                  className={`size-20 rounded-full flex items-center justify-center mx-auto transition-all ${
-                    isFavorite
-                      ? 'bg-yellow-100 text-yellow-500 hover:bg-yellow-200'
-                      : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                  } ${saving ? 'opacity-50' : ''}`}
-                >
-                  <span className="text-4xl">{isFavorite ? '⭐' : '☆'}</span>
-                </button>
-                <p className="mt-3 text-sm text-gray-600">
-                  {isFavorite ? 'お気に入り登録済み' : 'タップでお気に入りに追加'}
-                </p>
+              {/* お気に入りボタン - 横長ボタン */}
+              <button
+                onClick={toggleFavorite}
+                disabled={saving}
+                className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${
+                  isFavorite
+                    ? 'bg-amber-100 text-amber-600 border-2 border-amber-300'
+                    : 'bg-slate-100 text-slate-500 border-2 border-slate-200 hover:bg-amber-50 hover:text-amber-500 hover:border-amber-200'
+                } ${saving ? 'opacity-50' : ''}`}
+              >
+                <span className="text-2xl">{isFavorite ? '★' : '☆'}</span>
+                <span>{isFavorite ? 'お気に入り登録済み' : 'お気に入りに追加'}</span>
+              </button>
+
+              {/* メモ入力エリア */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600 flex items-center gap-1">
+                  📝 メモ {!isFavorite && <span className="text-xs text-slate-400">（お気に入り登録後に保存可能）</span>}
+                </label>
+                <textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value.slice(0, 200))}
+                  placeholder="この馬についてメモ..."
+                  className={`w-full h-24 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-gray-900 text-sm ${
+                    isFavorite ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'
+                  }`}
+                  disabled={saving || !isFavorite}
+                />
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs ${memo.length >= 200 ? 'text-red-500' : 'text-slate-400'}`}>
+                    {memo.length}/200
+                  </span>
+                  <button
+                    onClick={saveMemo}
+                    disabled={saving || !memo.trim() || !isFavorite}
+                    className="px-4 py-1.5 bg-emerald-600 text-white text-sm rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? '保存中...' : '保存'}
+                  </button>
+                </div>
               </div>
 
+              {/* 通知案内 */}
               {isFavorite && (
-                <div className="bg-green-50 rounded-lg p-3 text-sm text-green-700">
-                  <p>🔔 この馬が出走するレースがあればお知らせします</p>
+                <div className="bg-emerald-50 rounded-lg p-2.5 text-xs text-emerald-700 flex items-center gap-2">
+                  <span>🔔</span>
+                  <span>この馬が出走するレースがあればお知らせします</span>
                 </div>
-              )}
-            </div>
-          ) : (
-            /* メモタブ */
-            <div className="space-y-4">
-              <textarea
-                value={memo}
-                onChange={(e) => setMemo(e.target.value.slice(0, 200))}
-                placeholder="この馬についてメモ..."
-                className="w-full h-32 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900"
-                disabled={saving}
-              />
-              <div className="flex items-center justify-between">
-                <span className={`text-xs ${memo.length >= 200 ? 'text-red-500' : 'text-gray-400'}`}>
-                  {memo.length}/200
-                </span>
-                <button
-                  onClick={saveMemo}
-                  disabled={saving || !memo.trim()}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
-                >
-                  {saving ? '保存中...' : '保存'}
-                </button>
-              </div>
-              
-              {existingMemo && existingMemo !== memo && (
-                <p className="text-xs text-gray-400">
-                  ※ 保存済みのメモがあります
-                </p>
               )}
             </div>
           )}
 
+          {/* メッセージ */}
           {message && (
-            <div className={`mt-4 p-3 rounded-lg text-sm text-center ${
+            <div className={`mt-3 p-2.5 rounded-lg text-sm text-center ${
               message.includes('エラー') || message.includes('失敗') || message.includes('必要')
                 ? 'bg-red-50 text-red-700'
-                : 'bg-green-50 text-green-700'
+                : 'bg-emerald-50 text-emerald-700'
             }`}>
               {message}
             </div>
