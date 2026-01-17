@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
@@ -1311,17 +1312,20 @@ export default function RaceCardPage() {
                 const highlight = showSagaAI ? timeHighlights.get(highlightKey) : null;
                 
                 return (
-                  <button
+                  <motion.button
                     key={race.race_number}
                     onClick={() => setSelectedRace(race.race_number)}
-                    className={`px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] transition shadow-sm ${
+                    className={`px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] shadow-sm ${
                       selectedRace === race.race_number
                         ? 'bg-emerald-700 text-white border-2 border-emerald-600 shadow-md'
                         : highlight
-                          ? 'bg-white border-2 border-amber-400 text-slate-800 hover:bg-emerald-50'
-                          : 'bg-white text-slate-800 border border-slate-300 hover:bg-emerald-50 hover:border-emerald-400'
+                          ? 'bg-white border-2 border-amber-400 text-slate-800'
+                          : 'bg-white text-slate-800 border border-slate-300'
                     }`}
                     title={highlight ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}` : ''}
+                    whileHover={{ scale: 1.02, y: -2 }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
                   >
                     <div className="flex flex-col items-center justify-center">
                       <div className="flex items-center gap-0.5 sm:gap-1">
@@ -1331,7 +1335,7 @@ export default function RaceCardPage() {
                       <span className="text-[9px] sm:text-[10px] text-slate-600 truncate max-w-full font-medium">{race.class_name || '未分類'}</span>
                       <span className="text-[10px] sm:text-xs text-slate-700 font-medium">{race.track_type}{race.distance}m</span>
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>
@@ -1373,7 +1377,15 @@ export default function RaceCardPage() {
         )}
 
         {raceCard && !loading && (
-          <div className="space-y-6">
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={`${selectedVenue}_${selectedRace}`}
+              className="space-y-6"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            >
             {selectedRace && showRacePace && (
               <div id="race-pace-card">
                 <CourseStyleRacePace
@@ -1534,20 +1546,29 @@ export default function RaceCardPage() {
                                 const horseName = normalizeHorseName(horse.umamei);
                                 const isFavorite = favoriteHorses.includes(horseName);
                                 return (
-                                  <button
+                                  <motion.button
                                     onClick={() => setHorseActionTarget({ 
                                       name: horseName, 
                                       number: horse.umaban 
                                     })}
-                                    className={`hover:scale-110 transition-all text-lg ${
+                                    className={`text-lg ${
                                       isFavorite 
                                         ? 'text-amber-500' 
                                         : 'text-slate-300 hover:text-amber-400'
                                     }`}
                                     title="お気に入り・メモ"
+                                    // アニメーション: ホバー時に拡大、クリック時に縮小
+                                    whileHover={{ scale: 1.15 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    // お気に入り登録時に星が回転＆拡大
+                                    animate={isFavorite ? {
+                                      rotate: [0, -15, 15, 0],
+                                      scale: [1, 1.3, 1],
+                                    } : {}}
+                                    transition={{ duration: 0.4, ease: 'easeOut' }}
                                   >
                                     {isFavorite ? '★' : '☆'}
-                                  </button>
+                                  </motion.button>
                                 );
                               })()}
                             </td>
@@ -1609,7 +1630,8 @@ export default function RaceCardPage() {
                 </table>
               </div>
             </div>
-          </div>
+            </motion.div>
+          </AnimatePresence>
         )}
         
         {selectedHorseDetail && (

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 
 // 印の種類（色は統一：黒っぽいグレー）
 const MARKS = [
@@ -99,7 +100,7 @@ export default function InlineMarkSelector({
   return (
     <div ref={containerRef} className="relative">
       {/* 現在の印表示 / クリック/タップで開く */}
-      <button
+      <motion.button
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
@@ -107,54 +108,74 @@ export default function InlineMarkSelector({
         className={`
           ${compact ? 'size-6 text-sm' : 'size-8 text-lg'}
           flex items-center justify-center font-bold rounded
-          transition-all active:scale-95 touch-manipulation
+          touch-manipulation
           ${currentMark 
             ? 'text-slate-700 bg-slate-200' 
             : 'text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200'
           }
         `}
         title={currentMarkInfo ? currentMarkInfo.label : '印を付ける'}
+        // アニメーション: タップ時に縮小、印が変わった時にポップ
+        whileTap={{ scale: 0.85 }}
+        animate={currentMark ? {
+          scale: [1, 1.2, 1],
+          rotate: [0, -5, 5, 0],
+        } : {}}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
       >
         {currentMark || '＋'}
-      </button>
+      </motion.button>
 
       {/* ドロップダウン：横長、位置は動的に上下切り替え */}
-      {isOpen && (
-        <div 
-          className={`absolute left-0 z-[100] bg-white rounded-lg shadow-xl border border-slate-300 p-2 flex items-center gap-1 whitespace-nowrap ${
-            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-          }`}
-          onClick={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
-        >
-          {MARKS.map(({ mark, label }) => (
-            <button
-              type="button"
-              key={mark}
-              onClick={(e) => handleSelect(mark, e)}
-              onTouchEnd={(e) => handleSelect(mark, e)}
-              className={`
-                size-8 flex items-center justify-center font-bold text-base rounded
-                transition-all active:scale-95 touch-manipulation
-                ${mark === currentMark ? 'ring-2 ring-slate-500 bg-slate-200' : 'text-slate-700 hover:bg-slate-100'}
-              `}
-              title={label}
-            >
-              {mark}
-            </button>
-          ))}
-          {/* クリアボタン */}
-          <button
-            type="button"
-            onClick={(e) => handleSelect(null, e)}
-            onTouchEnd={(e) => handleSelect(null, e)}
-            className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors touch-manipulation"
-            title="無印に戻す"
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            className={`absolute left-0 z-[100] bg-white rounded-lg shadow-xl border border-slate-300 p-2 flex items-center gap-1 whitespace-nowrap ${
+              openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            // アニメーション: フェードイン・スケール
+            initial={{ opacity: 0, scale: 0.9, y: openUpward ? 5 : -5 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: openUpward ? 5 : -5 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
           >
-            クリア
-          </button>
-        </div>
-      )}
+            {MARKS.map(({ mark, label }) => (
+              <motion.button
+                type="button"
+                key={mark}
+                onClick={(e) => handleSelect(mark, e)}
+                onTouchEnd={(e) => handleSelect(mark, e)}
+                className={`
+                  size-8 flex items-center justify-center font-bold text-base rounded
+                  touch-manipulation
+                  ${mark === currentMark ? 'ring-2 ring-slate-500 bg-slate-200' : 'text-slate-700 hover:bg-slate-100'}
+                `}
+                title={label}
+                // アニメーション: タップ時に縮小
+                whileTap={{ scale: 0.85 }}
+                whileHover={{ scale: 1.1 }}
+                transition={{ duration: 0.15 }}
+              >
+                {mark}
+              </motion.button>
+            ))}
+            {/* クリアボタン */}
+            <motion.button
+              type="button"
+              onClick={(e) => handleSelect(null, e)}
+              onTouchEnd={(e) => handleSelect(null, e)}
+              className="px-2 py-1 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded touch-manipulation"
+              title="無印に戻す"
+              whileTap={{ scale: 0.9 }}
+              transition={{ duration: 0.15 }}
+            >
+              クリア
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
