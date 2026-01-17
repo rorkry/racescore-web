@@ -76,7 +76,11 @@ export function useRacePredictions(raceKey: string | null, raceDate?: string): U
 
   // 予想を保存
   const setPrediction = useCallback(async (horseNumber: string, mark: MarkType) => {
-    if (!raceKey || isRaceFinished) return;
+    console.log('[useRacePredictions] setPrediction called:', { raceKey, horseNumber, mark, isRaceFinished });
+    if (!raceKey || isRaceFinished) {
+      console.log('[useRacePredictions] Skipped: no raceKey or race finished');
+      return;
+    }
 
     // 楽観的更新
     const prevPredictions = new Map(predictions);
@@ -90,21 +94,25 @@ export function useRacePredictions(raceKey: string | null, raceDate?: string): U
 
     setSaving(true);
     try {
+      console.log('[useRacePredictions] Sending to API:', { raceKey, horseNumber, mark });
       const res = await fetch('/api/user/predictions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ raceKey, horseNumber, mark })
       });
 
+      const data = await res.json();
+      console.log('[useRacePredictions] API response:', res.status, data);
+
       if (!res.ok) {
         // 失敗したら元に戻す
         setPredictions(prevPredictions);
-        console.error('Failed to save prediction');
+        console.error('[useRacePredictions] Failed to save prediction:', data);
       }
     } catch (error) {
       // 失敗したら元に戻す
       setPredictions(prevPredictions);
-      console.error('Failed to save prediction:', error);
+      console.error('[useRacePredictions] Error:', error);
     } finally {
       setSaving(false);
     }
