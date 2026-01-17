@@ -591,16 +591,18 @@ function checkDisadvantagePattern(
  * 加速・非減速・微減速ラップを判定
  * 
  * 定義:
- * - 加速ラップ: 各ラップが前より速くなる（11.5 -> 11.4 -> 11.3）
- * - 非減速ラップ: 全く減速しない（11.5 -> 11.5 = 0.0差）
- * - 微減速ラップ: 0.1〜0.2秒の減速（ペース次第で評価）
- * - 減速ラップ: 0.3秒以上の減速
+ * - 加速ラップ: 最後の1ハロンが速くなっていればすべて加速
+ *   例: 11.8-11.5-11.3 → 最後が11.5→11.3で加速
+ * - 非減速ラップ: 同じラップが続いた場合
+ *   例: 12.0-12.0-12.0 → ラップ維持
+ * - 微減速ラップ: 0.1〜0.3秒の減速（ペース次第で評価）
+ * - 減速ラップ: 0.4秒以上の減速
  */
 interface AccelerationResult {
   isAcceleration: boolean;      // 加速ラップ
-  isNonDeceleration: boolean;   // 非減速ラップ（完全）
-  isSlightDecel: boolean;       // 微減速ラップ（0.1-0.2）
-  maxDeceleration: number;      // 最大減速幅
+  isNonDeceleration: boolean;   // 非減速ラップ（ラップ維持）
+  isSlightDecel: boolean;       // 微減速ラップ（0.1-0.3）
+  maxDeceleration: number;      // 最大減速幅（最後の1F）
   comment: string;
   lapPattern: string;           // ラップパターン表示用
 }
@@ -622,28 +624,27 @@ function checkAccelerationPattern(lapData: LapTimeData): AccelerationResult {
   const last3 = laps.slice(-3);
   const lapPattern = last3.map(l => l.toFixed(1)).join('-');
   
-  // 各ラップ間の変化を計算（正=減速、負=加速）
-  const decel1 = last3[1] - last3[0];  // 2F目 - 1F目
-  const decel2 = last3[2] - last3[1];  // 3F目 - 2F目
-  const maxDecel = Math.max(decel1, decel2);
+  // 最後の1ハロンの変化を計算（正=減速、負=加速）
+  const lastDecel = last3[2] - last3[1];  // 最終F - その前のF
   
-  // 加速ラップ: 両方とも加速している（負の値）
-  const isAcceleration = decel1 < 0 && decel2 < 0;
+  // 加速ラップ: 最後の1ハロンが速くなっている（負の値）
+  // 例: 11.5→11.3 = -0.2（加速）
+  const isAcceleration = lastDecel < -0.05;  // 0.1秒以上の加速
   
-  // 非減速ラップ（厳密）: 全く減速しない（0.0以下）
-  // 11.5-11.5 = 0.0差、11.5-11.4 = -0.1差（加速）
-  const isNonDeceleration = maxDecel <= 0;
+  // 非減速ラップ: 同じラップが続いた場合（ほぼ0）
+  // 例: 12.0-12.0 = 0.0差
+  const isNonDeceleration = !isAcceleration && Math.abs(lastDecel) <= 0.05;
   
-  // 微減速ラップ: 最大0.2秒以内の減速（0.1〜0.2）
-  const isSlightDecel = maxDecel > 0 && maxDecel <= 0.2;
+  // 微減速ラップ: 最後の1ハロンで0.1〜0.3秒の減速
+  const isSlightDecel = lastDecel > 0.05 && lastDecel <= 0.3;
   
   if (isAcceleration) {
     return {
       isAcceleration: true,
-      isNonDeceleration: true,  // 加速は非減速を包含
+      isNonDeceleration: false,
       isSlightDecel: false,
-      maxDeceleration: maxDecel,
-      comment: `加速ラップ（${lapPattern}）`,
+      maxDeceleration: lastDecel,
+      comment: `加速ラップ（${lapPattern}）+${Math.abs(lastDecel).toFixed(1)}秒`,
       lapPattern
     };
   }
@@ -653,8 +654,8 @@ function checkAccelerationPattern(lapData: LapTimeData): AccelerationResult {
       isAcceleration: false,
       isNonDeceleration: true,
       isSlightDecel: false,
-      maxDeceleration: maxDecel,
-      comment: `非減速ラップ（${lapPattern}）`,
+      maxDeceleration: lastDecel,
+      comment: `非減速ラップ（${lapPattern}）ラップ維持`,
       lapPattern
     };
   }
@@ -664,25 +665,27 @@ function checkAccelerationPattern(lapData: LapTimeData): AccelerationResult {
       isAcceleration: false,
       isNonDeceleration: false,
       isSlightDecel: true,
-      maxDeceleration: maxDecel,
-      comment: `微減速ラップ（${lapPattern}）-${maxDecel.toFixed(1)}秒`,
+      maxDeceleration: lastDecel,
+      comment: `微減速ラップ（${lapPattern}）-${lastDecel.toFixed(1)}秒`,
       lapPattern
     };
   }
   
   return {
     ...defaultResult,
-    maxDeceleration: maxDecel,
+    maxDeceleration: lastDecel,
     lapPattern,
-    comment: `減速ラップ（${lapPattern}）-${maxDecel.toFixed(1)}秒`
+    comment: `減速ラップ（${lapPattern}）-${lastDecel.toFixed(1)}秒`
   };
 }
 
 /**
  * ペースを考慮したラップ評価
  * 
- * ミドル以上のペース + 加速/非減速/微減速(0.2以内) → 強い競馬
- * スローペース + 少しでも減速 → 低レベルの可能性
+ * 加速ラップ → 最後の1Fが速くなっている＝非常に強い
+ * 非減速ラップ → 同じラップ維持＝強い
+ * 微減速ラップ（0.1〜0.3秒） → ペース次第で評価
+ * 減速ラップ（0.4秒以上） → ペース次第で評価
  */
 function evaluateLapWithPace(
   accel: AccelerationResult,
@@ -696,7 +699,7 @@ function evaluateLapWithPace(
   const isFastPace = paceType === 'super_high' || paceType === 'high' || paceType === 'average';
   const isSlowPace = paceType === 'slow' || paceType === 'super_slow';
   
-  // 加速ラップ
+  // 加速ラップ（最後の1Fが速くなっている）
   if (accel.isAcceleration) {
     if (isFastPace) {
       return {
@@ -709,53 +712,53 @@ function evaluateLapWithPace(
       return {
         isStrongRace: true,
         isWeakRace: false,
-        adjustedComment: `スローからの加速ラップ（${accel.lapPattern}）`,
+        adjustedComment: `スローからの加速ラップ（${accel.lapPattern}）も評価できる`,
         scoreBonus: 6
       };
     }
   }
   
-  // 非減速ラップ（完全）
+  // 非減速ラップ（同じラップ維持）
   if (accel.isNonDeceleration) {
     if (isFastPace) {
       return {
         isStrongRace: true,
         isWeakRace: false,
-        adjustedComment: `ミドル以上のペースで非減速（${accel.lapPattern}）は強い内容`,
+        adjustedComment: `ミドル以上のペースでラップ維持（${accel.lapPattern}）は強い内容`,
         scoreBonus: 7
       };
     } else {
       return {
         isStrongRace: true,
         isWeakRace: false,
-        adjustedComment: `非減速ラップ（${accel.lapPattern}）`,
+        adjustedComment: `ラップ維持（${accel.lapPattern}）は安定した脚`,
         scoreBonus: 4
       };
     }
   }
   
-  // 微減速ラップ（0.1〜0.2秒）
+  // 微減速ラップ（0.1〜0.3秒）
   if (accel.isSlightDecel) {
     if (isFastPace) {
-      // ミドル以上のペースで0.2以内の減速 → まだ強い
+      // ミドル以上のペースで0.3以内の減速 → まだ評価できる
       return {
         isStrongRace: true,
         isWeakRace: false,
-        adjustedComment: `ミドル以上のペースで微減速${accel.maxDeceleration.toFixed(1)}秒（${accel.lapPattern}）は評価できる`,
+        adjustedComment: `ミドル以上のペースで減速幅${accel.maxDeceleration.toFixed(1)}秒（${accel.lapPattern}）は十分評価できる`,
         scoreBonus: 4
       };
     } else {
-      // スローで少しでも減速 → 低レベルの可能性
+      // スローで微減速 → 普通
       return {
         isStrongRace: false,
-        isWeakRace: true,
-        adjustedComment: `スローペースで減速（${accel.lapPattern}）は低レベルの可能性`,
-        scoreBonus: -2
+        isWeakRace: false,
+        adjustedComment: `スローペースで減速幅${accel.maxDeceleration.toFixed(1)}秒（${accel.lapPattern}）は平凡`,
+        scoreBonus: 0
       };
     }
   }
   
-  // 通常の減速ラップ（0.3秒以上）
+  // 通常の減速ラップ（0.4秒以上）
   if (isSlowPace) {
     return {
       isStrongRace: false,
