@@ -24,6 +24,9 @@ export default function MyHorsesPage() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [editingMemo, setEditingMemo] = useState<string | null>(null); // 編集中の馬名
+  const [memoText, setMemoText] = useState('');
+  const [savingMemo, setSavingMemo] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -136,6 +139,34 @@ export default function MyHorsesPage() {
     }
   };
 
+  const startEditMemo = (horse: FavoriteHorse) => {
+    setEditingMemo(horse.horse_name);
+    setMemoText(horse.note || '');
+  };
+
+  const cancelEditMemo = () => {
+    setEditingMemo(null);
+    setMemoText('');
+  };
+
+  const saveMemo = async (horseName: string) => {
+    setSavingMemo(true);
+    try {
+      await fetch('/api/user/favorites', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horseName, note: memoText.trim() })
+      });
+      fetchFavorites();
+      setEditingMemo(null);
+      setMemoText('');
+    } catch {
+      console.error('Failed to save memo');
+    } finally {
+      setSavingMemo(false);
+    }
+  };
+
   if (status === 'unauthenticated') {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
@@ -238,36 +269,85 @@ export default function MyHorsesPage() {
         ) : (
           <div className="divide-y divide-gray-100">
             {favorites.map((horse) => (
-              <div key={horse.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                <div className="flex items-center gap-4">
-                  <span className="text-2xl">🏇</span>
-                  <div>
-                    <h3 className="font-bold text-gray-800">{horse.horse_name}</h3>
-                    <p className="text-xs text-gray-400">
-                      登録日: {new Date(horse.created_at).toLocaleDateString('ja-JP')}
-                    </p>
+              <div key={horse.id} className="p-4 hover:bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="text-2xl">🏇</span>
+                    <div>
+                      <h3 className="font-bold text-amber-600">{horse.horse_name}</h3>
+                      <p className="text-xs text-gray-400">
+                        登録日: {new Date(horse.created_at).toLocaleDateString('ja-JP')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {horse.notify_on_race ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                        🔔 通知ON
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">
+                        🔕 OFF
+                      </span>
+                    )}
+                    <button
+                      onClick={() => startEditMemo(horse)}
+                      className="text-blue-400 hover:text-blue-600 transition-colors"
+                      title="メモ編集"
+                    >
+                      <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => removeFavorite(horse.horse_name)}
+                      className="text-red-400 hover:text-red-600 transition-colors"
+                      title="削除"
+                    >
+                      <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  {horse.notify_on_race ? (
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
-                      🔔 出走通知ON
-                    </span>
-                  ) : (
-                    <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">
-                      🔕 通知OFF
-                    </span>
-                  )}
-                  <button
-                    onClick={() => removeFavorite(horse.horse_name)}
-                    className="text-red-400 hover:text-red-600 transition-colors"
-                    title="削除"
-                  >
-                    <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
+                
+                {/* メモ表示/編集エリア */}
+                {editingMemo === horse.horse_name ? (
+                  <div className="mt-3 ml-12">
+                    <textarea
+                      value={memoText}
+                      onChange={(e) => setMemoText(e.target.value.slice(0, 200))}
+                      placeholder="この馬についてメモ..."
+                      className="w-full h-24 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900 text-sm"
+                      disabled={savingMemo}
+                    />
+                    <div className="flex items-center justify-between mt-2">
+                      <span className={`text-xs ${memoText.length >= 200 ? 'text-red-500' : 'text-gray-400'}`}>
+                        {memoText.length}/200
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={cancelEditMemo}
+                          className="px-3 py-1.5 text-gray-500 hover:text-gray-700 text-sm"
+                          disabled={savingMemo}
+                        >
+                          キャンセル
+                        </button>
+                        <button
+                          onClick={() => saveMemo(horse.horse_name)}
+                          disabled={savingMemo}
+                          className="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                        >
+                          {savingMemo ? '保存中...' : '保存'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : horse.note ? (
+                  <div className="mt-2 ml-12 p-3 bg-amber-50 rounded-lg border border-amber-100">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{horse.note}</p>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

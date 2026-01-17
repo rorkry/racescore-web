@@ -83,6 +83,29 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// お気に入り馬のメモ更新
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: '未認証' }, { status: 401 });
+    }
+
+    const { horseName, note } = await request.json();
+    if (!horseName) return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
+
+    const db = getDb();
+    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
+
+    db.prepare('UPDATE favorite_horses SET note = ? WHERE user_id = ? AND horse_name = ?').run(note || null, user.id, horseName);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Favorite note update error:', error);
+    return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 });
+  }
+}
+
 // お気に入り馬削除
 export async function DELETE(request: NextRequest) {
   try {
