@@ -1480,7 +1480,7 @@ export default function RaceCardPage() {
                   <thead>
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">馬番</th>
-                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-14 font-semibold bg-amber-600">競う<br className="sm:hidden"/>スコア</th>
+                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">印</th>
                       <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-10 font-semibold" title="お気に入り">★</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
