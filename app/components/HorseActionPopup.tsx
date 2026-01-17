@@ -36,13 +36,17 @@ export default function HorseActionPopup({
 
   const checkFavoriteStatusAndMemo = async () => {
     try {
+      console.log('[HorseActionPopup] Fetching favorites for:', horseName);
       const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
+        console.log('[HorseActionPopup] API response:', JSON.stringify(data, null, 2));
         const favorite = data.favorites?.find((f: { horse_name: string; note?: string }) => f.horse_name === horseName);
+        console.log('[HorseActionPopup] Found favorite:', favorite);
         if (favorite) {
           setIsFavorite(true);
           // favorite_horsesのnoteからメモを取得
+          console.log('[HorseActionPopup] Note value:', favorite.note);
           if (favorite.note) {
             setExistingMemo(favorite.note);
             setMemo(favorite.note);
@@ -56,8 +60,8 @@ export default function HorseActionPopup({
           setMemo('');
         }
       }
-    } catch {
-      console.error('Failed to check favorite status');
+    } catch (err) {
+      console.error('Failed to check favorite status:', err);
     }
   };
 
