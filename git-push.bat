@@ -1,16 +1,7 @@
 @echo off
-chcp 65001 > nul
-cd /d "%~dp0"
-
+chcp 65001 >nul
+cd /d C:\racescore
 git add -A
-git status
-echo.
-echo コミットしますか? (Ctrl+Cでキャンセル)
-pause
-
-git commit -m "feat: 馬印7種類対応 + 過去走メモマーク表示"
+git commit -m "Horse mark UI: mobile/PC input separation, 7 mark types, unified colors"
 git push origin main
-
-echo.
-echo Push完了!
 pause
