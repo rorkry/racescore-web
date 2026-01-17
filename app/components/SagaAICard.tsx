@@ -2,6 +2,14 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 
+// 馬名を正規化（$, *, スペースを除去）
+function normalizeHorseName(name: string): string {
+  return name
+    .replace(/^[\$\*＄＊\s　]+/, '')
+    .replace(/[\s　]+$/, '')
+    .trim();
+}
+
 interface SagaAnalysis {
   horseName: string;
   horseNumber: number;
@@ -531,10 +539,11 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
               
               analyses.slice(0, 5).forEach((a) => {
                 const result = calculateBiasAdjustment(a.horseNumber, totalHorses, undefined, bias);
+                const name = normalizeHorseName(a.horseName);
                 if (result.adjustment > 0) {
-                  adjustments.up.push(`${a.horseNumber}番${a.horseName}`);
+                  adjustments.up.push(`${a.horseNumber}番${name}`);
                 } else if (result.adjustment < 0) {
-                  adjustments.down.push(`${a.horseNumber}番${a.horseName}`);
+                  adjustments.down.push(`${a.horseNumber}番${name}`);
                 }
               });
               
@@ -572,7 +581,7 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
             : (item as SagaAnalysis);
           const aiResult = isAI ? (item as OpenAISagaResult) : null;
           const horseNumber = isAI ? aiResult!.horseNumber : analysis.horseNumber;
-          const horseName = isAI ? aiResult!.horseName : analysis.horseName;
+          const horseName = normalizeHorseName(isAI ? aiResult!.horseName : analysis.horseName);
           const originalRating = isAI ? aiResult!.overallRating : analysis.courseMatch.rating;
           const kisoScore = analysis.kisoScore || 0;  // 競うスコア
           const tags = isAI ? aiResult!.tags : analysis.tags;
