@@ -179,19 +179,40 @@ export default function HorseActionPopup({
             </div>
           ) : (
             <div className="space-y-4">
-              {/* お気に入りボタン - 横長ボタン */}
-              <button
-                onClick={toggleFavorite}
-                disabled={saving}
-                className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${
-                  isFavorite
-                    ? 'bg-amber-100 text-amber-600 border-2 border-amber-300'
-                    : 'bg-slate-100 text-slate-500 border-2 border-slate-200 hover:bg-amber-50 hover:text-amber-500 hover:border-amber-200'
-                } ${saving ? 'opacity-50' : ''}`}
-              >
-                <span className="text-2xl">{isFavorite ? '★' : '☆'}</span>
-                <span>{isFavorite ? 'お気に入り登録済み' : 'お気に入りに追加'}</span>
-              </button>
+              {/* お気に入りセクション */}
+              {isFavorite ? (
+                <div className="space-y-2">
+                  {/* 登録済み表示 */}
+                  <div className="w-full py-3 rounded-xl flex items-center justify-center gap-2 font-bold bg-amber-100 text-amber-600 border-2 border-amber-300">
+                    <span className="text-2xl">★</span>
+                    <span>お気に入り登録済み</span>
+                  </div>
+                  {/* 削除ボタン */}
+                  <button
+                    onClick={toggleFavorite}
+                    disabled={saving}
+                    className={`w-full py-2 rounded-lg flex items-center justify-center gap-1.5 text-sm font-medium transition-all
+                      bg-white text-red-500 border border-red-200 hover:bg-red-50 hover:border-red-300
+                      ${saving ? 'opacity-50' : ''}`}
+                  >
+                    <svg className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>お気に入りから削除</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={toggleFavorite}
+                  disabled={saving}
+                  className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all
+                    bg-slate-100 text-slate-500 border-2 border-slate-200 hover:bg-amber-50 hover:text-amber-500 hover:border-amber-200
+                    ${saving ? 'opacity-50' : ''}`}
+                >
+                  <span className="text-2xl">☆</span>
+                  <span>お気に入りに追加</span>
+                </button>
+              )}
 
               {/* メモ入力エリア */}
               <div className="space-y-2">
