@@ -201,6 +201,114 @@ body {
   animation: shimmer 3s infinite;
 }
 
+/* ============================================
+   レースカードページ専用スタイル（白ベース + 緑アクセント）
+   ============================================ */
+
+/* レースカードページの背景（白ベース + 芝パターン） */
+.racecard-page {
+  background: 
+    /* 芝の縦線パターン（薄め） */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 3px,
+      rgba(16, 185, 129, 0.04) 3px,
+      rgba(16, 185, 129, 0.04) 6px
+    ),
+    /* 左上のグリーンのアクセント */
+    radial-gradient(ellipse at 10% 10%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
+    /* 右下のグリーンのアクセント */
+    radial-gradient(ellipse at 90% 90%, rgba(16, 185, 129, 0.06) 0%, transparent 40%),
+    /* ベース白 */
+    #f8fafc !important;
+  min-height: 100vh;
+  color: #1e293b; /* slate-800 - デフォルトテキスト色 */
+}
+
+/* レースカード用カード */
+.racecard-card {
+  background: #ffffff;
+  border: 2px solid #cbd5e1; /* slate-300 - 見やすく */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* レースカード用テーブルヘッダー */
+.racecard-thead {
+  background: #047857; /* emerald-700 */
+  color: #ffffff;
+}
+
+.racecard-thead th {
+  border: 1px solid #065f46; /* emerald-800 */
+  font-weight: 600;
+}
+
+/* レースカード用テーブル行 */
+.racecard-row-even {
+  background: #ffffff;
+}
+
+.racecard-row-odd {
+  background: #f8fafc; /* slate-50 */
+}
+
+.racecard-row-even:hover,
+.racecard-row-odd:hover {
+  background: #ecfdf5; /* emerald-50 */
+}
+
+/* レースカード用テーブルセル */
+.racecard-cell {
+  border: 1px solid #e2e8f0; /* slate-200 */
+  color: #1e293b; /* slate-800 */
+}
+
+/* レースカード用ボタン（選択状態） */
+.racecard-btn-selected {
+  background: #047857; /* emerald-700 */
+  color: #ffffff;
+  border: 1px solid #065f46;
+}
+
+/* レースカード用ボタン（非選択状態） */
+.racecard-btn {
+  background: #ffffff;
+  color: #334155; /* slate-700 */
+  border: 1px solid #e2e8f0;
+}
+
+.racecard-btn:hover {
+  background: #ecfdf5; /* emerald-50 */
+  border-color: #10b981; /* emerald-500 */
+}
+
+/* レースカード用セカンダリテキスト */
+.racecard-text-secondary {
+  color: #64748b; /* slate-500 */
+}
+
+/* レースカード用アクセントテキスト */
+.racecard-text-accent {
+  color: #047857; /* emerald-700 */
+}
+
+/* レースカード用トグルボタン */
+.racecard-toggle {
+  background: #f1f5f9; /* slate-100 */
+}
+
+.racecard-toggle-active {
+  background: #047857; /* emerald-700 */
+  color: #ffffff;
+}
+
+/* レースカード用ナビゲーション */
+.racecard-nav {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
 /* モバイル対応 */
 html {
   font-size: 16px;
@@ -260,6 +368,15 @@ textarea {
 .table-scroll-container::-webkit-scrollbar-thumb {
   background: rgba(212, 175, 55, 0.5);
   border-radius: 3px;
+}
+
+/* レースカードページ用スクロールバー */
+.racecard-page .table-scroll-container::-webkit-scrollbar-track {
+  background: #e2e8f0; /* slate-200 */
+}
+
+.racecard-page .table-scroll-container::-webkit-scrollbar-thumb {
+  background: #047857; /* emerald-700 */
 }
 
 @media (max-width: 640px) {

@@ -760,12 +760,12 @@ export default function RaceCardPage() {
   }, [showSagaAI, date, selectedYear, selectedVenue, selectedRace, venues]);
 
   const getScoreTextColor = (score: number, hasData: boolean) => {
-    if (!hasData) return 'text-green-600/50';
-    if (score >= 50) return 'text-yellow-400 font-bold';
-    if (score >= 40) return 'text-yellow-500 font-bold';
-    if (score >= 30) return 'text-green-400 font-bold';
-    if (score >= 20) return 'text-green-300';
-    return 'text-green-400/70';
+    if (!hasData) return 'text-slate-400';
+    if (score >= 50) return 'text-amber-600 font-bold';
+    if (score >= 40) return 'text-emerald-600 font-bold';
+    if (score >= 30) return 'text-emerald-700 font-bold';
+    if (score >= 20) return 'text-slate-700';
+    return 'text-slate-500';
   };
 
   const getWakuColor = (waku: string) => {
@@ -785,10 +785,10 @@ export default function RaceCardPage() {
 
   const getFinishColor = (finish: string) => {
     const finishNum = parseInt(toHalfWidth(finish));
-    if (finishNum === 1) return 'text-yellow-400 font-bold';
-    if (finishNum === 2) return 'text-gray-300 font-bold';
-    if (finishNum === 3) return 'text-amber-600 font-bold';
-    return 'text-green-200';
+    if (finishNum === 1) return 'text-amber-500 font-bold';
+    if (finishNum === 2) return 'text-slate-500 font-bold';
+    if (finishNum === 3) return 'text-amber-700 font-bold';
+    return 'text-slate-700';
   };
 
   const toggleHorseExpand = (umaban: string) => {
@@ -1029,28 +1029,28 @@ export default function RaceCardPage() {
 
   const PastRaceDetail = ({ pastRaces }: { pastRaces: PastRace[] }) => {
     if (!pastRaces || pastRaces.length === 0) {
-      return <div className="text-green-400/50 text-xs sm:text-sm p-2 sm:p-4">過去走データなし</div>;
+      return <div className="text-slate-500 text-xs sm:text-sm p-2 sm:p-4">過去走データなし</div>;
     }
 
     return (
       <div className="overflow-x-auto -mx-2 sm:mx-0">
         <table className="min-w-max text-[10px] sm:text-sm border-collapse">
           <thead>
-            <tr className="bg-green-900/50">
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">日付</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">場所</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">クラス</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">距離</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">人気</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">着順</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">着差</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-300 whitespace-nowrap">通過</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">巻返し</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">L4F</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">T2F</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">ポテ</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">レボ</th>
-              <th className="border border-green-800 px-1 sm:px-2 py-1 text-center text-yellow-400 bg-yellow-900/20 whitespace-nowrap">クッション</th>
+            <tr className="bg-slate-200">
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">日付</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">場所</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">クラス</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">距離</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">人気</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">着順</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">着差</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">通過</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">巻返し</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">L4F</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">T2F</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">ポテ</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">レボ</th>
+              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">クッション</th>
             </tr>
           </thead>
           <tbody>
@@ -1061,38 +1061,38 @@ export default function RaceCardPage() {
               const clickable = isDateClickable(race.date);
               
               return (
-                <tr key={idx} className={idx % 2 === 0 ? 'bg-green-950/30' : 'bg-green-900/20'}>
+                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-100'}>
                   <td 
-                    className={`border border-green-800 px-1 sm:px-2 py-1 text-center whitespace-nowrap ${
-                      clickable ? 'text-yellow-400 underline cursor-pointer hover:bg-green-800/50' : 'text-green-200'
+                    className={`border border-slate-300 px-1 sm:px-2 py-1 text-center whitespace-nowrap ${
+                      clickable ? 'text-emerald-700 underline cursor-pointer hover:bg-emerald-50 font-medium' : 'text-slate-800'
                     }`}
                     onClick={() => clickable && navigateToDate(race.date)}
                   >
                     {race.date || '-'}
                   </td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200 whitespace-nowrap">{race.place || '-'}</td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200 whitespace-nowrap">{race.class_name || '-'}</td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200 whitespace-nowrap">{race.distance || '-'}</td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200">{race.popularity || '-'}</td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>{toHalfWidth(race.finish_position || '-')}</td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200">{race.margin || '-'}</td>
-                  <td className="border border-green-800 px-1 sm:px-2 py-1 text-center text-green-200 whitespace-nowrap">{passing || '-'}</td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.makikaeshi != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.place || '-'}</td>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.class_name || '-'}</td>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap tabular-nums">{race.distance || '-'}</td>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 tabular-nums">{race.popularity || '-'}</td>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center tabular-nums ${getFinishColor(race.finish_position || '')}`}>{toHalfWidth(race.finish_position || '-')}</td>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800">{race.margin || '-'}</td>
+                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap tabular-nums">{passing || '-'}</td>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.makikaeshi != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.makikaeshi != null ? Number(race.indices.makikaeshi).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.L4F != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.L4F != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.L4F != null ? Number(race.indices.L4F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.T2F != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.T2F != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.T2F != null ? Number(race.indices.T2F).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.potential != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.potential != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.potential != null ? Number(race.indices.potential).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.revouma != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.revouma != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.revouma != null ? Number(race.indices.revouma).toFixed(1) : '-'}
                   </td>
-                  <td className={`border border-green-800 px-1 sm:px-2 py-1 text-center bg-yellow-900/10 ${race.indices?.cushion != null ? 'text-yellow-400 font-medium' : 'text-green-600'}`}>
+                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.cushion != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
                     {race.indices?.cushion != null ? Number(race.indices.cushion).toFixed(1) : '-'}
                   </td>
                 </tr>
@@ -1100,25 +1100,25 @@ export default function RaceCardPage() {
             })}
           </tbody>
         </table>
-        <p className="text-[10px] sm:text-xs text-green-500/50 mt-2">※ 横スクロールで指数データを確認できます</p>
+        <p className="text-[10px] sm:text-xs text-slate-500 mt-2">※ 横スクロールで指数データを確認できます</p>
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden">
+    <div className="racecard-page overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
 
         {/* 日付ナビゲーション */}
         <div className="mb-6">
-          <div className="glass-card rounded-xl p-4 flex items-center justify-between">
+          <div className="bg-white border-2 border-slate-300 rounded-xl p-4 flex items-center justify-between shadow-sm">
             <button
               onClick={() => prevDate && setDate(prevDate)}
               disabled={!prevDate}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
                 prevDate 
-                  ? 'text-green-300 hover:bg-green-800/30 hover:text-yellow-400' 
-                  : 'text-green-700 cursor-not-allowed'
+                  ? 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' 
+                  : 'text-slate-300 cursor-not-allowed'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1137,17 +1137,17 @@ export default function RaceCardPage() {
                   setSelectedRace('');
                   setRaceCard(null);
                 }}
-                className="bg-green-900/50 border border-green-700 rounded-lg px-3 py-2 text-green-100 text-sm focus:outline-none focus:border-yellow-500"
+                className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-700 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               >
                 <option value={2025}>2025</option>
                 <option value={2026}>2026</option>
                 <option value={2027}>2027</option>
               </select>
               <div className="text-center">
-                <div className="text-2xl sm:text-3xl font-bold gold-text">
+                <div className="text-2xl sm:text-3xl font-bold text-emerald-700">
                   {formatDateForDisplay(date)}
                 </div>
-                <div className="text-xs text-green-400/70">
+                <div className="text-xs text-slate-500">
                   {availableDates.length > 0 ? `${availableDates.length}日分のデータ` : ''}
                 </div>
               </div>
@@ -1158,8 +1158,8 @@ export default function RaceCardPage() {
               disabled={!nextDate}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition ${
                 nextDate 
-                  ? 'text-green-300 hover:bg-green-800/30 hover:text-yellow-400' 
-                  : 'text-green-700 cursor-not-allowed'
+                  ? 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700' 
+                  : 'text-slate-300 cursor-not-allowed'
               }`}
             >
               <span className="text-sm font-medium hidden sm:inline">
@@ -1177,7 +1177,7 @@ export default function RaceCardPage() {
             <button
               onClick={bulkGenerateAnalysis}
               disabled={bulkGenerating || pdfGenerating}
-              className="px-4 sm:px-6 py-3 btn-gold rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50"
+              className="px-4 sm:px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50 transition-colors"
             >
               {bulkGenerating ? (
                 <span className="flex items-center gap-2">
@@ -1193,10 +1193,10 @@ export default function RaceCardPage() {
             </button>
             
             {bulkGenerateResult && (
-              <span className="flex items-center px-3 py-2 bg-green-800/50 text-green-300 rounded-lg text-sm border border-green-700">
+              <span className="flex items-center px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-sm border border-emerald-200">
                 ✅ {bulkGenerateResult.success}レース生成完了 ({bulkGenerateResult.time}秒)
                 {bulkGenerateResult.error > 0 && (
-                  <span className="ml-2 text-red-400">({bulkGenerateResult.error}件エラー)</span>
+                  <span className="ml-2 text-red-600">({bulkGenerateResult.error}件エラー)</span>
                 )}
               </span>
             )}
@@ -1204,7 +1204,7 @@ export default function RaceCardPage() {
             <button
               onClick={generateAllRacesPDF}
               disabled={pdfGenerating || bulkGenerating}
-              className="px-4 sm:px-6 py-3 btn-turf rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50"
+              className="px-4 sm:px-6 py-3 bg-slate-600 hover:bg-slate-700 text-white font-semibold rounded-lg text-sm sm:text-base min-h-[44px] disabled:opacity-50 transition-colors"
             >
               {pdfGenerating ? 'PDF生成中...' : '📄 全レースPDF'}
             </button>
@@ -1213,7 +1213,7 @@ export default function RaceCardPage() {
 
         {venues.length > 0 && (
           <div className="mb-4">
-            <label className="block text-xs sm:text-sm font-medium text-green-300 mb-2">競馬場</label>
+            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">競馬場</label>
             <div className="flex gap-2 flex-wrap">
               {venues.map((venue) => (
                 <div key={venue.place} className="flex items-center">
@@ -1223,10 +1223,10 @@ export default function RaceCardPage() {
                       setSelectedRace('');
                       setRaceCard(null);
                     }}
-                    className={`px-3 sm:px-4 py-2 rounded-l min-h-[44px] text-sm sm:text-base transition ${
+                    className={`px-3 sm:px-4 py-2 rounded-l min-h-[44px] text-sm sm:text-base transition font-medium ${
                       selectedVenue === venue.place
-                        ? 'bg-green-700 text-white border border-green-600'
-                        : 'glass-card text-green-200 hover:bg-green-800/50'
+                        ? 'bg-emerald-700 text-white border border-emerald-600'
+                        : 'bg-white text-slate-700 border border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'
                     }`}
                   >
                     {venue.place}
@@ -1236,8 +1236,8 @@ export default function RaceCardPage() {
                     disabled={venuePdfGenerating === venue.place}
                     className={`px-2 py-2 rounded-r min-h-[44px] min-w-[44px] flex items-center justify-center transition ${
                       selectedVenue === venue.place
-                        ? 'bg-green-600 text-white hover:bg-green-500'
-                        : 'glass-card text-green-400 hover:bg-green-800/50'
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-600'
+                        : 'bg-white text-slate-500 border border-slate-300 border-l-0 hover:bg-emerald-50 hover:text-emerald-600'
                     } disabled:opacity-50`}
                     title={`${venue.place}のPDFをダウンロード`}
                   >
@@ -1260,16 +1260,16 @@ export default function RaceCardPage() {
 
         {currentRaces.length > 0 && (
           <div className="mb-4 sm:mb-6">
-            <label className="block text-xs sm:text-sm font-medium text-green-300 mb-2">
+            <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
               レース
-              {showSagaAI && <span className="ml-2 text-xs text-green-500">(⏱️ = 時計優秀な馬あり)</span>}
+              {showSagaAI && <span className="ml-2 text-xs text-emerald-700 font-medium">(⏱️ = 時計優秀な馬あり)</span>}
               {prefetchProgress && (
-                <span className="ml-2 text-xs text-yellow-400 animate-pulse">
+                <span className="ml-2 text-xs text-amber-700 font-medium">
                   📥 レースデータ読み込み中 {prefetchProgress.current}/{prefetchProgress.total}
                 </span>
               )}
               {!prefetchProgress && raceCardCache.current.size > 0 && (
-                <span className="ml-2 text-xs text-green-500">✓ {raceCardCache.current.size}件キャッシュ済</span>
+                <span className="ml-2 text-xs text-emerald-700 font-medium">✓ {raceCardCache.current.size}件キャッシュ済</span>
               )}
             </label>
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 sm:gap-2">
@@ -1281,22 +1281,22 @@ export default function RaceCardPage() {
                   <button
                     key={race.race_number}
                     onClick={() => setSelectedRace(race.race_number)}
-                    className={`px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] transition ${
+                    className={`px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] transition shadow-sm ${
                       selectedRace === race.race_number
-                        ? 'bg-green-700 text-white border border-green-500'
+                        ? 'bg-emerald-700 text-white border-2 border-emerald-600 shadow-md'
                         : highlight
-                          ? 'glass-card border-2 border-yellow-500/50 text-green-200 hover:bg-green-800/50'
-                          : 'glass-card text-green-200 hover:bg-green-800/50'
+                          ? 'bg-white border-2 border-amber-400 text-slate-800 hover:bg-emerald-50'
+                          : 'bg-white text-slate-800 border border-slate-300 hover:bg-emerald-50 hover:border-emerald-400'
                     }`}
                     title={highlight ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}` : ''}
                   >
                     <div className="flex flex-col items-center justify-center">
                       <div className="flex items-center gap-0.5 sm:gap-1">
-                        <span className="font-medium">{race.race_number}R</span>
-                        {highlight && <span className={`text-xs ${highlight.count >= 2 ? 'text-yellow-400' : 'text-yellow-500'}`}>⏱️</span>}
+                        <span className="font-semibold">{race.race_number}R</span>
+                        {highlight && <span className={`text-xs ${highlight.count >= 2 ? 'text-amber-500' : 'text-amber-400'}`}>⏱️</span>}
                       </div>
-                      <span className="text-[9px] sm:text-[10px] opacity-70 truncate max-w-full">{race.class_name || '未分類'}</span>
-                      <span className="text-[10px] sm:text-xs opacity-80">{race.track_type}{race.distance}m</span>
+                      <span className="text-[9px] sm:text-[10px] text-slate-600 truncate max-w-full font-medium">{race.class_name || '未分類'}</span>
+                      <span className="text-[10px] sm:text-xs text-slate-700 font-medium">{race.track_type}{race.distance}m</span>
                     </div>
                   </button>
                 );
@@ -1306,32 +1306,32 @@ export default function RaceCardPage() {
         )}
 
         {error && (
-          <div className="bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4">{error}</div>
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">{error}</div>
         )}
 
-        {/* 案3: スケルトンUI */}
+        {/* スケルトンUI */}
         {loading && (
           <div className="space-y-4">
             {/* レースヘッダースケルトン */}
-            <div className="glass-card rounded-2xl p-4 sm:p-6">
+            <div className="racecard-card rounded-2xl p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4">
-                <div className="h-7 w-48 bg-green-800/50 rounded animate-pulse"></div>
-                <div className="h-6 w-24 bg-green-800/50 rounded animate-pulse"></div>
+                <div className="h-7 w-48 bg-slate-200 rounded animate-pulse"></div>
+                <div className="h-6 w-24 bg-slate-200 rounded animate-pulse"></div>
               </div>
-              <div className="h-5 w-64 bg-green-800/30 rounded animate-pulse"></div>
+              <div className="h-5 w-64 bg-slate-100 rounded animate-pulse"></div>
             </div>
             
             {/* 馬リストスケルトン */}
-            <div className="glass-card rounded-2xl p-4 sm:p-6">
+            <div className="racecard-card rounded-2xl p-4 sm:p-6">
               <div className="space-y-3">
                 {[...Array(8)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-green-900/30 rounded-lg">
-                    <div className="w-8 h-8 bg-green-800/50 rounded-full animate-pulse"></div>
+                  <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                    <div className="w-8 h-8 bg-slate-200 rounded-full animate-pulse"></div>
                     <div className="flex-1 space-y-2">
-                      <div className="h-5 w-32 bg-green-800/50 rounded animate-pulse"></div>
-                      <div className="h-4 w-48 bg-green-800/30 rounded animate-pulse"></div>
+                      <div className="h-5 w-32 bg-slate-200 rounded animate-pulse"></div>
+                      <div className="h-4 w-48 bg-slate-100 rounded animate-pulse"></div>
                     </div>
-                    <div className="h-8 w-16 bg-green-800/50 rounded animate-pulse"></div>
+                    <div className="h-8 w-16 bg-slate-200 rounded animate-pulse"></div>
                   </div>
                 ))}
               </div>
@@ -1381,33 +1381,33 @@ export default function RaceCardPage() {
               </div>
             )}
 
-            <div className="gold-border-card rounded-xl p-3 sm:p-6">
+            <div className="racecard-card rounded-xl p-3 sm:p-6">
               <div className="flex items-start justify-between gap-3 mb-2 sm:mb-4">
                 <div>
-                  <h2 className="text-lg sm:text-2xl font-bold gold-text text-balance">
+                  <h2 className="text-lg sm:text-2xl font-bold text-emerald-800 text-balance">
                     {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
                   </h2>
-                  <p className="text-green-400/70 text-sm sm:text-base">
+                  <p className="text-slate-700 text-sm sm:text-base font-medium">
                     {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
                   </p>
                 </div>
                 <button
                   onClick={() => setShowBabaMemo(true)}
-                  className="flex-shrink-0 bg-green-700/50 hover:bg-green-600/60 text-green-100 text-xs sm:text-sm px-3 py-2 rounded-lg transition-colors flex items-center gap-1"
+                  className="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm px-4 py-2.5 rounded-lg transition-colors flex items-center gap-1.5 font-medium shadow-md"
                 >
                   🌿 馬場メモ
                 </button>
               </div>
               {/* 並び替えトグル */}
               <div className="flex items-center gap-2 mb-3 sm:mb-4">
-                <span className="text-xs text-green-400">並び順:</span>
-                <div className="flex bg-green-900/50 rounded-lg p-0.5">
+                <span className="text-xs text-slate-600 font-medium">並び順:</span>
+                <div className="flex bg-slate-200 rounded-lg p-0.5 shadow-inner">
                   <button
                     onClick={() => setSortMode('score')}
                     className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
                       sortMode === 'score'
-                        ? 'bg-gold-500 text-green-900 font-bold'
-                        : 'text-green-300 hover:text-white'
+                        ? 'bg-emerald-600 text-white font-bold shadow-md'
+                        : 'text-slate-700 hover:text-slate-900 font-medium'
                     }`}
                   >
                     🔥 スコア順
@@ -1416,32 +1416,32 @@ export default function RaceCardPage() {
                     onClick={() => setSortMode('umaban')}
                     className={`px-3 py-1.5 text-xs sm:text-sm rounded-md transition-colors ${
                       sortMode === 'umaban'
-                        ? 'bg-gold-500 text-green-900 font-bold'
-                        : 'text-green-300 hover:text-white'
+                        ? 'bg-emerald-600 text-white font-bold shadow-md'
+                        : 'text-slate-700 hover:text-slate-900 font-medium'
                     }`}
                   >
                     📋 馬番順
                   </button>
                 </div>
                 {sessionStatus === 'authenticated' && !isRaceFinished && (
-                  <span className="text-xs text-green-500 ml-auto">印をタップで予想登録</span>
+                  <span className="text-xs text-emerald-700 font-medium ml-auto">印をタップで予想登録</span>
                 )}
                 {isRaceFinished && (
-                  <span className="text-xs text-yellow-500/70 ml-auto">🔒 確定済み</span>
+                  <span className="text-xs bg-amber-100 text-amber-700 font-semibold ml-auto px-2 py-1 rounded border border-amber-300">🔒 確定済み</span>
                 )}
               </div>
 
               <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
                 <table className="w-full border-collapse min-w-[600px] sm:min-w-0">
                   <thead>
-                    <tr className="bg-green-800 text-white text-xs sm:text-base">
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-10">馬番</th>
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-10">印</th>
-                      <th className="border border-green-700 px-1 py-2 sm:py-3 w-10" title="お気に入り">★</th>
-                      <th className="border border-green-700 px-2 sm:px-4 py-2 sm:py-3">馬名</th>
-                      <th className="border border-green-700 px-2 sm:px-3 py-2 sm:py-3">騎手</th>
-                      <th className="border border-green-700 px-1 sm:px-2 py-2 sm:py-3 w-12">斤量</th>
-                      <th className="border border-green-700 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-16">競う<br className="sm:hidden"/>スコア</th>
+                    <tr className="bg-emerald-700 text-white text-xs sm:text-base">
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">馬番</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">印</th>
+                      <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-10 font-semibold" title="お気に入り">★</th>
+                      <th className="border-2 border-emerald-800 px-2 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
+                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 font-semibold">騎手</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-12 font-semibold">斤量</th>
+                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-16 font-semibold">競う<br className="sm:hidden"/>スコア</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1459,13 +1459,13 @@ export default function RaceCardPage() {
                       const currentMark = predictions.get(horse.umaban) || null;
                       return (
                         <React.Fragment key={horse.umaban}>
-                          <tr className={`${index % 2 === 0 ? 'bg-green-950/50' : 'bg-green-900/30'} text-xs sm:text-base`}>
+                          <tr className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-100'} text-xs sm:text-base hover:bg-emerald-50 transition-colors`}>
                             {/* 馬番（枠色付き） */}
-                            <td className={`border border-green-800 px-1 sm:px-2 py-2 text-center font-bold ${getWakuColor(horse.waku)}`}>
+                            <td className={`border border-slate-300 px-1 sm:px-2 py-2 text-center font-bold ${getWakuColor(horse.waku)}`}>
                               {horse.umaban}
                             </td>
                             {/* 印 */}
-                            <td className="border border-green-800 px-1 py-1 text-center">
+                            <td className="border border-slate-300 px-1 py-1 text-center">
                               {sessionStatus === 'authenticated' ? (
                                 <InlineMarkSelector
                                   currentMark={currentMark}
@@ -1474,34 +1474,34 @@ export default function RaceCardPage() {
                                   compact
                                 />
                               ) : (
-                                <span className="text-gray-600 text-lg">-</span>
+                                <span className="text-slate-400 text-lg">-</span>
                               )}
                             </td>
                             {/* ★ お気に入り */}
-                            <td className="border border-green-800 px-1 py-1 text-center">
+                            <td className="border border-slate-300 px-1 py-1 text-center">
                               <button
                                 onClick={() => setHorseActionTarget({ 
                                   name: normalizeHorseName(horse.umamei), 
                                   number: horse.umaban 
                                 })}
-                                className="text-yellow-400/60 hover:text-yellow-400 hover:scale-110 transition-all text-lg"
+                                className="text-amber-500 hover:text-amber-600 hover:scale-110 transition-all text-lg"
                                 title="お気に入り・メモ"
                               >
                                 ☆
                               </button>
                             </td>
                             {/* 馬名 */}
-                            <td className="border border-green-800 px-2 sm:px-4 py-2 font-medium text-green-100">
+                            <td className="border border-slate-300 px-2 sm:px-4 py-2 font-semibold text-slate-900">
                               <div className="flex items-center gap-1">
                                 <span 
-                                  className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-yellow-400 hover:underline transition-colors"
+                                  className="truncate max-w-[100px] sm:max-w-none cursor-pointer hover:text-emerald-600 hover:underline transition-colors"
                                   onClick={() => setSelectedHorseDetail(horse)}
                                   title="馬の詳細情報を表示"
                                 >
                                   {normalizeHorseName(horse.umamei)}
                                 </span>
                                 <button
-                                  className="text-green-500 hover:text-yellow-400 text-xs px-1 flex-shrink-0 ml-auto"
+                                  className="text-slate-500 hover:text-emerald-600 text-xs px-1 flex-shrink-0 ml-auto font-bold"
                                   onClick={() => toggleHorseExpand(horse.umaban)}
                                   title="過去走を表示"
                                 >
@@ -1510,22 +1510,22 @@ export default function RaceCardPage() {
                               </div>
                             </td>
                             {/* 騎手 */}
-                            <td className="border border-green-800 px-2 sm:px-3 py-2 text-green-300 whitespace-nowrap text-xs sm:text-sm">
+                            <td className="border border-slate-300 px-2 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-xs sm:text-sm">
                               {horse.kishu.trim()}
                             </td>
                             {/* 斤量 */}
-                            <td className="border border-green-800 px-1 sm:px-2 py-2 text-center text-green-300 text-xs sm:text-sm">
+                            <td className="border border-slate-300 px-1 sm:px-2 py-2 text-center text-slate-700 text-xs sm:text-sm tabular-nums">
                               {horse.kinryo.trim()}
                             </td>
                             {/* 競うスコア - データがない場合は「-」表示 */}
-                            <td className={`border border-green-800 px-2 sm:px-3 py-2 text-center text-sm sm:text-lg font-bold tabular-nums ${getScoreTextColor(horse.score, horse.hasData)}`}>
+                            <td className={`border border-slate-300 px-2 sm:px-3 py-2 text-center text-sm sm:text-lg font-bold tabular-nums ${getScoreTextColor(horse.score, horse.hasData)}`}>
                               {horse.hasData && horse.score != null ? Math.round(horse.score) : '-'}
                             </td>
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={7} className="border border-green-800 p-2 sm:p-4 bg-green-950/50">
-                                <div className="text-xs sm:text-sm font-bold mb-2 gold-text">
+                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-100">
+                                <div className="text-xs sm:text-sm font-bold mb-2 text-emerald-700">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>
                                 <PastRaceDetail pastRaces={horse.past} />
