@@ -207,28 +207,55 @@ function saveToCsv(data: IndexRecord[], outputPath: string): void {
 }
 
 /**
- * Upload data to API
+ * Upload data to API in batches
  */
 async function uploadToApi(data: IndexRecord[]): Promise<void> {
   console.log(`\nUploading data to API...`);
   console.log(`  Endpoint: ${API_URL}`);
-  console.log(`  Records: ${data.length}`);
+  console.log(`  Total Records: ${data.length}`);
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ data }),
-  });
+  const BATCH_SIZE = 5000; // 5000件ずつアップロード
+  const totalBatches = Math.ceil(data.length / BATCH_SIZE);
+  let uploadedCount = 0;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} - ${errorText}`);
+  for (let i = 0; i < totalBatches; i++) {
+    const start = i * BATCH_SIZE;
+    const end = Math.min(start + BATCH_SIZE, data.length);
+    const batch = data.slice(start, end);
+
+    console.log(`\n  Batch ${i + 1}/${totalBatches}: ${batch.length} records (${start + 1}-${end})`);
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ data: batch }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`  ERROR: ${response.status} - ${errorText}`);
+        // エラーでも続行（部分的にでもアップロードする）
+        continue;
+      }
+
+      const result = await response.json();
+      uploadedCount += result.count || batch.length;
+      console.log(`  -> ${result.count || batch.length} records saved`);
+      
+      // レート制限を避けるため少し待機
+      if (i < totalBatches - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      console.error(`  ERROR: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // エラーでも続行
+    }
   }
 
-  const result = await response.json();
-  console.log(`\n*** SUCCESS! ${result.count} records saved ***`);
+  console.log(`\n*** DONE! Total ${uploadedCount} records uploaded ***`);
 }
 
 /**
