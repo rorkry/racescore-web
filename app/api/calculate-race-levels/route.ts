@@ -20,11 +20,35 @@ interface RaceRow {
 }
 
 /**
+ * レース日付からキャッシュ有効期間を決定
+ */
+function getCacheExpiryDays(raceDate: string): number {
+  const now = new Date();
+  // "2024.01.15" 形式をパース
+  const cleaned = raceDate.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length !== 3) return 1;
+  
+  const raceDateObj = new Date(
+    parseInt(parts[0], 10),
+    parseInt(parts[1], 10) - 1,
+    parseInt(parts[2], 10)
+  );
+  
+  const daysDiff = Math.floor((now.getTime() - raceDateObj.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (daysDiff >= 60) return 30; // 60日以上前 → 30日キャッシュ
+  if (daysDiff >= 30) return 7;  // 30-60日前 → 7日キャッシュ
+  return 1;                       // 30日以内 → 1日キャッシュ
+}
+
+/**
  * レースレベルをキャッシュに保存
  */
-async function saveRaceLevel(db: ReturnType<typeof getDb>, raceId: string, result: RaceLevelResult): Promise<void> {
+async function saveRaceLevel(db: ReturnType<typeof getDb>, raceId: string, result: RaceLevelResult, raceDate?: string): Promise<void> {
+  const cacheDays = raceDate ? getCacheExpiryDays(raceDate) : 7;
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30); // 30日間有効
+  expiresAt.setDate(expiresAt.getDate() + cacheDays);
 
   await db.query(`
     INSERT INTO race_levels (
@@ -155,7 +179,7 @@ export async function GET(request: NextRequest) {
       const levelResult = await calculateSingleRaceLevel(db, race);
       
       if (levelResult && levelResult.level !== 'UNKNOWN') {
-        await saveRaceLevel(db, race.race_id, levelResult);
+        await saveRaceLevel(db, race.race_id, levelResult, race.date);
         calculated++;
         results.push({
           raceId: race.race_id,
@@ -214,7 +238,7 @@ export async function POST(request: NextRequest) {
       const levelResult = await calculateSingleRaceLevel(db, raceInfo);
       
       if (levelResult) {
-        await saveRaceLevel(db, raceId, levelResult);
+        await saveRaceLevel(db, raceId, levelResult, raceInfo.date);
         calculated++;
         results.push({
           raceId,

@@ -194,12 +194,50 @@ async function getRaceLevelsFromCache(db: DbWrapper, raceIds: string[]): Promise
 }
 
 /**
- * レースレベルをキャッシュに保存
+ * レース日付からキャッシュ有効期間を決定
+ * - 60日以上前: 30日間（安定期、データ変化少ない）
+ * - 30-60日前: 7日間（やや安定）
+ * - 30日以内: 1日間（活発期、次走データが増える可能性大）
  */
-async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceLevelResult): Promise<void> {
+function getCacheExpiryDays(raceDate: string): number {
+  const now = new Date();
+  const raceDateObj = parseDateString(raceDate);
+  if (!raceDateObj) return 1; // パース失敗時は短期キャッシュ
+  
+  const daysDiff = Math.floor((now.getTime() - raceDateObj.getTime()) / (1000 * 60 * 60 * 24));
+  
+  if (daysDiff >= 60) return 30; // 60日以上前 → 30日キャッシュ
+  if (daysDiff >= 30) return 7;  // 30-60日前 → 7日キャッシュ
+  return 1;                       // 30日以内 → 1日キャッシュ
+}
+
+/**
+ * 日付文字列をDateオブジェクトに変換
+ */
+function parseDateString(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  // "2024.01.15" または "2024. 1.15" 形式
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length !== 3) return null;
+  
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+  return new Date(year, month, day);
+}
+
+/**
+ * レースレベルをキャッシュに保存
+ * @param raceDate レース日付（キャッシュ期間を動的に決定するため）
+ */
+async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceLevelResult, raceDate?: string): Promise<void> {
   try {
+    const cacheDays = raceDate ? getCacheExpiryDays(raceDate) : 7;
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7日間有効
+    expiresAt.setDate(expiresAt.getDate() + cacheDays);
 
     await db.query(`
       INSERT INTO race_levels (
@@ -1211,8 +1249,8 @@ export default async function handler(
           (async () => {
             const levelResult = await calculateRaceLevelOnDemand(db, race.raceId, race.date);
             if (levelResult) {
-              // キャッシュに保存
-              await saveRaceLevelToCache(db, race.raceId, levelResult);
+              // キャッシュに保存（レース日付に応じた有効期限を設定）
+              await saveRaceLevelToCache(db, race.raceId, levelResult, race.date);
               // 一時キャッシュに追加
               raceLevelCache.set(race.raceId, {
                 race_id: race.raceId,
