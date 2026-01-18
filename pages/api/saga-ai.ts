@@ -6,7 +6,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db-new';
 import { SagaBrain, HorseAnalysisInput, SagaAnalysis, TimeComparisonRace, PastRaceTimeComparison } from '../../lib/saga-ai/saga-brain';
 import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
-import { toHalfWidth, parseFinishPosition } from '../../utils/parse-helpers';
+import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 
@@ -646,11 +646,14 @@ function mapUmadataToRecordRow(dbRow: any, indices: any = null): RecordRow {
   result['着順'] = result['finish_position'] || '';
   result['finish'] = result['finish_position'] || '';
   result['着差'] = result['margin'] || '';
-  result['corner2'] = result['corner_2'] || '';
-  result['corner3'] = result['corner_3'] || '';
-  result['corner4'] = result['corner_4'] || '';
-  result['頭数'] = result['number_of_horses'] || '';
-  result['fieldSize'] = result['number_of_horses'] || '';
+  // コーナー位置（新旧フォーマット両対応）
+  const corners = getCornerPositions(dbRow);
+  result['corner2'] = result['corner_2'] || (corners.corner2 ? String(corners.corner2) : '');
+  result['corner3'] = result['corner_3'] || (corners.corner3 ? String(corners.corner3) : '');
+  result['corner4'] = result['corner_4'] || result['corner_4_position'] || (corners.corner4 ? String(corners.corner4) : '');
+  // 頭数（新旧フォーマット両対応）
+  result['頭数'] = result['field_size'] || result['number_of_horses'] || '';
+  result['fieldSize'] = result['field_size'] || result['number_of_horses'] || '';
   result['距離'] = result['distance'] || '';
   result['surface'] = result['distance'] || '';
   result['PCI'] = result['pci'] || '';
@@ -930,9 +933,15 @@ export default async function handler(
           finishPosition: pastFinishPosition,
           popularity: parseFinishPosition(race.popularity),
           margin: race.margin || '',
-          corner2: parseInt(toHalfWidth(race.corner_2 || '0'), 10) || undefined,
-          corner3: parseInt(toHalfWidth(race.corner_3 || '0'), 10) || undefined,
-          corner4: parseInt(toHalfWidth(race.corner_4 || '0'), 10) || undefined,
+          // コーナー位置（新旧フォーマット両対応）
+          ...(() => {
+            const c = getCornerPositions(race);
+            return {
+              corner2: c.corner2 || undefined,
+              corner3: c.corner3 || undefined,
+              corner4: c.corner4 || undefined,
+            };
+          })(),
           T2F: indices?.T2F || 0,
           L4F: indices?.L4F || 0,
           potential: indices?.potential || 0,
@@ -944,7 +953,7 @@ export default async function handler(
           // ラップ分析用データ
           lapString: race.work_1s || '',              // ラップタイム（"12.3-10.5-11.8..."）
           corner4Wide: parseInt(race.index_value || '2', 10) || 2,  // 4角位置（内外: 0-4）
-          totalHorses: parseInt(race.number_of_horses || '16', 10), // 出走頭数
+          totalHorses: parseInt(race.field_size || race.number_of_horses || '16', 10), // 出走頭数
           ownLast3F: parseFloat(race.last_3f || '0') || 0,          // 自身の上がり3F
           // 歴代比較用データ（1着レースのみ）
           historicalLapData,
@@ -1172,11 +1181,12 @@ export default async function handler(
         const waku = parseInt(horseData.horse.waku || '0', 10);
         const t2fPercentile = analysis.debugInfo?.t2f?.percentile ?? null;
         
-        // 近走のコーナー通過順を取得
+        // 近走のコーナー通過順を取得（新旧フォーマット両対応）
         const cornerPositions: number[] = [];
         for (const race of horseData.pastRaces.slice(0, 3)) {
-          // corner_4が最終コーナーの位置
-          const corner4 = parseInt(race.corner_4 || '0', 10);
+          // corner4が最終コーナーの位置
+          const corners = getCornerPositions(race);
+          const corner4 = corners.corner4 || 0;
           if (corner4 > 0) {
             cornerPositions.push(corner4);
           }

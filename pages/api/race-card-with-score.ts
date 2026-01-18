@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db-new';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
-import { parseFinishPosition } from '../../utils/parse-helpers';
+import { parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 
 // ========================================
 // サーバーサイドメモリキャッシュ（高速化）
@@ -135,11 +135,14 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   result['着順'] = result['finish_position'] || '';
   result['finish'] = result['finish_position'] || '';
   result['着差'] = result['margin'] || '';
-  result['corner2'] = result['corner_2'] || '';
-  result['corner3'] = result['corner_3'] || '';
-  result['corner4'] = result['corner_4'] || '';
-  result['頭数'] = result['number_of_horses'] || '';
-  result['fieldSize'] = result['number_of_horses'] || '';
+  // コーナー位置（新旧フォーマット両対応）
+  const corners = getCornerPositions(dbRow);
+  result['corner2'] = result['corner_2'] || (corners.corner2 ? String(corners.corner2) : '');
+  result['corner3'] = result['corner_3'] || (corners.corner3 ? String(corners.corner3) : '');
+  result['corner4'] = result['corner_4'] || result['corner_4_position'] || (corners.corner4 ? String(corners.corner4) : '');
+  // 頭数（新旧フォーマット両対応）
+  result['頭数'] = result['field_size'] || result['number_of_horses'] || '';
+  result['fieldSize'] = result['field_size'] || result['number_of_horses'] || '';
   result['距離'] = result['distance'] || '';
   result['surface'] = result['distance'] || '';
   result['PCI'] = result['pci'] || '';

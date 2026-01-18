@@ -71,6 +71,84 @@ export function extractDistance(distance: string | null | undefined): number {
   return match ? parseInt(match[0], 10) : 0;
 }
 
+/**
+ * 通過順文字列からコーナー位置を抽出
+ * 
+ * 通過順形式: "5-4-3-2" (1コーナー-2コーナー-3コーナー-4コーナー)
+ * または "5-4-3" (3コーナーまで)
+ * 
+ * @param passingOrder 通過順文字列
+ * @returns { corner1, corner2, corner3, corner4 }
+ */
+export function parsePassingOrder(passingOrder: string | null | undefined): {
+  corner1?: number;
+  corner2?: number;
+  corner3?: number;
+  corner4?: number;
+} {
+  if (!passingOrder) return {};
+  
+  const parts = toHalfWidth(passingOrder).split(/[-ー－]/);
+  const result: {
+    corner1?: number;
+    corner2?: number;
+    corner3?: number;
+    corner4?: number;
+  } = {};
+  
+  if (parts.length >= 1 && parts[0]) {
+    const val = parseInt(parts[0], 10);
+    if (!isNaN(val)) result.corner1 = val;
+  }
+  if (parts.length >= 2 && parts[1]) {
+    const val = parseInt(parts[1], 10);
+    if (!isNaN(val)) result.corner2 = val;
+  }
+  if (parts.length >= 3 && parts[2]) {
+    const val = parseInt(parts[2], 10);
+    if (!isNaN(val)) result.corner3 = val;
+  }
+  if (parts.length >= 4 && parts[3]) {
+    const val = parseInt(parts[3], 10);
+    if (!isNaN(val)) result.corner4 = val;
+  }
+  
+  return result;
+}
+
+/**
+ * レースデータからコーナー位置を取得（新旧フォーマット両対応）
+ * 
+ * 新フォーマット: passing_order + corner_4_position
+ * 旧フォーマット: corner_1, corner_2, corner_3, corner_4
+ */
+export function getCornerPositions(race: Record<string, unknown>): {
+  corner1?: number;
+  corner2?: number;
+  corner3?: number;
+  corner4?: number;
+} {
+  // 旧フォーマット（直接カラムがある場合）
+  if (race.corner_2 || race.corner_3 || race.corner_4) {
+    return {
+      corner1: race.corner_1 ? parseNumber(race.corner_1 as string) : undefined,
+      corner2: race.corner_2 ? parseNumber(race.corner_2 as string) : undefined,
+      corner3: race.corner_3 ? parseNumber(race.corner_3 as string) : undefined,
+      corner4: race.corner_4 ? parseNumber(race.corner_4 as string) : undefined,
+    };
+  }
+  
+  // 新フォーマット（passing_orderから抽出）
+  const fromPassingOrder = parsePassingOrder(race.passing_order as string);
+  
+  // corner_4_positionがある場合は優先
+  if (race.corner_4_position) {
+    fromPassingOrder.corner4 = parseNumber(race.corner_4_position as string);
+  }
+  
+  return fromPassingOrder;
+}
+
 
 
 
