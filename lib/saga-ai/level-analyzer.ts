@@ -2,7 +2,23 @@
  * レースレベル分析モジュール
  * 
  * 出走馬の次走成績からレースのレベルを判定
- * - S+, S, A, B, C, 低レベル, 判定保留
+ * 
+ * ## 好走率によるクラス分け（次走出走馬の好走率=3着以内率）
+ * - S: 80%以上
+ * - A: 60%以上
+ * - B: 40%以上
+ * - C: 30%以上
+ * - D: 20%以上
+ * - LOW: 20%未満（低レベル戦）
+ * 
+ * ## +の付与（好走率とは独立、勝ち上がり頭数で決定）
+ * - +: 勝ち上がり2頭以上
+ * - ++: 勝ち上がり3頭以上
+ * - +++: 勝ち上がり4頭以上
+ * 
+ * ## 特殊ケース
+ * - 次走出走が1頭のみ → UNKNOWN
+ * - 次走出走が1頭のみ + その1頭が好走or勝ち上がり → UNKNOWN+（ハイレベルの可能性）
  */
 
 // ========================================
@@ -30,8 +46,8 @@ export interface RaceLevelInput {
 
 export interface RaceLevelResult {
   // レベル判定
-  level: 'S+' | 'S' | 'A' | 'B' | 'C' | 'LOW' | 'PENDING';
-  levelLabel: string;      // 表示用ラベル（例: "S+", "ハイレベル", "低レベル"）
+  level: 'S' | 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN';
+  levelLabel: string;      // 表示用ラベル（例: "S++", "A+", "UNKNOWN+"）
   
   // 詳細データ
   totalHorsesRun: number;  // 次走に出走した馬の総数（実頭数）
@@ -57,9 +73,10 @@ export interface RaceLevelResult {
   aiComment: string;       // おれAI用詳細コメント
   
   // 追加情報
-  hasPlus: boolean;        // + 表記があるか（勝ち上がり2頭以上）
-  isDataInsufficient: boolean;  // データ不足フラグ
-  lapLevelBoost: boolean;  // ラップ/時計が優秀でレベルを推論したか
+  plusCount: number;       // +の数（0, 1, 2, 3）
+  plusLabel: string;       // '+', '++', '+++'
+  isUnknownWithPotential: boolean;  // UNKNOWN+かどうか
+  isDataInsufficient: boolean;      // データ不足フラグ
 }
 
 // ========================================
@@ -73,15 +90,20 @@ const RATE_THRESHOLDS = {
   S: 80,   // 80%以上 → S
   A: 60,   // 60%以上 → A
   B: 40,   // 40%以上 → B
-  LOW: 20, // 20%未満 & 母数5以上 → 低レベル
+  C: 30,   // 30%以上 → C
+  D: 20,   // 20%以上 → D
+  // 20%未満 → LOW（低レベル戦）
 };
 
 // 勝ち上がり数による + 付与
-const WINNERS_FOR_PLUS = 2;  // 2頭以上で +
+const WINNERS_THRESHOLDS = {
+  PLUS: 2,       // 2頭以上で +
+  PLUS_PLUS: 3,  // 3頭以上で ++
+  PLUS_PLUS_PLUS: 4,  // 4頭以上で +++
+};
 
 // 母数の閾値
-const MIN_SAMPLE_FOR_LOW_LEVEL = 5;  // 低レベル判定に必要な最小母数
-const MIN_SAMPLE_FOR_CONFIDENT = 3;  // 信頼できる判定に必要な最小母数
+const MIN_SAMPLE_FOR_JUDGMENT = 2;  // レベル判定に必要な最小母数
 
 // ========================================
 // メイン判定関数
@@ -91,7 +113,7 @@ const MIN_SAMPLE_FOR_CONFIDENT = 3;  // 信頼できる判定に必要な最小�
  * レースレベルを判定
  * 
  * @param nextRaceResults - 出走馬の次走以降の成績リスト
- * @param raceInput - レース情報（時計/ラップ判定用）
+ * @param raceInput - レース情報（オプション）
  */
 export function analyzeRaceLevel(
   nextRaceResults: NextRaceResult[],
@@ -100,8 +122,8 @@ export function analyzeRaceLevel(
   
   // 初期値
   const result: RaceLevelResult = {
-    level: 'PENDING',
-    levelLabel: '判定保留',
+    level: 'UNKNOWN',
+    levelLabel: 'UNKNOWN',
     totalHorsesRun: 0,
     totalRuns: 0,
     goodRunCount: 0,
@@ -117,15 +139,17 @@ export function analyzeRaceLevel(
     },
     displayComment: '',
     aiComment: '',
-    hasPlus: false,
+    plusCount: 0,
+    plusLabel: '',
+    isUnknownWithPotential: false,
     isDataInsufficient: false,
-    lapLevelBoost: false,
   };
   
+  // データなし
   if (nextRaceResults.length === 0) {
     result.isDataInsufficient = true;
     result.displayComment = 'データなし';
-    result.aiComment = 'まだ次走データがないため判定保留';
+    result.aiComment = 'まだ次走データがないため判定不可';
     return result;
   }
   
@@ -136,22 +160,23 @@ export function analyzeRaceLevel(
   result.totalHorsesRun = uniqueHorses.size;
   result.totalRuns = nextRaceResults.length;
   
-  // 好走（3着以内）をカウント
-  result.goodRunCount = nextRaceResults.filter(r => r.finishPosition <= GOOD_RUN_THRESHOLD).length;
-  
-  // 次1走目での好走
+  // 次1走目のみをフィルタ（レベル判定に使用）
   const firstRuns = nextRaceResults.filter(r => r.isFirstRun);
+  const firstRunCount = firstRuns.length;
+  
+  // 次1走目での好走（3着以内）
   result.firstRunGoodCount = firstRuns.filter(r => r.finishPosition <= GOOD_RUN_THRESHOLD).length;
   
-  // 勝ち上がり（1着）をカウント
-  const winners = nextRaceResults.filter(r => r.finishPosition === 1);
-  const uniqueWinners = new Set(winners.map(r => r.horseName));
-  result.winCount = uniqueWinners.size;
+  // 全体の好走数（参考値）
+  result.goodRunCount = nextRaceResults.filter(r => r.finishPosition <= GOOD_RUN_THRESHOLD).length;
+  
+  // 勝ち上がり（1着）をカウント - 次1走目のみ
+  const firstRunWinners = firstRuns.filter(r => r.finishPosition === 1);
+  result.winCount = firstRunWinners.length;
   
   // --- 好走率計算 ---
   
-  // 次1走目の好走率を最優先で使用
-  const firstRunCount = firstRuns.length;
+  // 次1走目の好走率（これをメインで使用）
   if (firstRunCount > 0) {
     result.firstRunGoodRate = (result.firstRunGoodCount / firstRunCount) * 100;
   }
@@ -164,84 +189,89 @@ export function analyzeRaceLevel(
   // --- コメントデータ設定 ---
   
   result.commentData = {
-    totalHorses: firstRunCount > 0 ? firstRunCount : result.totalHorsesRun,
-    goodRuns: firstRunCount > 0 ? result.firstRunGoodCount : result.goodRunCount,
+    totalHorses: firstRunCount,
+    goodRuns: result.firstRunGoodCount,
     winners: result.winCount,
     details: [],
   };
   
+  // --- +の判定（好走率とは独立、勝ち上がり頭数で決定）---
+  
+  if (result.winCount >= WINNERS_THRESHOLDS.PLUS_PLUS_PLUS) {
+    result.plusCount = 3;
+    result.plusLabel = '+++';
+  } else if (result.winCount >= WINNERS_THRESHOLDS.PLUS_PLUS) {
+    result.plusCount = 2;
+    result.plusLabel = '++';
+  } else if (result.winCount >= WINNERS_THRESHOLDS.PLUS) {
+    result.plusCount = 1;
+    result.plusLabel = '+';
+  }
+  
   // --- レベル判定 ---
   
-  // 判定に使う好走率（次1走目を優先）
-  const rateForJudgment = firstRunCount >= MIN_SAMPLE_FOR_CONFIDENT 
-    ? result.firstRunGoodRate 
-    : result.goodRunRate;
+  const rateForJudgment = result.firstRunGoodRate;
   
-  const sampleSize = firstRunCount >= MIN_SAMPLE_FOR_CONFIDENT
-    ? firstRunCount
-    : result.totalHorsesRun;
-  
-  // 母数不足チェック
-  if (sampleSize < MIN_SAMPLE_FOR_CONFIDENT) {
+  // 母数1頭のみの特殊処理
+  if (firstRunCount === 1) {
     result.isDataInsufficient = true;
+    result.level = 'UNKNOWN';
     
-    // 母数1でも1好走なら推論
-    if (result.goodRunCount >= 1 || result.winCount >= 1) {
-      // ラップ/時計が優秀ならハイレベル推論
-      if (raceInput?.lapString) {
-        result.lapLevelBoost = true;
-        result.level = 'B';
-        result.levelLabel = 'B';
-        result.commentData.details.push('1頭がすぐに勝ち上がっておりハイレベルの可能性');
-      } else {
-        result.level = 'PENDING';
-        result.levelLabel = '判定保留';
-        result.commentData.details.push('データ不足だが好走馬あり');
-      }
+    // 1頭が好走 or 勝ち上がり → UNKNOWN+（ハイレベルの可能性）
+    if (result.firstRunGoodCount >= 1) {
+      result.isUnknownWithPotential = true;
+      result.levelLabel = 'UNKNOWN+';
+      const winnerInfo = result.winCount >= 1 ? '勝ち上がり' : '好走（3着以内）';
+      result.commentData.details.push(`まだ1頭のみ出走だが${winnerInfo}。ハイレベルだった可能性あり`);
     } else {
-      result.level = 'PENDING';
-      result.levelLabel = '判定保留';
+      result.levelLabel = 'UNKNOWN';
+      result.commentData.details.push('出走1頭のみで判定不可');
     }
   }
-  // 低レベル判定
-  else if (sampleSize >= MIN_SAMPLE_FOR_LOW_LEVEL && rateForJudgment < RATE_THRESHOLDS.LOW) {
-    // 上位馬（勝ち馬）が多く勝ち上がっている場合はCにする
-    if (result.winCount >= 2) {
+  // 母数2頭以上で判定可能
+  else if (firstRunCount >= MIN_SAMPLE_FOR_JUDGMENT) {
+    // S判定: 80%以上
+    if (rateForJudgment >= RATE_THRESHOLDS.S) {
+      result.level = 'S';
+      result.levelLabel = 'S' + result.plusLabel;
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%の超ハイレベル戦`);
+    }
+    // A判定: 60%以上
+    else if (rateForJudgment >= RATE_THRESHOLDS.A) {
+      result.level = 'A';
+      result.levelLabel = 'A' + result.plusLabel;
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%のハイレベル戦`);
+    }
+    // B判定: 40%以上
+    else if (rateForJudgment >= RATE_THRESHOLDS.B) {
+      result.level = 'B';
+      result.levelLabel = 'B' + result.plusLabel;
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%でやや高いレベル`);
+    }
+    // C判定: 30%以上
+    else if (rateForJudgment >= RATE_THRESHOLDS.C) {
       result.level = 'C';
-      result.levelLabel = 'C';
-      result.commentData.details.push('好走率は低いが勝ち上がり馬は複数');
-    } else {
+      result.levelLabel = 'C' + result.plusLabel;
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%で標準レベル`);
+    }
+    // D判定: 20%以上
+    else if (rateForJudgment >= RATE_THRESHOLDS.D) {
+      result.level = 'D';
+      result.levelLabel = 'D' + result.plusLabel;
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%でやや低いレベル`);
+    }
+    // LOW判定: 20%未満
+    else {
       result.level = 'LOW';
-      result.levelLabel = '低レベル';
-      result.commentData.details.push('好走馬が少なく低レベル戦');
+      result.levelLabel = 'LOW';
+      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%の低レベル戦`);
     }
   }
-  // S判定
-  else if (rateForJudgment >= RATE_THRESHOLDS.S) {
-    result.level = result.winCount >= WINNERS_FOR_PLUS ? 'S+' : 'S';
-    result.levelLabel = result.level;
-    result.hasPlus = result.winCount >= WINNERS_FOR_PLUS;
-    result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%の超ハイレベル戦`);
-  }
-  // A判定
-  else if (rateForJudgment >= RATE_THRESHOLDS.A) {
-    result.level = result.winCount >= WINNERS_FOR_PLUS ? 'A' : 'A';  // Aに+は付けない仕様
-    result.levelLabel = result.winCount >= WINNERS_FOR_PLUS ? 'A+' : 'A';
-    result.hasPlus = result.winCount >= WINNERS_FOR_PLUS;
-    result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%のハイレベル戦`);
-  }
-  // B判定
-  else if (rateForJudgment >= RATE_THRESHOLDS.B) {
-    result.level = 'B';
-    result.levelLabel = result.winCount >= WINNERS_FOR_PLUS ? 'B+' : 'B';
-    result.hasPlus = result.winCount >= WINNERS_FOR_PLUS;
-    result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%でやや高いレベル`);
-  }
-  // C判定（どれにも当てはまらない）
+  // 母数0頭（ありえないが念のため）
   else {
-    result.level = 'C';
-    result.levelLabel = 'C';
-    result.commentData.details.push('標準的なレベル');
+    result.isDataInsufficient = true;
+    result.level = 'UNKNOWN';
+    result.levelLabel = 'UNKNOWN';
   }
   
   // --- コメント生成 ---
@@ -260,10 +290,13 @@ export function analyzeRaceLevel(
  * 馬柱用の短縮コメント
  */
 function generateDisplayComment(result: RaceLevelResult): string {
-  const { level, levelLabel, winCount, commentData } = result;
+  const { level, levelLabel, winCount, isUnknownWithPotential, isDataInsufficient } = result;
   
-  if (level === 'PENDING') {
-    return result.isDataInsufficient ? 'データ不足' : '判定保留';
+  if (level === 'UNKNOWN') {
+    if (isUnknownWithPotential) {
+      return 'UNKNOWN+（ハイレベル可能性）';
+    }
+    return isDataInsufficient ? 'データ不足' : 'UNKNOWN';
   }
   
   if (level === 'LOW') {
@@ -283,11 +316,15 @@ function generateDisplayComment(result: RaceLevelResult): string {
  * 「5頭走って3頭好走」形式
  */
 function generateAIComment(result: RaceLevelResult): string {
-  const { level, commentData, winCount, isDataInsufficient } = result;
+  const { level, levelLabel, commentData, winCount, plusCount, isUnknownWithPotential, isDataInsufficient } = result;
   const { totalHorses, goodRuns, details } = commentData;
   
-  if (isDataInsufficient && level === 'PENDING') {
-    return 'まだ次走データが不足しており判定保留';
+  // UNKNOWN判定
+  if (level === 'UNKNOWN') {
+    if (isUnknownWithPotential) {
+      return `まだ次走出走は1頭のみだが、その馬が${winCount >= 1 ? '勝ち上がり' : '好走'}。ハイレベルだった可能性あり`;
+    }
+    return 'まだ次走データが不足しており判定不可';
   }
   
   const parts: string[] = [];
@@ -306,7 +343,6 @@ function generateAIComment(result: RaceLevelResult): string {
   
   // レベル判定結果
   switch (level) {
-    case 'S+':
     case 'S':
       parts.push('超ハイレベル戦');
       break;
@@ -319,9 +355,21 @@ function generateAIComment(result: RaceLevelResult): string {
     case 'C':
       parts.push('標準的なレベル');
       break;
+    case 'D':
+      parts.push('やや低いレベル');
+      break;
     case 'LOW':
       parts.push('低レベル戦');
       break;
+  }
+  
+  // +の評価コメント
+  if (plusCount >= 3) {
+    parts.push('勝ち上がり多数で非常に高評価');
+  } else if (plusCount >= 2) {
+    parts.push('勝ち上がり多く高評価');
+  } else if (plusCount >= 1) {
+    parts.push('勝ち上がり複数で評価プラス');
   }
   
   // 詳細を追加
@@ -363,19 +411,19 @@ export function buildNextRaceQuery(raceId: string, targetHorses: string[]): stri
  */
 export function getLevelColor(level: RaceLevelResult['level']): string {
   switch (level) {
-    case 'S+':
-      return '#FFD700';  // ゴールド
     case 'S':
-      return '#FFA500';  // オレンジ
+      return '#FFD700';  // ゴールド
     case 'A':
-      return '#4CAF50';  // グリーン
+      return '#FFA500';  // オレンジ
     case 'B':
-      return '#2196F3';  // ブルー
+      return '#4CAF50';  // グリーン
     case 'C':
+      return '#2196F3';  // ブルー
+    case 'D':
       return '#9E9E9E';  // グレー
     case 'LOW':
       return '#F44336';  // レッド
-    case 'PENDING':
+    case 'UNKNOWN':
       return '#BDBDBD';  // ライトグレー
     default:
       return '#9E9E9E';
@@ -391,19 +439,19 @@ export function getLevelBadgeStyle(level: RaceLevelResult['level']): {
   border: string;
 } {
   switch (level) {
-    case 'S+':
-      return { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-400' };
     case 'S':
-      return { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-400' };
+      return { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-400' };
     case 'A':
-      return { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400' };
+      return { bg: 'bg-orange-100', text: 'text-orange-800', border: 'border-orange-400' };
     case 'B':
-      return { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-400' };
+      return { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-400' };
     case 'C':
+      return { bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-400' };
+    case 'D':
       return { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-300' };
     case 'LOW':
       return { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-400' };
-    case 'PENDING':
+    case 'UNKNOWN':
       return { bg: 'bg-gray-50', text: 'text-gray-400', border: 'border-gray-200' };
     default:
       return { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-300' };

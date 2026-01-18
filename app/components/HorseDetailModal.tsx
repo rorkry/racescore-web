@@ -5,13 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getCourseData, COURSE_DATABASE } from '@/lib/course-data/index';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
-import { RaceLevelBadge, getLevelScore, getLevelColor } from './RaceLevelBadge';
-
-type RaceLevel = 'S+' | 'S' | 'A' | 'B' | 'C' | 'LOW' | 'PENDING';
+import { RaceLevelBadge, getLevelScore, getLevelColor, getLevelLabel } from './RaceLevelBadge';
 
 interface RaceLevelInfo {
-  level: RaceLevel;
-  levelLabel: string;
+  level: string;        // "S", "A", "B", "C", "D", "LOW", "UNKNOWN"
+  levelLabel: string;   // "S+++", "A+", "C", "UNKNOWN+" など
   totalHorsesRun: number;
   goodRunCount: number;
   winCount: number;
@@ -210,19 +208,6 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<
   return null;
 };
 
-// レースレベルのラベル取得
-const getLevelLabel = (level: RaceLevel): string => {
-  switch (level) {
-    case 'S+': return '超ハイレベル';
-    case 'S': return 'ハイレベル';
-    case 'A': return '高レベル';
-    case 'B': return 'やや高い';
-    case 'C': return '標準';
-    case 'LOW': return '低レベル';
-    case 'PENDING': return '判定中';
-    default: return '';
-  }
-};
 
 // アニメーション用のバリアント
 const overlayVariants = {
@@ -634,8 +619,8 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
 
     // 5. 近3走レースレベル平均
     const recent3Levels = pastRaces.slice(0, 3)
-      .map(r => r.raceLevel?.level)
-      .filter((l): l is RaceLevel => !!l);
+      .map(r => r.raceLevel?.levelLabel)  // levelLabelを使用（"S+++", "A+" など）
+      .filter((l): l is string => !!l && l !== 'UNKNOWN');
     
     const avgLevelScore = recent3Levels.length > 0
       ? recent3Levels.reduce((sum, level) => sum + getLevelScore(level), 0) / recent3Levels.length
@@ -935,8 +920,8 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                     {pastRaces.length > 0 ? (
                       <div className="space-y-1.5">
                         {pastRaces.slice(0, 5).map((race, index) => {
-                          const level = race.raceLevel?.level || 'PENDING';
-                          const levelLabel = getLevelLabel(level);
+                          const levelLabel = race.raceLevel?.levelLabel || 'UNKNOWN';
+                          const levelDesc = getLevelLabel(levelLabel);
                           const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
                           const dateStr = race.date ? race.date.replace(/\./g, '/').slice(5) : ''; // MM/DD形式
                           const marginFloat = parseFloat(race.margin);
@@ -956,14 +941,10 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                               <span className="text-[10px] text-slate-400 w-12 shrink-0">{dateStr}</span>
                               
                               {/* レースレベルバッジ */}
-                              {level !== 'PENDING' ? (
-                                <RaceLevelBadge level={level} size="sm" />
-                              ) : (
-                                <span className="text-[10px] text-slate-500 px-1.5 py-0.5 bg-slate-800 rounded">判定中</span>
-                              )}
+                              <RaceLevelBadge level={levelLabel} size="sm" />
                               
                               {/* レベル説明 */}
-                              <span className="text-[10px] text-slate-400 flex-1 truncate">{levelLabel}</span>
+                              <span className="text-[10px] text-slate-400 flex-1 truncate">{levelDesc}</span>
                               
                               {/* 着差 */}
                               <span className={`text-[10px] font-mono ${marginFloat <= 0.3 ? 'text-green-400' : marginFloat >= 1.0 ? 'text-red-400' : 'text-slate-400'}`}>

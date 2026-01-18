@@ -97,11 +97,12 @@ export interface PastRaceInfo {
   historicalLapData?: HistoricalLapRecord[];
   // レースレベル判定（API側で取得）
   raceLevel?: {
-    level: 'S+' | 'S' | 'A' | 'B' | 'C' | 'LOW' | 'PENDING';
-    levelLabel: string;
+    level: 'S' | 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN';  // 基本レベル
+    levelLabel: string;   // "S+++", "A+", "C", "UNKNOWN+" など
     totalHorsesRun: number;
     goodRunCount: number;
     winCount: number;
+    plusCount: number;    // +の数（0, 1, 2, 3）
     aiComment: string;
   };
   // レースID（レースレベル取得用）
@@ -461,7 +462,9 @@ export class SagaBrain {
   /**
    * レースレベル分析
    * 過去走のレースレベルを評価し、コメントを生成
-   * 「5頭走って3頭好走」形式でおれAI用コメントを出力
+   * 
+   * レベル: S, A, B, C, D, LOW, UNKNOWN
+   * +: 勝ち上がり2頭以上、++: 3頭以上、+++: 4頭以上
    */
   private analyzeRaceLevel(input: HorseAnalysisInput, analysis: SagaAnalysis): void {
     const pastRaces = input.pastRaces || [];
@@ -474,56 +477,74 @@ export class SagaBrain {
     // 過去5走までを分析
     for (let i = 0; i < Math.min(5, pastRaces.length); i++) {
       const race = pastRaces[i];
-      const level = race.raceLevel;
+      const raceLevel = race.raceLevel;
       
-      if (!level) continue;
+      if (!raceLevel) continue;
 
       const raceLabel = i === 0 ? '前走' : `${i + 1}走前`;
       const placeInfo = `${race.place}${race.surface}${race.distance}m`;
+      const levelLabel = raceLevel.levelLabel;  // "S+++", "A+", "C" など
+      const baseLevel = raceLevel.level;        // "S", "A", "B", "C", "D", "LOW", "UNKNOWN"
+      const plusCount = raceLevel.plusCount || 0;
 
       // レベル別にコメント生成
-      switch (level.level) {
-        case 'S+':
+      switch (baseLevel) {
         case 'S':
           highLevelCount++;
-          if (level.totalHorsesRun > 0) {
+          if (raceLevel.totalHorsesRun > 0) {
+            const plusText = plusCount >= 3 ? '（勝ち上がり多数）' : plusCount >= 2 ? '（勝ち上がり複数）' : '';
             levelComments.push(
-              `${raceLabel}（${placeInfo}）は${level.totalHorsesRun}頭が次走出走し${level.goodRunCount}頭好走、${level.winCount}頭勝ち上がりの超ハイレベル戦`
+              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${raceLevel.goodRunCount}頭好走・${raceLevel.winCount}頭勝ち上がりの超ハイレベル戦${plusText}`
             );
           } else {
             levelComments.push(`${raceLabel}（${placeInfo}）は超ハイレベル戦`);
           }
-          // スコア加点（直近ほど影響大）
-          const sBonus = i === 0 ? 5 : i <= 2 ? 3 : 2;
+          // スコア加点（直近ほど影響大、+の数に応じてボーナス）
+          const sBonus = (i === 0 ? 5 : i <= 2 ? 3 : 2) + plusCount;
           analysis.score += sBonus;
           break;
 
         case 'A':
           highLevelCount++;
-          if (level.totalHorsesRun > 0) {
+          if (raceLevel.totalHorsesRun > 0) {
             levelComments.push(
-              `${raceLabel}（${placeInfo}）は${level.totalHorsesRun}頭が次走出走し${level.goodRunCount}頭好走のハイレベル戦`
+              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${raceLevel.goodRunCount}頭好走のハイレベル戦`
             );
           } else {
             levelComments.push(`${raceLabel}（${placeInfo}）はハイレベル戦`);
           }
-          const aBonus = i === 0 ? 3 : i <= 2 ? 2 : 1;
+          const aBonus = (i === 0 ? 3 : i <= 2 ? 2 : 1) + plusCount;
           analysis.score += aBonus;
           break;
 
         case 'B':
-          if (level.totalHorsesRun > 0 && level.goodRunCount > 0) {
+          if (raceLevel.totalHorsesRun > 0 && raceLevel.goodRunCount > 0) {
             levelComments.push(
-              `${raceLabel}（${placeInfo}）は${level.totalHorsesRun}頭中${level.goodRunCount}頭好走でやや高いレベル`
+              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${raceLevel.goodRunCount}頭好走でやや高いレベル`
             );
+          }
+          // +があればややプラス評価
+          if (plusCount >= 1) {
+            analysis.score += plusCount;
+          }
+          break;
+
+        case 'C':
+        case 'D':
+          // C, Dでも+があれば言及
+          if (plusCount >= 2 && raceLevel.winCount >= 2) {
+            levelComments.push(
+              `${raceLabel}（${placeInfo}）は好走率は標準だが${raceLevel.winCount}頭勝ち上がりで評価上昇`
+            );
+            analysis.score += plusCount;
           }
           break;
 
         case 'LOW':
           lowLevelCount++;
-          if (level.totalHorsesRun > 0) {
+          if (raceLevel.totalHorsesRun > 0) {
             levelComments.push(
-              `${raceLabel}（${placeInfo}）は${level.totalHorsesRun}頭中${level.goodRunCount}頭好走と低レベル戦`
+              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${raceLevel.goodRunCount}頭好走と低レベル戦`
             );
           } else {
             levelComments.push(`${raceLabel}（${placeInfo}）は低レベル戦`);
@@ -533,7 +554,15 @@ export class SagaBrain {
           analysis.score += lowPenalty;
           break;
 
-        // C, PENDING は特にコメントしない
+        case 'UNKNOWN':
+          // UNKNOWN+（1頭のみ出走で好走）の特殊処理
+          if (levelLabel.includes('+')) {
+            levelComments.push(
+              `${raceLabel}（${placeInfo}）は出走1頭のみだが好走。ハイレベルの可能性あり`
+            );
+            analysis.score += 1;  // ややプラス評価
+          }
+          break;
       }
     }
 
@@ -552,36 +581,38 @@ export class SagaBrain {
       // 前走のレースレベルと着差を組み合わせた詳細分析
       const lastRace = pastRaces[0];
       if (lastRace?.raceLevel) {
-        const level = lastRace.raceLevel.level;
+        const baseLevel = lastRace.raceLevel.level;
+        const levelLabel = lastRace.raceLevel.levelLabel;
         const marginNum = parseFloat(lastRace.margin || '0');
-        const levelLabel = this.getRaceLevelLabel(level);
+        const levelDesc = this.getRaceLevelLabel(baseLevel);
+        const plusCount = lastRace.raceLevel.plusCount || 0;
         
         // ハイレベル戦での詳細分析
-        if (level === 'S+' || level === 'S' || level === 'A') {
+        if (baseLevel === 'S' || baseLevel === 'A') {
           if (lastRace.finishPosition <= 3) {
             // 好走
-            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${lastRace.finishPosition}着好走。力は確か`);
+            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${lastRace.finishPosition}着好走。力は確か`);
             analysis.tags.push('ハイレベル戦好走');
-            analysis.score += 4;
+            analysis.score += 4 + plusCount;
           } else if (lastRace.finishPosition <= 5) {
             // 掲示板確保
-            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で掲示板確保。相手弱化で巻き返し候補`);
+            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で掲示板確保。相手弱化で巻き返し候補`);
             analysis.tags.push('ハイレベル戦健闘');
-            analysis.score += 2;
+            analysis.score += 2 + plusCount;
           } else if (!isNaN(marginNum) && marginNum <= 0.5) {
             // 着差小さい
-            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${marginNum}秒差。この程度の差なら巻き返しの期待十分`);
+            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${marginNum}秒差。この程度の差なら巻き返しの期待十分`);
             analysis.tags.push('ハイレベル戦僅差');
-            analysis.score += 3;
+            analysis.score += 3 + plusCount;
           } else if (!isNaN(marginNum) && marginNum <= 1.0) {
             // 1秒以内
-            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${marginNum}秒差。相手次第で浮上余地あり`);
+            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${marginNum}秒差。相手次第で浮上余地あり`);
             analysis.score += 1;
           }
         }
 
         // 低レベル戦での警告
-        if (level === 'LOW') {
+        if (baseLevel === 'LOW') {
           if (lastRace.finishPosition <= 2) {
             analysis.warnings.push(`前走は低レベル戦での${lastRace.finishPosition}着。相手強化で割引必要`);
             analysis.score -= 3;
@@ -589,6 +620,12 @@ export class SagaBrain {
             analysis.warnings.push('前走は低レベル戦でも掲示板止まり。今回も厳しいか');
             analysis.score -= 4;
           }
+        }
+
+        // UNKNOWN+の特殊処理
+        if (baseLevel === 'UNKNOWN' && levelLabel.includes('+')) {
+          analysis.comments.push('前走はまだ1頭のみ出走だがその馬が好走。ハイレベルだった可能性あり');
+          analysis.score += 1;
         }
 
         // Cレベル（標準）での分析
@@ -606,12 +643,13 @@ export class SagaBrain {
    */
   private getRaceLevelLabel(level: string): string {
     switch (level) {
-      case 'S+': return '超ハイレベル';
-      case 'S': return 'ハイレベル';
-      case 'A': return '高レベル';
+      case 'S': return '超ハイレベル';
+      case 'A': return 'ハイレベル';
       case 'B': return 'やや高い';
       case 'C': return '標準';
+      case 'D': return 'やや低い';
       case 'LOW': return '低レベル';
+      case 'UNKNOWN': return '判定中';
       default: return '';
     }
   }
