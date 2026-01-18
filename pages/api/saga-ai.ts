@@ -882,7 +882,7 @@ export default async function handler(
         ).values()
       ).slice(0, 50);
 
-      const pastRacesWithIndices = pastRacesRaw.map((race: any) => {
+      const pastRacesWithIndices = await Promise.all(pastRacesRaw.map(async (race: any) => {
         const raceIdBase = race.race_id_new_no_horse_num || '';
         const horseNumStr = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNumStr}`;
@@ -950,7 +950,7 @@ export default async function handler(
           // レースレベル判定用
           raceId: raceIdBase,  // race_id_new_no_horse_num（馬番なし）
         };
-      });
+      }));
 
       const distanceFilteredRaces = pastRacesWithIndices.filter(r => {
         const distDiff = Math.abs(r.distance - distance);
