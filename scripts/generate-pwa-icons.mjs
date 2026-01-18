@@ -36,34 +36,53 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
  * - 薄い縦線パターン（芝生のテクスチャ）
  */
 function createTurfBackgroundSvg(size) {
-  // 白背景 + はっきり見える縦線 + 右に行くにつれて緑グラデーション
-  const lineSpacing = size > 100 ? 3 : 2; // 縦線の間隔（狭め）
+  // 左が緑 → 右が白のグラデーション + 背景に馴染む縦線
+  const lineSpacing = 3; // 縦線の間隔（固定）
+  
+  // 縦線を直接描画（位置に応じて色と透明度を調整）
+  let lines = '';
+  for (let x = 0; x < size; x += lineSpacing) {
+    const progress = x / size; // 0（左）〜 1（右）
+    
+    // 左側は濃い緑、右側はグレーに色を変化
+    // 濃い緑(16,185,129) → グレー(180,180,180)
+    const r = Math.round(16 + (180 - 16) * progress);
+    const g = Math.round(185 + (180 - 185) * progress);
+    const b = Math.round(129 + (180 - 129) * progress);
+    
+    // 透明度も調整（左0.6 → 右0.25）- より濃く
+    const opacity = 0.6 - (progress * 0.35);
+    
+    lines += `<line x1="${x}" y1="0" x2="${x}" y2="${size}" stroke="rgb(${r},${g},${b})" stroke-width="1" stroke-opacity="${opacity.toFixed(2)}"/>`;
+  }
   
   return `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <!-- 右に向かって緑がかかるグラデーション -->
-        <linearGradient id="rightGreenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0" />
-          <stop offset="60%" style="stop-color:#dcfce7;stop-opacity:0.5" />
-          <stop offset="100%" style="stop-color:#bbf7d0;stop-opacity:0.8" />
+        <!-- 左から右へ：濃い緑 → 白のグラデーション -->
+        <linearGradient id="greenToWhiteGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#a7f3d0"/>
+          <stop offset="25%" stop-color="#d1fae5"/>
+          <stop offset="50%" stop-color="#ecfdf5"/>
+          <stop offset="100%" stop-color="#ffffff"/>
         </linearGradient>
         
-        <!-- 芝生の縦線パターン（はっきり見える濃さ） -->
-        <pattern id="turfLines" patternUnits="userSpaceOnUse" width="${lineSpacing}" height="${size}">
-          <rect width="${lineSpacing}" height="${size}" fill="transparent"/>
-          <line x1="1" y1="0" x2="1" y2="${size}" stroke="rgba(34, 197, 94, 0.35)" stroke-width="1"/>
-        </pattern>
+        <!-- 上下の深み（微妙な陰影） -->
+        <linearGradient id="verticalDepth" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#000000" stop-opacity="0.015"/>
+          <stop offset="50%" stop-color="#000000" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#000000" stop-opacity="0.02"/>
+        </linearGradient>
       </defs>
       
-      <!-- 白背景 -->
-      <rect width="${size}" height="${size}" fill="#ffffff"/>
+      <!-- グラデーション背景（左緑→右白） -->
+      <rect width="${size}" height="${size}" fill="url(#greenToWhiteGrad)"/>
       
-      <!-- 右に向かう緑グラデーション -->
-      <rect width="${size}" height="${size}" fill="url(#rightGreenGrad)"/>
+      <!-- 芝生の縦線（左は濃い緑、右はグレー） -->
+      ${lines}
       
-      <!-- 芝生の縦線パターン -->
-      <rect width="${size}" height="${size}" fill="url(#turfLines)"/>
+      <!-- 微妙な上下の深み -->
+      <rect width="${size}" height="${size}" fill="url(#verticalDepth)"/>
     </svg>
   `;
 }
