@@ -21,9 +21,10 @@ export async function GET(request: NextRequest) {
     
     if (!targetRaceId) {
       const latestRace = await db.prepare(`
-        SELECT DISTINCT race_id, date
+        SELECT race_id, date
         FROM umadata
         WHERE date IS NOT NULL
+        GROUP BY race_id, date
         ORDER BY date DESC
         LIMIT 1
       `).get<{ race_id: string; date: string }>();
@@ -56,14 +57,15 @@ export async function GET(request: NextRequest) {
 
     // Step 3: 上位3頭を取得（数値フィルタ付き）
     const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
-      SELECT DISTINCT horse_name, finish_position
+      SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
         AND finish_position ~ '^[0-9]+$'
         AND finish_position::INTEGER <= 3
-      ORDER BY finish_position::INTEGER
+      GROUP BY horse_name, finish_position
+      ORDER BY MIN(finish_position::INTEGER)
     `, [targetRaceId]);
 
     // Step 4: 上位馬の次走データを取得
