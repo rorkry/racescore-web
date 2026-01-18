@@ -59,7 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (date && place) {
       // 特定の日付・場所のレース一覧を取得
       const yearFilter = year ? parseInt(year as string, 10) : null;
-      const races = db.prepare(`
+      const races = await db.prepare(`
         SELECT DISTINCT 
           date, 
           place, 
@@ -69,8 +69,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           distance,
           COUNT(*) as field_size
         FROM wakujun
-        WHERE date = ? AND place = ? ${yearFilter ? 'AND year = ?' : ''}
-        GROUP BY date, place, race_number
+        WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
+        GROUP BY date, place, race_number, class_name_1, track_type, distance
         ORDER BY CAST(race_number AS INTEGER)
       `).all(...(yearFilter ? [date, place, yearFilter] : [date, place]));
 
@@ -85,17 +85,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const yearFilter = year ? parseInt(year as string, 10) : null;
       console.log(`[api/races] date parameter: "${dateStr}", year: ${yearFilter}`);
       
-      const places = db.prepare(`
+      const places = await db.prepare(`
         SELECT DISTINCT place
         FROM wakujun
-        WHERE date = ? ${yearFilter ? 'AND year = ?' : ''}
+        WHERE date = $1 ${yearFilter ? 'AND year = $2' : ''}
         ORDER BY place
       `).all(...(yearFilter ? [dateStr, yearFilter] : [dateStr]));
 
       console.log(`[api/races] found places: ${places.length}`, places.map((p: any) => p.place));
 
-      const result = places.map((p: any) => {
-        const races = db.prepare(`
+      const result = await Promise.all(places.map(async (p: any) => {
+        const races = await db.prepare(`
           SELECT DISTINCT 
             date, 
             place, 
@@ -105,8 +105,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             distance,
             COUNT(*) as field_size
           FROM wakujun
-          WHERE date = ? AND place = ? ${yearFilter ? 'AND year = ?' : ''}
-          GROUP BY date, place, race_number
+          WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
+          GROUP BY date, place, race_number, class_name_1, track_type, distance
           ORDER BY CAST(race_number AS INTEGER)
         `).all(...(yearFilter ? [dateStr, p.place, yearFilter] : [dateStr, p.place]));
 
@@ -114,7 +114,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           place: p.place,
           races
         };
-      });
+      }));
 
       console.log(`[api/races] returning venues: ${result.length}`);
       const response = { date: dateStr, venues: result };
@@ -125,10 +125,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else if (year) {
       // 特定の年の全日付を取得
       const yearFilter = parseInt(year as string, 10);
-      const datesForYear = db.prepare(`
+      const datesForYear = await db.prepare(`
         SELECT DISTINCT date
         FROM wakujun
-        WHERE year = ? AND date GLOB '[0-9][0-9][0-9][0-9]'
+        WHERE year = $1 AND date ~ '^[0-9]{4}$'
         ORDER BY date DESC
       `).all(yearFilter);
 
@@ -139,7 +139,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(response);
     } else {
       // 利用可能な年を取得
-      const years = db.prepare(`
+      const years = await db.prepare(`
         SELECT DISTINCT year
         FROM wakujun
         WHERE year IS NOT NULL

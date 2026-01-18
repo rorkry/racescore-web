@@ -46,9 +46,9 @@ export default async function handler(
     const currentRaceDateNum = getCurrentRaceDateNumber(String(date), year as string | null);
     
     // wakujunテーブルから当日の出走馬リストを取得
-    const raceCard = db.prepare(`
+    const raceCard = await db.prepare(`
       SELECT * FROM wakujun 
-      WHERE date = ? AND place = ? AND race_number = ?
+      WHERE date = $1 AND place = $2 AND race_number = $3
       ORDER BY CAST(umaban AS INTEGER)
     `).all(date, place, raceNumber);
     
@@ -61,14 +61,14 @@ export default async function handler(
     
     // 各馬の過去走データを取得（日付フィルタリング適用）
     const firstHorse = raceCard[0] as any;
-    const horsesWithHistory = raceCard.map((horse: any) => {
+    const horsesWithHistory = await Promise.all(raceCard.map(async (horse: any) => {
       // 馬名の前後の空白を削除
       const horseName = horse.umamei.trim();
       
       // umadataテーブルから過去走データを取得（最新10走、日付フィルタ後に5走に絞る）
-      const allHistory = db.prepare(`
+      const allHistory = await db.prepare(`
         SELECT * FROM umadata 
-        WHERE horse_name = ?
+        WHERE horse_name = $1
         ORDER BY date DESC
         LIMIT 10
       `).all(horseName) as any[];
@@ -82,7 +82,7 @@ export default async function handler(
         ...horse,
         history,
       };
-    });
+    }));
     
     res.status(200).json({
       success: true,

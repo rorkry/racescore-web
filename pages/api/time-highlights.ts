@@ -92,18 +92,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let raceQuery = `
       SELECT DISTINCT w.race_number, w.place, w.umamei, w.distance, w.track_type
       FROM wakujun w
-      WHERE w.date = ?
+      WHERE w.date = $1
     `;
     const params: any[] = [date];
+    let paramIndex = 2;
 
     if (place) {
-      raceQuery += ` AND w.place LIKE ?`;
+      raceQuery += ` AND w.place LIKE $${paramIndex}`;
       params.push(`%${place}%`);
+      paramIndex++;
     }
 
     raceQuery += ` ORDER BY w.place, CAST(w.race_number AS INTEGER)`;
 
-    const entries = db.prepare(raceQuery).all(...params) as any[];
+    const entries = await db.prepare(raceQuery).all(...params) as any[];
 
     if (!entries || entries.length === 0) {
       return res.json({ highlights: [] });
@@ -139,10 +141,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const cleanName = horseName.replace(/^[\$\*＄＊\s　]+/, '').trim();
 
         // 過去走を取得（直近5走）
-        const allPastRaces = db.prepare(`
+        const allPastRaces = await db.prepare(`
           SELECT date, place, distance, class_name, finish_time, track_condition
           FROM umadata
-          WHERE TRIM(horse_name) = ?
+          WHERE TRIM(horse_name) = $1
           ORDER BY date DESC
           LIMIT 20
         `).all(cleanName) as any[];
@@ -170,8 +172,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const dateParts = cleanedDate.replace(/[\/\-]/g, '.').split('.');
           if (dateParts.length !== 3) continue;
 
-          const [year, month, day] = dateParts.map(Number);
-          const raceDate = new Date(year, month - 1, day);
+          const [raceYear, month, day] = dateParts.map(Number);
+          const raceDate = new Date(raceYear, month - 1, day);
 
           const prevDate = new Date(raceDate);
           prevDate.setDate(prevDate.getDate() - 1);
@@ -196,12 +198,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const normalizedPlace = (race.place || '').replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
 
           // 同コース・同距離の勝ち馬を検索（6日付パターン対応）
-          const comparisons = db.prepare(`
+          const comparisons = await db.prepare(`
             SELECT class_name, finish_time, track_condition
             FROM umadata
-            WHERE date IN (?, ?, ?, ?, ?, ?)
-              AND place LIKE ?
-              AND distance = ?
+            WHERE date IN ($1, $2, $3, $4, $5, $6)
+              AND place LIKE $7
+              AND distance = $8
               AND finish_position = '１'
           `).all(dateRange[0], dateRange[1], dateRange[2], dateRange[3], dateRange[4], dateRange[5], `%${normalizedPlace}%`, race.distance) as any[];
 

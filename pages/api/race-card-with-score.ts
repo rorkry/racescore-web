@@ -225,9 +225,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ========================================
     // STEP 1: 出走馬を取得（1クエリ）
     // ========================================
-    const horses = db.prepare(`
+    const horses = await db.prepare(`
       SELECT * FROM wakujun
-      WHERE date = ? AND place = ? AND race_number = ? ${yearFilter ? 'AND year = ?' : ''}
+      WHERE date = $1 AND place = $2 AND race_number = $3 ${yearFilter ? 'AND year = $4' : ''}
       ORDER BY CAST(umaban AS INTEGER)
     `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
@@ -240,9 +240,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (!horses || horses.length === 0) {
       // yearフィルタなしでも試行
-      const horsesWithoutYear = db.prepare(`
+      const horsesWithoutYear = await db.prepare(`
         SELECT * FROM wakujun
-        WHERE date = ? AND place = ? AND race_number = ?
+        WHERE date = $1 AND place = $2 AND race_number = $3
         ORDER BY CAST(umaban AS INTEGER)
       `).all(date, place, raceNumber) as any[];
       console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
@@ -296,8 +296,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // STEP 2: 全馬の過去走データを一括取得（1クエリ）
     // ========================================
     // プレースホルダーを動的に生成
-    const placeholders = uniqueHorseNames.map(() => '?').join(',');
-    const allPastRacesRaw = db.prepare(`
+    const placeholders = uniqueHorseNames.map((_, i) => `$${i + 1}`).join(',');
+    const allPastRacesRaw = await db.prepare(`
       SELECT * FROM umadata
       WHERE TRIM(horse_name) IN (${placeholders})
       ORDER BY horse_name, date DESC
@@ -387,8 +387,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 指数を一括取得（1クエリ）
     const indicesMap = new Map<string, any>();
     if (allIndexIds.length > 0) {
-      const indexPlaceholders = allIndexIds.map(() => '?').join(',');
-      const allIndices = db.prepare(`
+      const indexPlaceholders = allIndexIds.map((_, i) => `$${i + 1}`).join(',');
+      const allIndices = await db.prepare(`
         SELECT race_id, L4F, T2F, potential, revouma, makikaeshi, cushion
         FROM indices
         WHERE race_id IN (${indexPlaceholders})
