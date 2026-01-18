@@ -45,13 +45,13 @@ function createTurfBackgroundSvg(size) {
   for (let x = 0; x < size; x += lineSpacing) {
     const progress = x / size; // 0（左）〜 1（右）
     
-    // 単色：緑の縦線（全体同じ色）
-    const r = 34;
-    const g = 197;
-    const b = 94;
+    // 薄緑の縦線（白背景に映える色）
+    const r = 134;
+    const g = 239;
+    const b = 172;  // #86efac (green-300)
     
-    // 透明度は固定（スマホで見えるレベル）
-    const opacity = 0.5;
+    // 透明度（しっかり認識できるレベル）
+    const opacity = 0.6;
     
     lines += `<line x1="${x}" y1="0" x2="${x}" y2="${size}" stroke="rgb(${r},${g},${b})" stroke-width="${lineWidth}" stroke-opacity="${opacity.toFixed(2)}"/>`;
   }
@@ -59,10 +59,10 @@ function createTurfBackgroundSvg(size) {
   return `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <!-- 単色の薄緑背景 -->
+        <!-- 白背景 -->
         <linearGradient id="greenToWhiteGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#d1fae5"/>
-          <stop offset="100%" stop-color="#d1fae5"/>
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#ffffff"/>
         </linearGradient>
         
         <!-- 上下の深み（微妙な陰影） -->
