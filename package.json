@@ -12,7 +12,7 @@
     "lint": "next lint",
     "generate-courses": "node scripts/generate-course-db.js",
     "setup-admin": "tsx scripts/setup-admin.ts",
-    "postinstall": "npm rebuild || true"
+    "postinstall": "prisma generate || true"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
@@ -46,18 +46,18 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/node": "^20.17.48",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.23",
     "eslint": "9.25.1",
     "eslint-config-next": "15.3.1",
-    "lightningcss": "^1.30.2",
+    "postcss": "^8.5.6",
     "prisma": "^6.7.0",
     "sharp": "^0.34.5",
-    "tailwindcss": "^4",
+    "tailwindcss": "^3.4.19",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"

@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --background: #0f1a14;
@@ -12,13 +14,10 @@
   --gold-main: #d4af37;
   --gold-light: #fbbf24;
   --dirt: #78350f;
-}
-
-@theme inline {
+  
+  /* カラー変数 */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
   
   /* 競馬カラー */
   --color-turf-50: #f0fdf4;
