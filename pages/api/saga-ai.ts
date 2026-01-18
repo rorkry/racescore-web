@@ -584,6 +584,26 @@ async function getHistoricalLapData(
 }
 
 // クラス名をクエリ用に正規化
+// クラス名から年齢条件を抽出
+function extractAgeCondition(className: string): string {
+  if (!className) return '';
+  if (className.includes('2歳') || className.includes('新馬')) return '2歳';
+  if (className.includes('3歳')) return '3歳';
+  if (className.includes('4歳以上') || className.includes('3歳以上')) return '古馬';
+  return '';
+}
+
+// 性別を抽出（seibetsu または gender_age から）
+function extractGender(horse: any): '牡' | '牝' | 'セ' | undefined {
+  const seibetsu = horse.seibetsu || '';
+  const genderAge = horse.gender_age || horse.nenrei_display || '';
+  
+  if (seibetsu.includes('牝') || genderAge.includes('牝')) return '牝';
+  if (seibetsu.includes('牡') || genderAge.includes('牡')) return '牡';
+  if (seibetsu.includes('セ') || genderAge.includes('セ')) return 'セ';
+  return undefined;
+}
+
 function normalizeClassForQuery(className: string): string {
   if (!className) return 'unknown';
   const c = className.trim();
@@ -850,6 +870,12 @@ export default async function handler(
     const surface = raceInfo.track_type?.includes('芝') ? '芝' : 'ダ';
     const distance = parseInt(raceInfo.distance || '0', 10);
     const place = normalizedPlace;
+    
+    // 牝馬限定戦・年齢条件の判定
+    const className = raceInfo.class_name_1 || raceInfo.class_name || '';
+    const isFilliesOnlyRace = className.includes('牝') || className.includes('フィリーズ');
+    const raceAgeCondition = extractAgeCondition(className);
+    const isAgeRestricted = raceAgeCondition === '2歳' || raceAgeCondition === '3歳';
 
     const memberIndices: { horseNum: number; T2F: number; L4F: number; kisoScore: number; relevantRaceCount?: number; potential?: number; makikaeshi?: number }[] = [];
     const horseDataList: { horse: any; pastRaces: any[]; distanceFilteredRaces?: any[]; indices: any; kisoScore?: number }[] = [];
@@ -960,6 +986,10 @@ export default async function handler(
           ownLast3F: parseFloat(race.last_3f || '0') || 0,          // 自身の上がり3F
           // 歴代比較用データ（1着レースのみ）
           historicalLapData,
+          // 牝馬限定戦・世代限定戦判定用
+          isMixedGenderRace: !(race.class_name || '').includes('牝') && !(race.class_name || '').includes('フィリーズ'),
+          isAgeRestrictedRace: (race.class_name || '').includes('2歳') || (race.class_name || '').includes('3歳') || (race.class_name || '').includes('新馬'),
+          raceAgeCondition: extractAgeCondition(race.class_name || ''),
           // レースレベル判定用
           raceId: raceIdBase,  // race_id（馬番なし）
         };
@@ -1136,6 +1166,11 @@ export default async function handler(
         kisoScore: kisoScore || 0,
         scoreDeviation: horse.score_deviation || 50,
         timeComparisonData,
+        // 牝馬限定戦・世代限定戦判定用
+        isFilliesOnlyRace,
+        gender: extractGender(horse),
+        raceAgeCondition,
+        isAgeRestricted,
       };
 
       horseInputs.push(input);
