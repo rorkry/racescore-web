@@ -28,14 +28,14 @@ export async function GET() {
     const db = getDb();
     
     // ユーザーIDを取得
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) {
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
     }
 
-    const marks = db.prepare(
+    const marks = await db.prepare(
       'SELECT id, horse_id, mark, note, created_at, updated_at FROM user_horse_marks WHERE user_id = ? ORDER BY updated_at DESC'
-    ).all(user.id) as DbHorseMark[];
+    ).all<DbHorseMark>(user.id);
 
     return NextResponse.json({ marks });
   } catch (error) {
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     
     // ユーザーIDを取得
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) {
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
     }
@@ -76,19 +76,19 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     // 既存の馬印をチェック
-    const existing = db.prepare(
+    const existing = await db.prepare(
       'SELECT id FROM user_horse_marks WHERE user_id = ? AND horse_id = ?'
-    ).get(user.id, horseId) as { id: string } | undefined;
+    ).get<{ id: string }>(user.id, horseId);
 
     if (existing) {
       // 更新
-      db.prepare(
+      await db.prepare(
         'UPDATE user_horse_marks SET mark = ?, note = ?, updated_at = ? WHERE id = ?'
       ).run(mark, note || null, now, existing.id);
     } else {
       // 新規作成
       const id = randomUUID();
-      db.prepare(
+      await db.prepare(
         'INSERT INTO user_horse_marks (id, user_id, horse_id, mark, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
       ).run(id, user.id, horseId, mark, note || null, now, now);
     }
@@ -118,12 +118,12 @@ export async function DELETE(request: NextRequest) {
     const db = getDb();
     
     // ユーザーIDを取得
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) {
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
     }
 
-    db.prepare('DELETE FROM user_horse_marks WHERE user_id = ? AND horse_id = ?').run(user.id, horseId);
+    await db.prepare('DELETE FROM user_horse_marks WHERE user_id = ? AND horse_id = ?').run(user.id, horseId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

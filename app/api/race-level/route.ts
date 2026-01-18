@@ -53,11 +53,12 @@ interface CachedRaceLevel {
 /**
  * キャッシュからレースレベルを取得
  */
-function getCachedLevel(db: ReturnType<typeof getDb>, raceId: string): RaceLevelResult | null {
-  const cached = db.prepare(`
+async function getCachedLevel(raceId: string): Promise<RaceLevelResult | null> {
+  const db = getDb();
+  const cached = await db.prepare(`
     SELECT * FROM race_levels 
-    WHERE race_id = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
-  `).get(raceId) as CachedRaceLevel | undefined;
+    WHERE race_id = ? AND (expires_at IS NULL OR expires_at > NOW())
+  `).get<CachedRaceLevel>(raceId);
   
   if (!cached) return null;
   
@@ -65,7 +66,7 @@ function getCachedLevel(db: ReturnType<typeof getDb>, raceId: string): RaceLevel
     level: cached.level as RaceLevelResult['level'],
     levelLabel: cached.level_label,
     totalHorsesRun: cached.total_horses_run,
-    totalRuns: cached.total_horses_run, // 近似値
+    totalRuns: cached.total_horses_run,
     goodRunCount: cached.good_run_count,
     firstRunGoodCount: cached.first_run_good_count,
     winCount: cached.win_count,
@@ -88,17 +89,33 @@ function getCachedLevel(db: ReturnType<typeof getDb>, raceId: string): RaceLevel
 /**
  * レースレベルをキャッシュに保存
  */
-function cacheLevel(db: ReturnType<typeof getDb>, raceId: string, result: RaceLevelResult): void {
+async function cacheLevel(raceId: string, result: RaceLevelResult): Promise<void> {
+  const db = getDb();
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + CACHE_EXPIRY_DAYS);
   
-  db.prepare(`
-    INSERT OR REPLACE INTO race_levels (
+  // PostgreSQLではINSERT ... ON CONFLICT ... DO UPDATE を使用
+  await db.query(`
+    INSERT INTO race_levels (
       race_id, level, level_label, total_horses_run, good_run_count,
       first_run_good_count, win_count, good_run_rate, first_run_good_rate,
       has_plus, ai_comment, display_comment, calculated_at, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-  `).run(
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), $13)
+    ON CONFLICT (race_id) DO UPDATE SET
+      level = EXCLUDED.level,
+      level_label = EXCLUDED.level_label,
+      total_horses_run = EXCLUDED.total_horses_run,
+      good_run_count = EXCLUDED.good_run_count,
+      first_run_good_count = EXCLUDED.first_run_good_count,
+      win_count = EXCLUDED.win_count,
+      good_run_rate = EXCLUDED.good_run_rate,
+      first_run_good_rate = EXCLUDED.first_run_good_rate,
+      has_plus = EXCLUDED.has_plus,
+      ai_comment = EXCLUDED.ai_comment,
+      display_comment = EXCLUDED.display_comment,
+      calculated_at = NOW(),
+      expires_at = EXCLUDED.expires_at
+  `, [
     raceId,
     result.level,
     result.levelLabel,
@@ -112,7 +129,7 @@ function cacheLevel(db: ReturnType<typeof getDb>, raceId: string, result: RaceLe
     result.aiComment,
     result.displayComment,
     expiresAt.toISOString()
-  );
+  ]);
 }
 
 export async function GET(request: NextRequest) {
@@ -129,7 +146,7 @@ export async function GET(request: NextRequest) {
     
     // 1. キャッシュチェック
     if (!skipCache) {
-      const cached = getCachedLevel(db, raceId);
+      const cached = await getCachedLevel(raceId);
       if (cached) {
         return NextResponse.json({
           raceId,
@@ -140,26 +157,26 @@ export async function GET(request: NextRequest) {
     }
     
     // 2. 対象レースの情報を取得
-    const raceInfo = db.prepare(`
+    const raceInfo = await db.prepare(`
       SELECT 
         date, place, distance, class_name, track_condition, work_1s
       FROM umadata 
       WHERE race_id_new_no_horse_num = ?
       LIMIT 1
-    `).get(raceId) as RaceInfoRow | undefined;
+    `).get<RaceInfoRow>(raceId);
     
     if (!raceInfo) {
       return NextResponse.json({ error: 'レースが見つかりません' }, { status: 404 });
     }
     
     // 3. 対象レースの出走馬（3着以内）を取得
-    const topHorses = db.prepare(`
+    const topHorses = await db.prepare(`
       SELECT DISTINCT horse_name, finish_position
       FROM umadata 
       WHERE race_id_new_no_horse_num = ?
         AND CAST(finish_position AS INTEGER) <= 3
       ORDER BY CAST(finish_position AS INTEGER)
-    `).all(raceId) as { horse_name: string; finish_position: string }[];
+    `).all<{ horse_name: string; finish_position: string }>(raceId);
     
     if (topHorses.length === 0) {
       const pendingResult: RaceLevelResult = {
@@ -188,9 +205,9 @@ export async function GET(request: NextRequest) {
     
     const horseNames = topHorses.map(h => h.horse_name);
     
-    // 4. 各馬の次走以降の成績を取得
-    const placeholders = horseNames.map(() => '?').join(',');
-    const nextRaces = db.prepare(`
+    // 4. 各馬の次走以降の成績を取得（PostgreSQL用にプレースホルダーを$1, $2...に）
+    const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
+    const nextRaces = await db.query<UmadataRow>(`
       SELECT 
         horse_name,
         finish_position,
@@ -199,9 +216,9 @@ export async function GET(request: NextRequest) {
         race_id_new_no_horse_num as race_id
       FROM umadata
       WHERE horse_name IN (${placeholders})
-        AND date > ?
+        AND date > $${horseNames.length + 1}
       ORDER BY horse_name, date ASC
-    `).all([...horseNames, raceInfo.date]) as UmadataRow[];
+    `, [...horseNames, raceInfo.date]);
     
     // 5. NextRaceResult形式に変換
     const horseFirstRunMap = new Map<string, boolean>();
@@ -234,7 +251,7 @@ export async function GET(request: NextRequest) {
     
     // 7. キャッシュに保存（PENDINGでない場合）
     if (levelResult.level !== 'PENDING') {
-      cacheLevel(db, raceId, levelResult);
+      await cacheLevel(raceId, levelResult);
     }
     
     // 8. 詳細データも返す（デバッグ/表示用）
@@ -283,7 +300,7 @@ export async function POST(request: NextRequest) {
     // 1. まずキャッシュから一括取得
     if (!skipCache) {
       for (const raceId of limitedIds) {
-        const cached = getCachedLevel(db, raceId);
+        const cached = await getCachedLevel(raceId);
         if (cached) {
           results[raceId] = cached;
           cacheHits.push(raceId);
@@ -299,12 +316,12 @@ export async function POST(request: NextRequest) {
     for (const raceId of cacheMisses) {
       try {
         // 対象レースの情報を取得
-        const raceInfo = db.prepare(`
+        const raceInfo = await db.prepare(`
           SELECT date, place, distance, class_name, track_condition, work_1s
           FROM umadata 
           WHERE race_id_new_no_horse_num = ?
           LIMIT 1
-        `).get(raceId) as RaceInfoRow | undefined;
+        `).get<RaceInfoRow>(raceId);
         
         if (!raceInfo) {
           results[raceId] = {
@@ -328,12 +345,12 @@ export async function POST(request: NextRequest) {
         }
         
         // 3着以内の馬を取得
-        const topHorses = db.prepare(`
+        const topHorses = await db.prepare(`
           SELECT DISTINCT horse_name
           FROM umadata 
           WHERE race_id_new_no_horse_num = ?
             AND CAST(finish_position AS INTEGER) <= 3
-        `).all(raceId) as { horse_name: string }[];
+        `).all<{ horse_name: string }>(raceId);
         
         if (topHorses.length === 0) {
           results[raceId] = {
@@ -357,16 +374,16 @@ export async function POST(request: NextRequest) {
         }
         
         const horseNames = topHorses.map(h => h.horse_name);
-        const placeholders = horseNames.map(() => '?').join(',');
+        const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
         
         // 次走成績を取得
-        const nextRaces = db.prepare(`
+        const nextRaces = await db.query<UmadataRow>(`
           SELECT horse_name, finish_position, date, class_name
           FROM umadata
           WHERE horse_name IN (${placeholders})
-            AND date > ?
+            AND date > $${horseNames.length + 1}
           ORDER BY horse_name, date ASC
-        `).all([...horseNames, raceInfo.date]) as UmadataRow[];
+        `, [...horseNames, raceInfo.date]);
         
         // NextRaceResult形式に変換
         const horseFirstRunMap = new Map<string, boolean>();
@@ -399,7 +416,7 @@ export async function POST(request: NextRequest) {
         
         // キャッシュに保存（PENDINGでない場合）
         if (levelResult.level !== 'PENDING') {
-          cacheLevel(db, raceId, levelResult);
+          await cacheLevel(raceId, levelResult);
         }
         
       } catch (err) {

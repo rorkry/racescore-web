@@ -21,22 +21,20 @@ export async function GET() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    // テーブルが存在しない場合のフォールバック
     try {
-      const notifications = db.prepare(
+      const notifications = await db.prepare(
         'SELECT id, type, title, message, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
-      ).all(user.id) as DbNotification[];
+      ).all<DbNotification>(user.id);
 
-      const unreadCount = db.prepare(
+      const unreadCount = await db.prepare(
         'SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0'
-      ).get(user.id) as { cnt: number };
+      ).get<{ cnt: number }>(user.id);
 
-      return NextResponse.json({ notifications, unreadCount: unreadCount.cnt });
+      return NextResponse.json({ notifications, unreadCount: unreadCount?.cnt || 0 });
     } catch {
-      // テーブルが存在しない場合
       return NextResponse.json({ notifications: [], unreadCount: 0 });
     }
   } catch (error) {
@@ -56,13 +54,13 @@ export async function PATCH(request: NextRequest) {
     const { id, markAllRead } = await request.json();
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     if (markAllRead) {
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(user.id);
+      await db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(user.id);
     } else if (id) {
-      db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(id, user.id);
+      await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(id, user.id);
     }
 
     return NextResponse.json({ success: true });

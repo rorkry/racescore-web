@@ -1,45 +1,152 @@
-// /lib/db.ts
-import Database from 'better-sqlite3';
+// /lib/db.ts - PostgreSQL版
+import { Pool, QueryResult } from 'pg';
 
-let db: Database.Database | null = null;
+// PostgreSQL接続プール
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
 
-/** データベースの初期化（テーブル作成） */
-function initDb(database: Database.Database) {
+// SQLite の ? プレースホルダーを PostgreSQL の $1, $2, ... に変換
+function convertPlaceholders(sql: string): string {
+  let index = 0;
+  return sql.replace(/\?/g, () => `$${++index}`);
+}
+
+// SQLite の datetime('now') を PostgreSQL の NOW() に変換
+function convertDatetime(sql: string): string {
+  return sql
+    .replace(/datetime\('now'\)/gi, 'NOW()')
+    .replace(/datetime\('now', 'localtime'\)/gi, 'NOW()');
+}
+
+// SQL変換（SQLite → PostgreSQL）
+function convertSql(sql: string): string {
+  return convertDatetime(convertPlaceholders(sql));
+}
+
+/** SQLite互換のDBインターフェース（非同期） */
+class DatabaseWrapper {
+  /** 単一行を取得 */
+  prepare(sql: string) {
+    const convertedSql = convertSql(sql);
+    
+    return {
+      /** 単一行取得（SQLiteのgetに相当） */
+      get: async <T = Record<string, unknown>>(...params: unknown[]): Promise<T | undefined> => {
+        try {
+          const result: QueryResult = await pool.query(convertedSql, params);
+          return result.rows[0] as T | undefined;
+        } catch (error) {
+          console.error('DB get error:', error, 'SQL:', convertedSql, 'Params:', params);
+          throw error;
+        }
+      },
+      
+      /** 複数行取得（SQLiteのallに相当） */
+      all: async <T = Record<string, unknown>>(...params: unknown[]): Promise<T[]> => {
+        try {
+          const result: QueryResult = await pool.query(convertedSql, params);
+          return result.rows as T[];
+        } catch (error) {
+          console.error('DB all error:', error, 'SQL:', convertedSql, 'Params:', params);
+          throw error;
+        }
+      },
+      
+      /** 実行（INSERT/UPDATE/DELETE）（SQLiteのrunに相当） */
+      run: async (...params: unknown[]): Promise<{ changes: number; lastInsertRowid?: number }> => {
+        try {
+          const result: QueryResult = await pool.query(convertedSql, params);
+          return { changes: result.rowCount ?? 0 };
+        } catch (error) {
+          console.error('DB run error:', error, 'SQL:', convertedSql, 'Params:', params);
+          throw error;
+        }
+      },
+    };
+  }
+
+  /** 生SQLを実行（マイグレーション用） */
+  async exec(sql: string): Promise<void> {
+    // 複数のステートメントを分割して実行
+    const statements = sql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    
+    for (const statement of statements) {
+      try {
+        const converted = convertDatetime(statement);
+        await pool.query(converted);
+      } catch (error) {
+        console.error('DB exec error:', error, 'Statement:', statement);
+        // CREATE TABLE IF NOT EXISTS などは続行
+        if (!(error instanceof Error && error.message.includes('already exists'))) {
+          // テーブル/インデックスが既に存在する場合は無視
+          const msg = (error as Error).message || '';
+          if (!msg.includes('already exists') && !msg.includes('duplicate key')) {
+            throw error;
+          }
+        }
+      }
+    }
+  }
+
+  /** 直接クエリ実行 */
+  async query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]> {
+    const result = await pool.query(convertSql(sql), params);
+    return result.rows as T[];
+  }
+
+  /** プラグマ（PostgreSQLでは無視） */
+  pragma(_statement: string): void {
+    // SQLiteのpragmaはPostgreSQLでは不要
+  }
+}
+
+let db: DatabaseWrapper | null = null;
+
+/** テーブル初期化 */
+async function initDb(database: DatabaseWrapper) {
   // races テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS races (
-      raceKey TEXT PRIMARY KEY,
+      "raceKey" TEXT PRIMARY KEY,
       date TEXT,
       place TEXT,
-      raceNo INTEGER,
+      "raceNo" INTEGER,
       data TEXT
     )
   `);
 
   // umaren テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS umaren (
-      raceKey TEXT,
+      "raceKey" TEXT,
       comb TEXT,
       odds REAL,
-      PRIMARY KEY (raceKey, comb)
+      PRIMARY KEY ("raceKey", comb)
     )
   `);
 
   // wide テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS wide (
-      raceKey TEXT,
+      "raceKey" TEXT,
       comb TEXT,
       odds REAL,
-      PRIMARY KEY (raceKey, comb)
+      PRIMARY KEY ("raceKey", comb)
     )
   `);
 
   // ========== ユーザー管理テーブル ==========
 
   // users テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -48,16 +155,16 @@ function initDb(database: Database.Database) {
       image TEXT,
       role TEXT DEFAULT 'user',
       email_verified INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // accounts テーブル（SNS認証用）
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       provider TEXT NOT NULL,
       provider_account_id TEXT NOT NULL,
       access_token TEXT,
@@ -66,77 +173,71 @@ function initDb(database: Database.Database) {
       token_type TEXT,
       scope TEXT,
       id_token TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (provider, provider_account_id)
     )
   `);
 
   // sessions テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       session_token TEXT UNIQUE NOT NULL,
       expires TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // subscriptions テーブル（課金状況）
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS subscriptions (
       id TEXT PRIMARY KEY,
-      user_id TEXT UNIQUE NOT NULL,
+      user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       plan TEXT DEFAULT 'free',
       status TEXT DEFAULT 'active',
       current_period_start TEXT,
       current_period_end TEXT,
       cancel_at_period_end INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // user_points テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS user_points (
       id TEXT PRIMARY KEY,
-      user_id TEXT UNIQUE NOT NULL,
+      user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       balance INTEGER DEFAULT 0,
       total_earned INTEGER DEFAULT 0,
       total_spent INTEGER DEFAULT 0,
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // point_history テーブル
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS point_history (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       amount INTEGER NOT NULL,
       type TEXT NOT NULL,
       description TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // user_horse_marks テーブル（馬印）
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS user_horse_marks (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       horse_id TEXT NOT NULL,
       mark TEXT NOT NULL,
       note TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (user_id, horse_id)
     )
   `);
@@ -144,51 +245,48 @@ function initDb(database: Database.Database) {
   // ========== 新機能テーブル ==========
 
   // バッジシステム
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS user_badges (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       badge_type TEXT NOT NULL,
       badge_level TEXT NOT NULL,
-      earned_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      earned_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (user_id, badge_type)
     )
   `);
 
   // ログイン履歴（連続ログインボーナス用）
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS login_history (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       login_date TEXT NOT NULL,
       streak_count INTEGER DEFAULT 1,
       bonus_claimed INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (user_id, login_date)
     )
   `);
 
   // レースメモ
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS race_memos (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       race_key TEXT NOT NULL,
       horse_number TEXT,
       memo TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
-  // 馬場メモ（プリセット式）- 日付×トラックタイプ（芝/ダート）で管理
-  database.exec(`
+  // 馬場メモ（プリセット式）
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS baba_memos (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       date TEXT NOT NULL,
       track_type TEXT NOT NULL,
       place TEXT,
@@ -198,73 +296,67 @@ function initDb(database: Database.Database) {
       advantage_style TEXT,
       weather_note TEXT,
       free_memo TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (user_id, date, track_type)
     )
   `);
 
   // お気に入り馬
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS favorite_horses (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       horse_name TEXT NOT NULL,
       horse_id TEXT,
       note TEXT,
       notify_on_race INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (user_id, horse_name)
     )
   `);
 
   // 予想履歴（的中率計算用）
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS predictions (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       race_key TEXT NOT NULL,
       horse_number TEXT NOT NULL,
       mark TEXT NOT NULL,
       result_position INTEGER,
       is_hit INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // 予想いいね
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS prediction_likes (
       id TEXT PRIMARY KEY,
-      prediction_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      prediction_id TEXT NOT NULL REFERENCES predictions(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT NOW(),
       UNIQUE (prediction_id, user_id)
     )
   `);
 
   // 通知
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       title TEXT NOT NULL,
       message TEXT,
       link TEXT,
       is_read INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
   // レースレベルキャッシュ
-  database.exec(`
+  await database.exec(`
     CREATE TABLE IF NOT EXISTS race_levels (
       race_id TEXT PRIMARY KEY,
       level TEXT NOT NULL,
@@ -278,44 +370,70 @@ function initDb(database: Database.Database) {
       has_plus INTEGER DEFAULT 0,
       ai_comment TEXT,
       display_comment TEXT,
-      calculated_at TEXT DEFAULT (datetime('now')),
+      calculated_at TIMESTAMP DEFAULT NOW(),
       expires_at TEXT
     )
   `);
 
   // インデックス作成
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-    CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
-    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
-    CREATE INDEX IF NOT EXISTS idx_point_history_user_id ON point_history(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_horse_marks_user_id ON user_horse_marks(user_id);
-    CREATE INDEX IF NOT EXISTS idx_user_horse_marks_horse_id ON user_horse_marks(horse_id);
-    CREATE INDEX IF NOT EXISTS idx_login_history_user_date ON login_history(user_id, login_date);
-    CREATE INDEX IF NOT EXISTS idx_race_memos_user ON race_memos(user_id);
-    CREATE INDEX IF NOT EXISTS idx_race_memos_race ON race_memos(race_key);
-    CREATE INDEX IF NOT EXISTS idx_baba_memos_user ON baba_memos(user_id);
-    CREATE INDEX IF NOT EXISTS idx_favorite_horses_user ON favorite_horses(user_id);
-    CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id);
-    CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_key);
-    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
-    CREATE INDEX IF NOT EXISTS idx_race_levels_expires ON race_levels(expires_at);
-  `);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_point_history_user_id ON point_history(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_user_horse_marks_user_id ON user_horse_marks(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_user_horse_marks_horse_id ON user_horse_marks(horse_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_login_history_user_date ON login_history(user_id, login_date)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_race_memos_user ON race_memos(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_race_memos_race ON race_memos(race_key)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_baba_memos_user ON baba_memos(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_favorite_horses_user ON favorite_horses(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_key)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_race_levels_expires ON race_levels(expires_at)`);
+
+  console.log('PostgreSQL database initialized');
 }
 
-/** どの場所から呼んでも同じ DB インスタンスを返す */
-export function getDb() {
+let initialized = false;
+
+/** DBインスタンスを取得（非同期） */
+export async function getDbAsync(): Promise<DatabaseWrapper> {
   if (!db) {
-    // .env.local に DB_PATH を置かなければ ./races.db を開く
-    const path = process.env.DB_PATH ?? 'races.db';
+    db = new DatabaseWrapper();
     
-    // readonly: true を削除して、ファイルがない場合は自動作成
-    db = new Database(path);
-    db.pragma('journal_mode = WAL');
-    
-    // 初期化処理（テーブル作成）
-    initDb(db);
+    if (!initialized) {
+      await initDb(db);
+      initialized = true;
+    }
   }
   return db;
+}
+
+/** 
+ * 同期的なgetDb（後方互換性のため）
+ * 注意: 返されるオブジェクトのメソッドは全て非同期です
+ */
+export function getDb(): DatabaseWrapper {
+  if (!db) {
+    db = new DatabaseWrapper();
+    
+    // 初期化は非同期で行う（最初のクエリ時に自動的にテーブルが作成される）
+    if (!initialized) {
+      initDb(db).then(() => {
+        initialized = true;
+      }).catch(err => {
+        console.error('DB init error:', err);
+      });
+    }
+  }
+  return db;
+}
+
+/** 接続プールをシャットダウン */
+export async function closeDb(): Promise<void> {
+  await pool.end();
+  db = null;
+  initialized = false;
 }

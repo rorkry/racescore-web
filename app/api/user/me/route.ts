@@ -41,40 +41,40 @@ export async function GET() {
     const email = session.user.email;
 
     // ユーザー情報を取得
-    const user = db.prepare(
+    const user = await db.prepare(
       'SELECT id, email, name, role, created_at FROM users WHERE email = ?'
-    ).get(email) as DbUser | undefined;
+    ).get<DbUser>(email);
 
     if (!user) {
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
     }
 
-    // サブスクリプション情報を取得（テーブルが存在しない場合は空）
+    // サブスクリプション情報を取得
     let subscription: DbSubscription | null = null;
     try {
-      subscription = db.prepare(
+      subscription = await db.prepare(
         'SELECT plan, status, current_period_end FROM subscriptions WHERE user_id = ?'
-      ).get(user.id) as DbSubscription | undefined || null;
+      ).get<DbSubscription>(user.id) || null;
     } catch {
       // テーブルが存在しない場合は無視
     }
 
-    // ポイント情報を取得（テーブルが存在しない場合は空）
+    // ポイント情報を取得
     let points: DbPoints | null = null;
     try {
-      points = db.prepare(
+      points = await db.prepare(
         'SELECT balance, total_earned, total_spent FROM user_points WHERE user_id = ?'
-      ).get(user.id) as DbPoints | undefined || null;
+      ).get<DbPoints>(user.id) || null;
     } catch {
       // テーブルが存在しない場合は無視
     }
 
-    // 馬印を取得（テーブルが存在しない場合は空）
+    // 馬印を取得
     let horseMarks: DbHorseMark[] = [];
     try {
-      horseMarks = db.prepare(
+      horseMarks = await db.prepare(
         'SELECT horse_name, mark, memo, created_at FROM horse_marks WHERE user_id = ? ORDER BY created_at DESC'
-      ).all(user.id) as DbHorseMark[];
+      ).all<DbHorseMark>(user.id);
     } catch {
       // テーブルが存在しない場合は無視
     }
@@ -115,8 +115,8 @@ export async function PATCH(request: NextRequest) {
     const db = getDb();
     const email = session.user.email;
 
-    db.prepare(
-      'UPDATE users SET name = ?, updated_at = datetime("now") WHERE email = ?'
+    await db.prepare(
+      'UPDATE users SET name = ?, updated_at = NOW() WHERE email = ?'
     ).run(name || null, email);
 
     return NextResponse.json({ success: true, name: name || null });

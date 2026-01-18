@@ -62,45 +62,45 @@ export async function GET() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     // 獲得済みバッジ
-    const earnedBadges = db.prepare(
+    const earnedBadges = await db.prepare(
       'SELECT badge_type, badge_level, earned_at FROM user_badges WHERE user_id = ?'
-    ).all(user.id) as DbBadge[];
+    ).all<DbBadge>(user.id);
 
     // 進捗状況を計算
-    const predictionStats = db.prepare(`
+    const predictionStats = await db.prepare(`
       SELECT COUNT(*) as cnt FROM predictions 
       WHERE user_id = ? AND mark = '◎' AND result_position = 1
-    `).get(user.id) as { cnt: number };
+    `).get<{ cnt: number }>(user.id);
 
-    // 回収率計算（◎印かつ10回以上の予想がある場合のみ）
-    const recoveryStats = db.prepare(`
+    // 回収率計算
+    const recoveryStats = await db.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN result_position = 1 THEN COALESCE(tansho_payout, 0) ELSE 0 END) as return_sum
       FROM predictions WHERE user_id = ? AND mark = '◎' AND result_position IS NOT NULL
-    `).get(user.id) as { total: number; return_sum: number };
+    `).get<{ total: number; return_sum: number }>(user.id);
     
-    const recoveryRate = recoveryStats.total >= 10 
+    const recoveryRate = recoveryStats && recoveryStats.total >= 10 
       ? Math.round((recoveryStats.return_sum / (recoveryStats.total * 100)) * 100)
       : 0;
 
-    const loginStats = db.prepare(`
+    const loginStats = await db.prepare(`
       SELECT MAX(streak_count) as max_streak FROM login_history WHERE user_id = ?
-    `).get(user.id) as { max_streak: number | null };
+    `).get<{ max_streak: number | null }>(user.id);
 
-    const memoStats = db.prepare(`
+    const memoStats = await db.prepare(`
       SELECT COUNT(*) as cnt FROM race_memos WHERE user_id = ?
-    `).get(user.id) as { cnt: number };
+    `).get<{ cnt: number }>(user.id);
 
     const progress = {
-      prediction: predictionStats.cnt,
+      prediction: predictionStats?.cnt || 0,
       recovery: recoveryRate,
-      login: loginStats.max_streak || 0,
-      memo: memoStats.cnt
+      login: loginStats?.max_streak || 0,
+      memo: memoStats?.cnt || 0
     };
 
     return NextResponse.json({
@@ -123,35 +123,35 @@ export async function POST() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     const now = new Date().toISOString();
     const newBadges: { type: string; level: string; label: string }[] = [];
 
     // 予想的中バッジチェック
-    const predictionCount = (db.prepare(`
+    const predictionResult = await db.prepare(`
       SELECT COUNT(*) as cnt FROM predictions 
       WHERE user_id = ? AND mark = '◎' AND result_position = 1
-    `).get(user.id) as { cnt: number }).cnt;
+    `).get<{ cnt: number }>(user.id);
+    const predictionCount = predictionResult?.cnt || 0;
 
     for (const levelDef of BADGE_DEFINITIONS.prediction.levels) {
       if (predictionCount >= levelDef.requirement) {
-        const existing = db.prepare(
+        const existing = await db.prepare(
           'SELECT id FROM user_badges WHERE user_id = ? AND badge_type = ? AND badge_level = ?'
         ).get(user.id, 'prediction', levelDef.level);
 
         if (!existing) {
           const id = randomUUID();
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO user_badges (id, user_id, badge_type, badge_level, earned_at)
             VALUES (?, ?, 'prediction', ?, ?)
           `).run(id, user.id, levelDef.level, now);
           newBadges.push({ type: 'prediction', level: levelDef.level, label: levelDef.label });
 
-          // 通知作成
           const notifId = randomUUID();
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO notifications (id, user_id, type, title, message, created_at)
             VALUES (?, ?, 'badge', ?, ?, ?)
           `).run(notifId, user.id, `バッジ獲得！${levelDef.label}`, levelDef.description, now);
@@ -160,19 +160,20 @@ export async function POST() {
     }
 
     // ログインバッジチェック
-    const maxStreak = (db.prepare(`
+    const loginResult = await db.prepare(`
       SELECT MAX(streak_count) as max FROM login_history WHERE user_id = ?
-    `).get(user.id) as { max: number | null }).max || 0;
+    `).get<{ max: number | null }>(user.id);
+    const maxStreak = loginResult?.max || 0;
 
     for (const levelDef of BADGE_DEFINITIONS.login.levels) {
       if (maxStreak >= levelDef.requirement) {
-        const existing = db.prepare(
+        const existing = await db.prepare(
           'SELECT id FROM user_badges WHERE user_id = ? AND badge_type = ? AND badge_level = ?'
         ).get(user.id, 'login', levelDef.level);
 
         if (!existing) {
           const id = randomUUID();
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO user_badges (id, user_id, badge_type, badge_level, earned_at)
             VALUES (?, ?, 'login', ?, ?)
           `).run(id, user.id, levelDef.level, now);
@@ -182,19 +183,20 @@ export async function POST() {
     }
 
     // メモバッジチェック
-    const memoCount = (db.prepare(`
+    const memoResult = await db.prepare(`
       SELECT COUNT(*) as cnt FROM race_memos WHERE user_id = ?
-    `).get(user.id) as { cnt: number }).cnt;
+    `).get<{ cnt: number }>(user.id);
+    const memoCount = memoResult?.cnt || 0;
 
     for (const levelDef of BADGE_DEFINITIONS.memo.levels) {
       if (memoCount >= levelDef.requirement) {
-        const existing = db.prepare(
+        const existing = await db.prepare(
           'SELECT id FROM user_badges WHERE user_id = ? AND badge_type = ? AND badge_level = ?'
         ).get(user.id, 'memo', levelDef.level);
 
         if (!existing) {
           const id = randomUUID();
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO user_badges (id, user_id, badge_type, badge_level, earned_at)
             VALUES (?, ?, 'memo', ?, ?)
           `).run(id, user.id, levelDef.level, now);
@@ -203,34 +205,33 @@ export async function POST() {
       }
     }
 
-    // 回収率バッジチェック（◎印10回以上が必要）
-    const recoveryCheck = db.prepare(`
+    // 回収率バッジチェック
+    const recoveryCheck = await db.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN result_position = 1 THEN COALESCE(tansho_payout, 0) ELSE 0 END) as return_sum
       FROM predictions WHERE user_id = ? AND mark = '◎' AND result_position IS NOT NULL
-    `).get(user.id) as { total: number; return_sum: number };
+    `).get<{ total: number; return_sum: number }>(user.id);
 
-    if (recoveryCheck.total >= 10) {
+    if (recoveryCheck && recoveryCheck.total >= 10) {
       const recoveryRate = Math.round((recoveryCheck.return_sum / (recoveryCheck.total * 100)) * 100);
 
       for (const levelDef of BADGE_DEFINITIONS.recovery.levels) {
         if (recoveryRate >= levelDef.requirement) {
-          const existing = db.prepare(
+          const existing = await db.prepare(
             'SELECT id FROM user_badges WHERE user_id = ? AND badge_type = ? AND badge_level = ?'
           ).get(user.id, 'recovery', levelDef.level);
 
           if (!existing) {
             const id = randomUUID();
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO user_badges (id, user_id, badge_type, badge_level, earned_at)
               VALUES (?, ?, 'recovery', ?, ?)
             `).run(id, user.id, levelDef.level, now);
             newBadges.push({ type: 'recovery', level: levelDef.level, label: levelDef.label });
 
-            // 通知作成
             const notifId = randomUUID();
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO notifications (id, user_id, type, title, message, created_at)
               VALUES (?, ?, 'badge', ?, ?, ?)
             `).run(notifId, user.id, `バッジ獲得！${levelDef.label}`, levelDef.description, now);

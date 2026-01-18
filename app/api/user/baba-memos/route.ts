@@ -32,26 +32,23 @@ export async function GET(request: NextRequest) {
     const trackType = searchParams.get('trackType');
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     if (date && trackType) {
-      // 特定の日付・トラックタイプのメモを取得
-      const memo = db.prepare(
+      const memo = await db.prepare(
         'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?'
-      ).get(user.id, date, trackType) as DbBabaMemo | undefined;
+      ).get<DbBabaMemo>(user.id, date, trackType);
       return NextResponse.json({ memo: memo || null });
     } else if (date) {
-      // 特定の日付の全メモを取得（芝・ダート両方）
-      const memos = db.prepare(
+      const memos = await db.prepare(
         'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? ORDER BY track_type'
-      ).all(user.id, date) as DbBabaMemo[];
+      ).all<DbBabaMemo>(user.id, date);
       return NextResponse.json({ memos });
     } else {
-      // すべてのメモを取得
-      const memos = db.prepare(
+      const memos = await db.prepare(
         'SELECT * FROM baba_memos WHERE user_id = ? ORDER BY date DESC, track_type LIMIT 100'
-      ).all(user.id) as DbBabaMemo[];
+      ).all<DbBabaMemo>(user.id);
       return NextResponse.json({ memos });
     }
   } catch (error) {
@@ -68,23 +65,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未認証' }, { status: 401 });
     }
 
-    const { date, trackType, place, courseType, courseCondition, advantagePosition, advantageStyle, weatherNote, freeMemo, generatedSummary } = await request.json();
+    const { date, trackType, place, courseType, courseCondition, advantagePosition, advantageStyle, weatherNote, freeMemo } = await request.json();
     
     if (!date || !trackType) {
       return NextResponse.json({ error: '日付とトラックタイプ（芝/ダート）は必須です' }, { status: 400 });
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     const now = new Date().toISOString();
-    const existing = db.prepare(
+    const existing = await db.prepare(
       'SELECT id FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?'
-    ).get(user.id, date, trackType) as { id: string } | undefined;
+    ).get<{ id: string }>(user.id, date, trackType);
 
     if (existing) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE baba_memos SET 
           place = ?, course_type = ?, course_condition = ?, advantage_position = ?, 
           advantage_style = ?, weather_note = ?, free_memo = ?, updated_at = ?
@@ -93,7 +90,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, id: existing.id, updated: true });
     } else {
       const id = randomUUID();
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO baba_memos (id, user_id, date, track_type, place, course_type, course_condition, 
           advantage_position, advantage_style, weather_note, free_memo, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -123,10 +120,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    db.prepare('DELETE FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?').run(user.id, date, trackType);
+    await db.prepare('DELETE FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?').run(user.id, date, trackType);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Baba memo delete error:', error);

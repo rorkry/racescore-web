@@ -3,8 +3,8 @@ import type { Config } from 'drizzle-kit';
 export default {
   schema: './drizzle/schema.ts',
   out: './drizzle/migrations',
-  dialect: 'sqlite',
+  dialect: 'postgresql',
   dbCredentials: {
-    url: './sqlite.db',
+    url: process.env.DATABASE_URL || 'postgres://localhost:5432/racescore',
   },
 } satisfies Config;

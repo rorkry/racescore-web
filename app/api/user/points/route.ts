@@ -32,20 +32,20 @@ export async function GET() {
     const db = getDb();
     
     // ユーザーIDを取得
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) {
       return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
     }
 
     // ポイント情報を取得
-    const points = db.prepare(
+    const points = await db.prepare(
       'SELECT balance, total_earned, total_spent FROM user_points WHERE user_id = ?'
-    ).get(user.id) as DbPoints | undefined;
+    ).get<DbPoints>(user.id);
 
     // ポイント履歴を取得（最新50件）
-    const history = db.prepare(
+    const history = await db.prepare(
       'SELECT id, amount, type, description, created_at FROM point_history WHERE user_id = ? ORDER BY created_at DESC LIMIT 50'
-    ).all(user.id) as DbPointHistory[];
+    ).all<DbPointHistory>(user.id);
 
     return NextResponse.json({
       points: points || { balance: 0, total_earned: 0, total_spent: 0 },

@@ -11,8 +11,8 @@ interface DbPrediction {
   mark: string;
   result_position: number | null;
   is_hit: number;
-  tansho_payout: number | null;  // 単勝配当（100円あたり）
-  fukusho_payout: number | null; // 複勝配当（100円あたり）
+  tansho_payout: number | null;
+  fukusho_payout: number | null;
   created_at: string;
   like_count?: number;
 }
@@ -29,24 +29,24 @@ export async function GET(request: NextRequest) {
     const raceKey = searchParams.get('raceKey');
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     let predictions: DbPrediction[];
     if (raceKey) {
-      predictions = db.prepare(`
+      predictions = await db.prepare(`
         SELECT p.*, (SELECT COUNT(*) FROM prediction_likes WHERE prediction_id = p.id) as like_count
         FROM predictions p WHERE p.user_id = ? AND p.race_key = ?
-      `).all(user.id, raceKey) as DbPrediction[];
+      `).all<DbPrediction>(user.id, raceKey);
     } else {
-      predictions = db.prepare(`
+      predictions = await db.prepare(`
         SELECT p.*, (SELECT COUNT(*) FROM prediction_likes WHERE prediction_id = p.id) as like_count
         FROM predictions p WHERE p.user_id = ? ORDER BY p.created_at DESC LIMIT 100
-      `).all(user.id) as DbPrediction[];
+      `).all<DbPrediction>(user.id);
     }
 
     // 成績計算（◎印のみで回収率計算）
-    const stats = db.prepare(`
+    const stats = await db.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN mark = '◎' AND result_position = 1 THEN 1 ELSE 0 END) as honmei_hit,
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN mark = '◎' AND result_position = 1 THEN COALESCE(tansho_payout, 0) ELSE 0 END) as tansho_return,
         SUM(CASE WHEN mark = '◎' AND result_position <= 3 THEN COALESCE(fukusho_payout, 0) ELSE 0 END) as fukusho_return
       FROM predictions WHERE user_id = ? AND result_position IS NOT NULL
-    `).get(user.id) as { 
+    `).get<{ 
       total: number; 
       honmei_hit: number; 
       honmei_total: number; 
@@ -64,19 +64,19 @@ export async function GET(request: NextRequest) {
       total_hit: number;
       tansho_return: number;
       fukusho_return: number;
-    };
+    }>(user.id);
 
     // 回収率計算（◎印の単勝・複勝）
-    const honmeiCount = stats.honmei_total || 0;
-    const tanshoRecoveryRate = honmeiCount > 0 ? Math.round((stats.tansho_return / (honmeiCount * 100)) * 100) : 0;
-    const fukushoRecoveryRate = honmeiCount > 0 ? Math.round((stats.fukusho_return / (honmeiCount * 100)) * 100) : 0;
+    const honmeiCount = stats?.honmei_total || 0;
+    const tanshoRecoveryRate = honmeiCount > 0 ? Math.round(((stats?.tansho_return || 0) / (honmeiCount * 100)) * 100) : 0;
+    const fukushoRecoveryRate = honmeiCount > 0 ? Math.round(((stats?.fukusho_return || 0) / (honmeiCount * 100)) * 100) : 0;
 
     return NextResponse.json({ 
       predictions, 
       stats: {
         ...stats,
-        tanshoRecoveryRate,    // ◎単勝回収率
-        fukushoRecoveryRate,   // ◎複勝回収率
+        tanshoRecoveryRate,
+        fukushoRecoveryRate,
       }
     });
   } catch (error) {
@@ -99,12 +99,12 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     // markがnull/空の場合は削除
     if (!mark) {
-      db.prepare('DELETE FROM predictions WHERE user_id = ? AND race_key = ? AND horse_number = ?')
+      await db.prepare('DELETE FROM predictions WHERE user_id = ? AND race_key = ? AND horse_number = ?')
         .run(user.id, raceKey, horseNumber);
       return NextResponse.json({ success: true, deleted: true });
     }
@@ -117,9 +117,9 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     // 既存の予想があれば更新、なければ新規作成
-    const existing = db.prepare(
+    const existing = await db.prepare(
       'SELECT id, result_position FROM predictions WHERE user_id = ? AND race_key = ? AND horse_number = ?'
-    ).get(user.id, raceKey, horseNumber) as { id: string; result_position: number | null } | undefined;
+    ).get<{ id: string; result_position: number | null }>(user.id, raceKey, horseNumber);
 
     // 既に結果が出ているレースは変更不可
     if (existing && existing.result_position !== null) {
@@ -127,11 +127,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (existing) {
-      db.prepare('UPDATE predictions SET mark = ? WHERE id = ?').run(mark, existing.id);
+      await db.prepare('UPDATE predictions SET mark = ? WHERE id = ?').run(mark, existing.id);
       return NextResponse.json({ success: true, id: existing.id, updated: true });
     } else {
       const id = randomUUID();
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO predictions (id, user_id, race_key, horse_number, mark, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(id, user.id, raceKey, horseNumber, mark, now);
@@ -154,10 +154,10 @@ export async function DELETE(request: NextRequest) {
     const { raceKey, horseNumber } = await request.json();
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    db.prepare('DELETE FROM predictions WHERE user_id = ? AND race_key = ? AND horse_number = ?')
+    await db.prepare('DELETE FROM predictions WHERE user_id = ? AND race_key = ? AND horse_number = ?')
       .run(user.id, raceKey, horseNumber);
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -50,10 +50,10 @@ export const authConfig: NextAuthConfig = {
         try {
           const db = getDb();
           
-          // データベースからユーザーを検索
-          const user = db.prepare(
+          // データベースからユーザーを検索（非同期）
+          const user = await db.prepare(
             'SELECT id, email, password_hash, name, role FROM users WHERE email = ?'
-          ).get(email) as DbUser | undefined;
+          ).get<DbUser>(email);
 
           if (!user || !user.password_hash) {
             return null;
@@ -89,14 +89,14 @@ export const authConfig: NextAuthConfig = {
           const db = getDb();
           
           // 既存ユーザーを検索
-          const existingUser = db.prepare(
+          const existingUser = await db.prepare(
             'SELECT id, role FROM users WHERE email = ?'
-          ).get(user.email) as { id: string; role: string } | undefined;
+          ).get<{ id: string; role: string }>(user.email);
 
           if (existingUser) {
             // 既存ユーザーの場合、名前と画像を更新
-            db.prepare(
-              'UPDATE users SET name = ?, image = ?, updated_at = datetime("now") WHERE id = ?'
+            await db.prepare(
+              'UPDATE users SET name = ?, image = ?, updated_at = NOW() WHERE id = ?'
             ).run(user.name || '', user.image || '', existingUser.id);
             
             // IDをユーザーオブジェクトに設定
@@ -106,27 +106,27 @@ export const authConfig: NextAuthConfig = {
             const newId = crypto.randomUUID();
             const role = ADMIN_EMAILS.includes(user.email) ? 'admin' : 'user';
             
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO users (id, email, name, image, role, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, datetime("now"), datetime("now"))
+              VALUES (?, ?, ?, ?, ?, NOW(), NOW())
             `).run(newId, user.email, user.name || '', user.image || '', role);
             
             // ポイントを初期化
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO user_points (id, user_id, balance, total_earned, total_spent, updated_at)
-              VALUES (?, ?, 100, 100, 0, datetime("now"))
+              VALUES (?, ?, 100, 100, 0, NOW())
             `).run(crypto.randomUUID(), newId);
             
             // ポイント履歴に記録
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO point_history (id, user_id, amount, type, description, created_at)
-              VALUES (?, ?, 100, 'welcome', '新規登録ボーナス', datetime("now"))
+              VALUES (?, ?, 100, 'welcome', '新規登録ボーナス', NOW())
             `).run(crypto.randomUUID(), newId);
             
             // サブスクリプションを初期化（無料プラン）
-            db.prepare(`
+            await db.prepare(`
               INSERT INTO subscriptions (id, user_id, plan, status, created_at, updated_at)
-              VALUES (?, ?, 'free', 'active', datetime("now"), datetime("now"))
+              VALUES (?, ?, 'free', 'active', NOW(), NOW())
             `).run(crypto.randomUUID(), newId);
             
             user.id = newId;

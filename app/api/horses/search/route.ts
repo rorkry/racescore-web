@@ -22,13 +22,13 @@ export async function GET(request: NextRequest) {
     const db = getDb();
 
     // wakujunテーブルから馬名を検索（部分一致）
-    const horses = db.prepare(`
+    const horses = await db.prepare(`
       SELECT DISTINCT umamei as name
       FROM wakujun 
       WHERE umamei LIKE ?
       ORDER BY umamei
       LIMIT 20
-    `).all(`%${query}%`) as { name: string }[];
+    `).all<{ name: string }>(`%${query}%`);
 
     // 馬名を正規化して重複を除去
     const normalizedHorses = [...new Set(horses.map(h => normalizeHorseName(h.name)))].filter(Boolean);

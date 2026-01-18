@@ -9,7 +9,9 @@ import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
 import { toHalfWidth, parseFinishPosition } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
-import type Database from 'better-sqlite3';
+
+// PostgreSQL用のDB型（lib/db-new.tsのRawDatabaseWrapper互換）
+type DbWrapper = ReturnType<typeof getRawDb>;
 
 // ========================================
 // キャッシュ機能（5分間有効）
@@ -73,15 +75,15 @@ interface DBCachedAnalysis {
 /**
  * DBからキャッシュされた分析を取得
  */
-function getAnalysisFromDBCache(
-  db: Database.Database,
+async function getAnalysisFromDBCache(
+  db: DbWrapper,
   year: string,
   date: string,
   place: string,
   raceNumber: string
-): DBCachedAnalysis[] | null {
+): Promise<DBCachedAnalysis[] | null> {
   try {
-    const rows = db.prepare(`
+    const rows = await db.prepare(`
       SELECT horse_number, horse_name, analysis_json
       FROM saga_analysis_cache
       WHERE year = ? AND date = ? AND place = ? AND race_number = ?
@@ -104,36 +106,33 @@ function getAnalysisFromDBCache(
 /**
  * 分析結果をDBキャッシュに保存
  */
-function saveAnalysisToDBCache(
-  db: Database.Database,
+async function saveAnalysisToDBCache(
+  db: DbWrapper,
   year: string,
   date: string,
   place: string,
   raceNumber: string,
   analyses: SagaAnalysis[]
-): void {
+): Promise<void> {
   try {
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO saga_analysis_cache 
-      (year, date, place, race_number, horse_number, horse_name, analysis_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `);
-
-    const insertMany = db.transaction((items: SagaAnalysis[]) => {
-      for (const analysis of items) {
-        stmt.run(
-          year,
-          date,
-          place,
-          raceNumber,
-          analysis.horseNumber,
-          analysis.horseName,
-          JSON.stringify(analysis)
-        );
-      }
-    });
-
-    insertMany(analyses);
+    // PostgreSQLではINSERT ... ON CONFLICTを使用
+    for (const analysis of analyses) {
+      await db.query(`
+        INSERT INTO saga_analysis_cache 
+        (year, date, place, race_number, horse_number, horse_name, analysis_json, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        ON CONFLICT (year, date, place, race_number, horse_number) 
+        DO UPDATE SET analysis_json = EXCLUDED.analysis_json, created_at = NOW()
+      `, [
+        year,
+        date,
+        place,
+        raceNumber,
+        analysis.horseNumber,
+        analysis.horseName,
+        JSON.stringify(analysis)
+      ]);
+    }
     console.log(`[saga-ai] DBキャッシュ保存: ${year}/${date}/${place}/${raceNumber} (${analyses.length}頭)`);
   } catch (error) {
     console.error('[saga-ai] DBキャッシュ保存エラー:', error);
@@ -167,20 +166,20 @@ interface CachedRaceLevel {
 /**
  * 複数のレースIDからレースレベルを一括取得
  */
-function getRaceLevelsFromCache(db: Database.Database, raceIds: string[]): Map<string, CachedRaceLevel> {
+async function getRaceLevelsFromCache(db: DbWrapper, raceIds: string[]): Promise<Map<string, CachedRaceLevel>> {
   const result = new Map<string, CachedRaceLevel>();
   if (raceIds.length === 0) return result;
 
   try {
     const uniqueIds = [...new Set(raceIds)];
-    const placeholders = uniqueIds.map(() => '?').join(',');
+    const placeholders = uniqueIds.map((_, i) => `$${i + 1}`).join(',');
     
-    const rows = db.prepare(`
+    const rows = await db.query<CachedRaceLevel>(`
       SELECT race_id, level, level_label, total_horses_run, good_run_count, win_count, ai_comment
       FROM race_levels
       WHERE race_id IN (${placeholders})
-        AND (expires_at IS NULL OR expires_at > datetime('now'))
-    `).all(uniqueIds) as CachedRaceLevel[];
+        AND (expires_at IS NULL OR expires_at > NOW())
+    `, uniqueIds);
 
     for (const row of rows) {
       result.set(row.race_id, row);
@@ -410,12 +409,12 @@ function calculateBiasAdjustment(
 /**
  * 時計比較用のレースを取得
  */
-function getTimeComparisonRaces(
-  db: Database.Database,
+async function getTimeComparisonRaces(
+  db: DbWrapper,
   pastRaceDate: string,
   pastRacePlace: string,
   pastRaceDistance: string,
-): TimeComparisonRace[] {
+): Promise<TimeComparisonRace[]> {
   if (!pastRaceDate || !pastRacePlace || !pastRaceDistance) {
     return [];
   }
@@ -461,11 +460,12 @@ function getTimeComparisonRaces(
       ORDER BY date DESC
     `;
 
-    const rows = db.prepare(query).all(
-      dateRange[0], dateRange[1], dateRange[2],
-      dateRange[3], dateRange[4], dateRange[5],
-      `%${normalizedPlace}%`,
-      pastRaceDistance
+    const rows = await db.query(
+      query,
+      [dateRange[0], dateRange[1], dateRange[2],
+       dateRange[3], dateRange[4], dateRange[5],
+       `%${normalizedPlace}%`,
+       pastRaceDistance]
     ) as any[];
 
     if (!rows || rows.length === 0) return [];
@@ -510,14 +510,14 @@ interface HistoricalLapRow {
   winnerName?: string;
 }
 
-function getHistoricalLapData(
-  db: Database.Database,
+async function getHistoricalLapData(
+  db: DbWrapper,
   place: string,
   surface: string,
   distance: number,
   className: string,
   trackCondition: string
-): HistoricalLapRow[] {
+): Promise<HistoricalLapRow[]> {
   try {
     const normalizedPlace = place.replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
     const distanceStr = `${surface}${distance}`;
@@ -539,9 +539,9 @@ function getHistoricalLapData(
       LIMIT 200
     `;
 
-    const rows = db.prepare(query).all(
-      `%${normalizedPlace}%`,
-      distanceStr
+    const rows = await db.query(
+      query,
+      [`%${normalizedPlace}%`, distanceStr]
     ) as any[];
 
     if (!rows || rows.length === 0) return [];
@@ -833,7 +833,7 @@ export default async function handler(
     const isAIEnabled = openAISagaChecker.isOpenAIEnabled();
     const openAISaga = useAI && isAIEnabled ? openAISagaChecker : null;
 
-    const horses = db.prepare(`
+    const horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = ? AND place = ? AND race_number = ?
       ORDER BY CAST(umaban AS INTEGER)
@@ -856,7 +856,7 @@ export default async function handler(
       const horseName = normalizeHorseName(rawHorseName);
       const horseNum = parseInt(horse.umaban || '0', 10);
 
-      const pastRacesRawWithDuplicates = db.prepare(`
+      const pastRacesRawWithDuplicates = await db.prepare(`
         SELECT * FROM umadata
         WHERE TRIM(horse_name) = ?
         ORDER BY date DESC
@@ -889,8 +889,8 @@ export default async function handler(
 
         let indices: any = null;
         try {
-          const indexData = db.prepare(`
-            SELECT L4F, T2F, potential, makikaeshi
+          const indexData = await db.prepare(`
+            SELECT "L4F", "T2F", potential, makikaeshi
             FROM indices WHERE race_id = ?
           `).get(fullRaceId);
           if (indexData) indices = indexData;
@@ -907,7 +907,7 @@ export default async function handler(
         // 1着レースの場合は歴代比較用データを取得
         let historicalLapData: HistoricalLapRow[] | undefined;
         if (pastFinishPosition === 1 && race.work_1s) {
-          historicalLapData = getHistoricalLapData(
+          historicalLapData = await getHistoricalLapData(
             db,
             pastNormalizedPlace,
             pastSurface,

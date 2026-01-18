@@ -29,16 +29,16 @@ export async function POST() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
     // 今日のログイン記録があるかチェック
-    const todayRecord = db.prepare(
+    const todayRecord = await db.prepare(
       'SELECT * FROM login_history WHERE user_id = ? AND login_date = ?'
-    ).get(user.id, today) as DbLoginHistory | undefined;
+    ).get<DbLoginHistory>(user.id, today);
 
     if (todayRecord) {
       return NextResponse.json({ 
@@ -49,41 +49,40 @@ export async function POST() {
     }
 
     // 昨日のログイン記録を確認して連続日数を計算
-    const yesterdayRecord = db.prepare(
+    const yesterdayRecord = await db.prepare(
       'SELECT * FROM login_history WHERE user_id = ? AND login_date = ?'
-    ).get(user.id, yesterday) as DbLoginHistory | undefined;
+    ).get<DbLoginHistory>(user.id, yesterday);
 
     const streakCount = yesterdayRecord ? yesterdayRecord.streak_count + 1 : 1;
     const now = new Date().toISOString();
 
     // ログイン記録を保存
     const loginId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO login_history (id, user_id, login_date, streak_count, bonus_claimed, created_at)
       VALUES (?, ?, ?, ?, 1, ?)
     `).run(loginId, user.id, today, streakCount, now);
 
     // ボーナスポイントを付与
-    let bonusPoints = 1; // デフォルト1pt
+    let bonusPoints = 1;
     let bonusDescription = 'デイリーログインボーナス';
 
-    // 連続日数に応じた特別ボーナス
     if (STREAK_REWARDS[streakCount]) {
       bonusPoints = STREAK_REWARDS[streakCount].points;
       bonusDescription = STREAK_REWARDS[streakCount].description;
     }
 
     // ポイント付与
-    const existingPoints = db.prepare('SELECT id, balance, total_earned FROM user_points WHERE user_id = ?').get(user.id) as { id: string; balance: number; total_earned: number } | undefined;
+    const existingPoints = await db.prepare('SELECT id, balance, total_earned FROM user_points WHERE user_id = ?').get<{ id: string; balance: number; total_earned: number }>(user.id);
     
     if (existingPoints) {
-      db.prepare(`
+      await db.prepare(`
         UPDATE user_points SET balance = balance + ?, total_earned = total_earned + ?, updated_at = ?
         WHERE user_id = ?
       `).run(bonusPoints, bonusPoints, now, user.id);
     } else {
       const pointsId = randomUUID();
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO user_points (id, user_id, balance, total_earned, total_spent, updated_at)
         VALUES (?, ?, ?, ?, 0, ?)
       `).run(pointsId, user.id, bonusPoints, bonusPoints, now);
@@ -91,14 +90,14 @@ export async function POST() {
 
     // ポイント履歴を記録
     const historyId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO point_history (id, user_id, amount, type, description, created_at)
       VALUES (?, ?, ?, 'login_bonus', ?, ?)
     `).run(historyId, user.id, bonusPoints, bonusDescription, now);
 
     // 通知を作成
     const notifId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO notifications (id, user_id, type, title, message, created_at)
       VALUES (?, ?, 'bonus', ?, ?, ?)
     `).run(notifId, user.id, `+${bonusPoints}pt獲得！`, bonusDescription, now);
@@ -125,21 +124,19 @@ export async function GET() {
     }
 
     const db = getDb();
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(session.user.email) as DbUser | undefined;
+    const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    // テーブルが存在しない場合のフォールバック
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      const todayRecord = db.prepare(
+      const todayRecord = await db.prepare(
         'SELECT * FROM login_history WHERE user_id = ? AND login_date = ?'
-      ).get(user.id, today) as DbLoginHistory | undefined;
+      ).get<DbLoginHistory>(user.id, today);
 
-      // 最新の連続ログイン記録を取得
-      const latestRecord = db.prepare(
+      const latestRecord = await db.prepare(
         'SELECT * FROM login_history WHERE user_id = ? ORDER BY login_date DESC LIMIT 1'
-      ).get(user.id) as DbLoginHistory | undefined;
+      ).get<DbLoginHistory>(user.id);
 
       return NextResponse.json({
         todayClaimed: !!todayRecord,
@@ -147,7 +144,6 @@ export async function GET() {
         nextReward: Object.entries(STREAK_REWARDS).find(([day]) => parseInt(day) > (latestRecord?.streak_count || 0))?.[1]
       });
     } catch {
-      // テーブルが存在しない場合
       return NextResponse.json({
         todayClaimed: false,
         currentStreak: 0,

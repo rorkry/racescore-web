@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 既存ユーザーチェック
-    const existingUser = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existingUser = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
     if (existingUser) {
       return NextResponse.json(
         { error: 'このメールアドレスは既に登録されています' },
@@ -49,28 +49,28 @@ export async function POST(request: NextRequest) {
     const userId = randomUUID();
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (id, email, password_hash, name, role, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'user', ?, ?)
     `).run(userId, email, passwordHash, name || null, now, now);
 
     // 初期ポイント付与
     const pointsId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO user_points (id, user_id, balance, total_earned, total_spent, updated_at)
       VALUES (?, ?, 100, 100, 0, ?)
     `).run(pointsId, userId, now);
 
     // ポイント履歴に記録
     const historyId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO point_history (id, user_id, amount, type, description, created_at)
       VALUES (?, ?, 100, 'welcome', '新規登録ボーナス', ?)
     `).run(historyId, userId, now);
 
     // 無料プランのサブスクリプション作成
     const subId = randomUUID();
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO subscriptions (id, user_id, plan, status, created_at, updated_at)
       VALUES (?, ?, 'free', 'active', ?, ?)
     `).run(subId, userId, now, now);
