@@ -1,5 +1,0 @@
-ignoredBuiltDependencies:
-  - '@prisma/client'
-onlyBuiltDependencies:
-  - '@prisma/client'
-  - prisma
