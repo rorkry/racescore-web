@@ -148,11 +148,11 @@ function getAdjacentDate(currentDate: string, availableDates: string[], directio
 }
 
 export default function RaceCardPage() {
-  // SSRハイドレーション対応: 初期値は固定、useEffectでクライアント側の日付を設定
+  // SSRハイドレーション対応: 初期値は固定値を使用
   const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [date, setDate] = useState('');
-  const [isDateInitialized, setIsDateInitialized] = useState(false);
+  const [date, setDate] = useState('0119'); // 固定の初期値（すぐにuseEffectで更新される）
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [isClient, setIsClient] = useState(false);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<string>('');
   const [selectedRace, setSelectedRace] = useState<string>('');
@@ -208,14 +208,10 @@ export default function RaceCardPage() {
 
   // クライアント側で日付を初期化（SSRハイドレーション対応）
   useEffect(() => {
-    if (!isDateInitialized) {
-      const todayDate = getTodayDate();
-      const todayYear = getTodayYear();
-      setDate(todayDate);
-      setSelectedYear(todayYear);
-      setIsDateInitialized(true);
-    }
-  }, [isDateInitialized]);
+    setIsClient(true);
+    const todayYear = getTodayYear();
+    setSelectedYear(todayYear);
+  }, []);
 
   // レースキーを生成
   const raceKey = raceCard 
@@ -289,10 +285,10 @@ export default function RaceCardPage() {
   }, []);
 
   useEffect(() => {
-    if (isDateInitialized) {
+    if (isClient) {
       fetchAvailableDates();
     }
-  }, [selectedYear, isDateInitialized]);
+  }, [selectedYear, isClient]);
 
   const fetchAvailableDates = async () => {
     try {
@@ -302,16 +298,15 @@ export default function RaceCardPage() {
       const dates = (data.dates || []).map((d: { date: string }) => d.date);
       setAvailableDates(dates);
       
-      // 日付が空の場合のみ自動設定
-      if (!date) {
-        const today = getTodayDate();
-        const currentYear = getTodayYear();
-        
-        if (selectedYear === currentYear && dates.includes(today)) {
-          setDate(today);
-        } else if (dates.length > 0) {
-          setDate(dates[0]);
-        }
+      // 今日の日付が利用可能か確認して設定
+      const today = getTodayDate();
+      const currentYear = getTodayYear();
+      
+      if (selectedYear === currentYear && dates.includes(today)) {
+        setDate(today);
+      } else if (dates.length > 0 && !dates.includes(date)) {
+        // 現在の日付が利用可能でない場合は最新日付を設定
+        setDate(dates[0]);
       }
     } catch (err: any) {
       console.error('Failed to fetch available dates:', err);
