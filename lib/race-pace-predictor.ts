@@ -529,13 +529,13 @@ export function estimateSimpleRunningStyle(
  * - 最初の16桁 = race_id（馬番なし）
  * - 最後の2桁 = 馬番号
  */
-function calculateAvgIndicesForDistance(
-  db: Database.Database,
+async function calculateAvgIndicesForDistance(
+  db: any,
   horseName: string,
   targetDistance: number, // 今回のレース距離
   targetSurface: string,  // '芝' or 'ダート'
   currentRaceDateNum: number = 99999999 // 日付フィルタ（デフォルトは全取得）
-): { 
+): Promise<{ 
   avgT2F: number | null;  // 平均T2F（前半2F秒数）
   avgL4F: number | null;  // 平均L4F（後半4F指数）
   t2fRaceCount: number;   // T2Fデータがあるレース数
@@ -545,7 +545,7 @@ function calculateAvgIndicesForDistance(
   avgMakikaeshi: number | null;
   // デバッグ用：対象レースの詳細
   relevantRaces: Array<{ date: string; distance: number; T2F: number; L4F: number }>;
-} {
+}> {
   try {
     // umadataからこの馬のレースを取得
     const raceIdsQuery = `
@@ -556,11 +556,11 @@ function calculateAvgIndicesForDistance(
         date,
         distance
       FROM umadata
-      WHERE horse_name = ?
+      WHERE horse_name = $1
       ORDER BY race_id DESC
     `;
     
-    const allRaceRecords = db.prepare(raceIdsQuery).all(horseName) as Array<{
+    const allRaceRecords = await db.prepare(raceIdsQuery).all(horseName) as Array<{
       race_id: string;
       horse_number: string;
       corner_2: string;
@@ -618,10 +618,10 @@ function calculateAvgIndicesForDistance(
       const indexQuery = `
         SELECT T2F, L4F, potential, makikaeshi
         FROM indices
-        WHERE race_id = ?
+        WHERE race_id = $1
       `;
       
-      const indexRecord = db.prepare(indexQuery).get(fullRaceId) as { 
+      const indexRecord = await db.prepare(indexQuery).get(fullRaceId) as { 
         T2F: number;
         L4F: number;
         potential: number;
@@ -702,24 +702,24 @@ function calculateAvgIndicesForDistance(
  * 過去の1コーナー通過順位を取得（テン1F推定用）
  * 現在のレース日付以前のデータのみを使用
  */
-function getFirstCornerPositions(
-  db: Database.Database,
+async function getFirstCornerPositions(
+  db: any,
   horseName: string,
   limit: number = 10,
   currentRaceDateNum: number = 99999999
-): number[] {
+): Promise<number[]> {
   try {
     const query = `
       SELECT corner_1, date
       FROM umadata
-      WHERE horse_name = ?
+      WHERE horse_name = $1
         AND corner_1 IS NOT NULL
         AND corner_1 != ''
       ORDER BY race_id DESC
-      LIMIT ?
+      LIMIT $2
     `;
     
-    const allRecords = db.prepare(query).all(horseName, limit * 2) as Array<{ corner_1: string; date: string }>;
+    const allRecords = await db.prepare(query).all(horseName, limit * 2) as Array<{ corner_1: string; date: string }>;
     
     // 現在のレース日付以前のデータのみをフィルタリング
     const records = allRecords.filter(r => parseDateToNumber(r.date) < currentRaceDateNum).slice(0, limit);
@@ -744,28 +744,28 @@ function getFirstCornerPositions(
  * - データがある限りすべて遡る
  * - 逃げた経験（2C=1位）もチェック
  */
-function calculateAvgPosition2C(
-  db: Database.Database,
+async function calculateAvgPosition2C(
+  db: any,
   horseName: string,
   currentDistance: number,
   currentRaceDateNum: number = 99999999 // 日付フィルタ（デフォルトは全取得）
-): { 
+): Promise<{ 
   avgPosition: number | null; 
   raceCount: number;
   hasEscapeExperience: boolean; // 逃げた経験
   escapeCount: number; // 逃げた回数
-} {
+}> {
   try {
     const query = `
       SELECT corner_2, distance, date
       FROM umadata
-      WHERE horse_name = ?
+      WHERE horse_name = $1
         AND corner_2 IS NOT NULL
         AND corner_2 != ''
       ORDER BY race_id DESC
     `;
     
-    const records = db.prepare(query).all(horseName) as Array<{
+    const records = await db.prepare(query).all(horseName) as Array<{
       corner_2: string;
       distance: string;
       date: string;
@@ -823,20 +823,20 @@ function calculateAvgPosition2C(
 /**
  * 前走の距離を取得（現在のレース日付以前のデータのみ）
  */
-function getLastDistance(
-  db: Database.Database, 
+async function getLastDistance(
+  db: any, 
   horseName: string,
   currentRaceDateNum: number = 99999999
-): number | null {
+): Promise<number | null> {
   const query = `
     SELECT distance, date
     FROM umadata
-    WHERE horse_name = ?
+    WHERE horse_name = $1
     ORDER BY race_id DESC
     LIMIT 10
   `;
   
-  const rows = db.prepare(query).all(horseName) as Array<{ distance: string; date: string }>;
+  const rows = await db.prepare(query).all(horseName) as Array<{ distance: string; date: string }>;
   
   // 現在のレース日付以前のデータから最新のものを取得
   const filteredRow = rows.find(r => parseDateToNumber(r.date) < currentRaceDateNum);
@@ -903,28 +903,28 @@ function parseTimeToSeconds(time: number | string | null | undefined): number | 
  * 着差（margin）フィールドを使って判定
  * 現在のレース日付以前のデータのみを使用
  */
-export function checkRecentBadPerformance(
-  db: Database.Database,
+export async function checkRecentBadPerformance(
+  db: any,
   horseName: string,
   recentRaces: number = 3,
   currentRaceDateNum: number = 99999999
-): {
+): Promise<{
   isBadPerformer: boolean;
   avgTimeDiff: number;
   worstTimeDiff: number;
   badRaceCount: number;
-} {
+}> {
   try {
     // 直近N走の着差データを取得（marginフィールドを使用）
     const query = `
       SELECT finish_position, margin, corner_2, corner_4, date
       FROM umadata
-      WHERE horse_name = ?
+      WHERE horse_name = $1
       ORDER BY race_id DESC
-      LIMIT ?
+      LIMIT $2
     `;
     
-    const allRecords = db.prepare(query).all(horseName, recentRaces * 2) as Array<{
+    const allRecords = await db.prepare(query).all(horseName, recentRaces * 2) as Array<{
       finish_position: string;
       margin: string;
       corner_2: string;
@@ -1037,7 +1037,7 @@ function checkConsistentLoser(
   horseName: string,
   currentRaceDateNum: number = 99999999
 ): boolean {
-  const result = checkRecentBadPerformance(db, horseName, 3, currentRaceDateNum);
+  const result = await checkRecentBadPerformance(db, horseName, 3, currentRaceDateNum);
   return result.isBadPerformer;
 }
 
@@ -1285,25 +1285,25 @@ function determinePaceWithCourse(
 /**
  * メイン関数: 展開予想を生成（ブラッシュアップ版）
  */
-export function predictRacePace(
-  db: Database.Database,
+export async function predictRacePace(
+  db: any,
   params: {
     year: string;
     date: string;
     place: string;
     raceNumber: string;
   }
-): RacePacePrediction {
+): Promise<RacePacePrediction> {
   const { year, date, place, raceNumber } = params;
 
   const wakujunQuery = `
     SELECT umaban, umamei, waku, distance, track_type, kinryo
     FROM wakujun
-    WHERE year = ? AND date = ? AND place = ? AND race_number = ?
-    ORDER BY CAST(umaban AS INTEGER)
+    WHERE year = $1 AND date = $2 AND place = $3 AND race_number = $4
+    ORDER BY umaban::INTEGER
   `;
 
-  const horses = db.prepare(wakujunQuery).all(year, date, place, raceNumber) as WakujunRecord[];
+  const horses = await db.prepare(wakujunQuery).all(year, date, place, raceNumber) as WakujunRecord[];
 
   if (horses.length === 0) {
     throw new Error(`No horses found`);
@@ -1354,7 +1354,7 @@ export function predictRacePace(
     const horseNumber = parseInt(horse.umaban, 10);
     const horseName = horse.umamei;
 
-    const { avgPosition, raceCount: posRaceCount, hasEscapeExperience, escapeCount } = calculateAvgPosition2C(
+    const { avgPosition, raceCount: posRaceCount, hasEscapeExperience, escapeCount } = await calculateAvgPosition2C(
       db,
       horseName,
       currentDistance,
@@ -1362,7 +1362,7 @@ export function predictRacePace(
     );
 
     // 【改善】距離±200mでフィルタした指数を取得（日付フィルタも適用）
-    const indexData = calculateAvgIndicesForDistance(
+    const indexData = await calculateAvgIndicesForDistance(
       db,
       horseName,
       currentDistance,
@@ -1370,7 +1370,7 @@ export function predictRacePace(
       currentRaceDateNum
     );
 
-    const lastDistance = getLastDistance(db, horseName, currentRaceDateNum);
+    const lastDistance = await getLastDistance(db, horseName, currentRaceDateNum);
 
     tempHorseData.push({
       horse,
@@ -1442,7 +1442,7 @@ export function predictRacePace(
     const wakuNum = parseInt(horse.waku, 10);
     
     // 1コーナー通過順位を取得（テン1F推定用、日付フィルタ適用）
-    const firstCornerPositions = getFirstCornerPositions(db, horseName, 10, currentRaceDateNum);
+    const firstCornerPositions = await getFirstCornerPositions(db, horseName, 10, currentRaceDateNum);
     const first1FScore = estimateFirst1FScore(firstCornerPositions, horses.length);
     
     // 重み付きT2F計算（近3走重視）
