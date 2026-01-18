@@ -5,6 +5,10 @@ import iconv from 'iconv-lite';
 import { auth } from '@/lib/auth';
 import { checkRateLimit, getRateLimitIdentifier, strictRateLimit } from '@/lib/rate-limit';
 
+// Vercel/Railway向けのタイムアウト設定
+export const maxDuration = 300; // 5分
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // 管理者認証チェック
@@ -57,6 +61,9 @@ export async function POST(request: NextRequest) {
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 30000, // 30秒
+      idleTimeoutMillis: 60000, // 60秒
+      max: 5, // 最大接続数
     });
 
     const client = await pool.connect();
@@ -231,13 +238,15 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
   console.log(`[importUmadata] 開始: ${data.length}行`);
   const startTime = Date.now();
 
-  await client.query('BEGIN');
+  let count = 0;
+  let inserted = 0;
+  
+  // 大きなファイル対応: バッチごとにコミット
+  const batchSize = 500;
+  const commitEvery = 2000; // 2000件ごとにコミット
 
   try {
-    let count = 0;
-    let inserted = 0;
-    
-    const batchSize = 100;
+    await client.query('BEGIN');
     
     for (let i = 0; i < data.length; i += batchSize) {
       const batch = data.slice(i, i + batchSize);
@@ -245,7 +254,6 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
       for (const row of batch) {
         if (Array.isArray(row) && row.length >= 39) {
           try {
-            // 馬名の正規化（半角化、$マーク削除は既に行われている前提）
             const horseName = (row[11] || '').trim();
             
             await client.query(`
@@ -264,49 +272,49 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
                 $31, $32, $33, $34, $35, $36, $37, $38, $39
               )
             `, [
-              (row[0] || '').trim(),   // race_id
-              (row[1] || '').trim(),   // date
-              (row[2] || '').trim(),   // place
-              (row[3] || '').trim(),   // course_type
-              (row[4] || '').trim(),   // distance
-              (row[5] || '').trim(),   // class_name
-              (row[6] || '').trim(),   // race_name
-              (row[7] || '').trim(),   // gender_limit
-              (row[8] || '').trim(),   // age_limit
-              (row[9] || '').trim(),   // waku
-              (row[10] || '').trim(),  // umaban
-              horseName,               // horse_name
-              (row[12] || '').trim(),  // corner_4_position
-              (row[13] || '').trim(),  // track_condition
-              (row[14] || '').trim(),  // field_size
-              (row[15] || '').trim(),  // popularity
-              (row[16] || '').trim(),  // finish_position
-              (row[17] || '').trim(),  // last_3f
-              (row[18] || '').trim(),  // weight_carried
-              (row[19] || '').trim(),  // horse_weight
-              (row[20] || '').trim(),  // weight_change
-              (row[21] || '').trim(),  // finish_time
-              (row[22] || '').trim(),  // race_count
-              (row[23] || '').trim(),  // margin
-              (row[24] || '').trim(),  // win_odds
-              (row[25] || '').trim(),  // place_odds
-              (row[26] || '').trim(),  // win_payout
-              (row[27] || '').trim(),  // place_payout
-              (row[28] || '').trim(),  // rpci
-              (row[29] || '').trim(),  // pci
-              (row[30] || '').trim(),  // pci3
-              (row[31] || '').trim(),  // horse_mark
-              (row[32] || '').trim(),  // passing_order
-              (row[33] || '').trim(),  // gender_age
-              (row[34] || '').trim(),  // jockey
-              (row[35] || '').trim(),  // trainer
-              (row[36] || '').trim(),  // sire
-              (row[37] || '').trim(),  // dam
-              (row[38] || '').trim()   // lap_time
+              (row[0] || '').trim(),
+              (row[1] || '').trim(),
+              (row[2] || '').trim(),
+              (row[3] || '').trim(),
+              (row[4] || '').trim(),
+              (row[5] || '').trim(),
+              (row[6] || '').trim(),
+              (row[7] || '').trim(),
+              (row[8] || '').trim(),
+              (row[9] || '').trim(),
+              (row[10] || '').trim(),
+              horseName,
+              (row[12] || '').trim(),
+              (row[13] || '').trim(),
+              (row[14] || '').trim(),
+              (row[15] || '').trim(),
+              (row[16] || '').trim(),
+              (row[17] || '').trim(),
+              (row[18] || '').trim(),
+              (row[19] || '').trim(),
+              (row[20] || '').trim(),
+              (row[21] || '').trim(),
+              (row[22] || '').trim(),
+              (row[23] || '').trim(),
+              (row[24] || '').trim(),
+              (row[25] || '').trim(),
+              (row[26] || '').trim(),
+              (row[27] || '').trim(),
+              (row[28] || '').trim(),
+              (row[29] || '').trim(),
+              (row[30] || '').trim(),
+              (row[31] || '').trim(),
+              (row[32] || '').trim(),
+              (row[33] || '').trim(),
+              (row[34] || '').trim(),
+              (row[35] || '').trim(),
+              (row[36] || '').trim(),
+              (row[37] || '').trim(),
+              (row[38] || '').trim()
             ]);
             inserted++;
           } catch (e: any) {
-            if (!e.message.includes('duplicate')) {
+            if (!e.message?.includes('duplicate')) {
               console.error('Error processing umadata row:', e.message);
             }
           }
@@ -314,7 +322,14 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
         }
       }
       
-      if ((i + batchSize) % 1000 === 0 || i + batchSize >= data.length) {
+      // 定期的にコミット（大きなファイル対応）
+      if (count > 0 && count % commitEvery === 0) {
+        await client.query('COMMIT');
+        await client.query('BEGIN');
+        console.log(`[importUmadata] 中間コミット: ${count}/${data.length}行`);
+      }
+      
+      if ((i + batchSize) % 5000 === 0 || i + batchSize >= data.length) {
         console.log(`[importUmadata] 進捗: ${Math.min(i + batchSize, data.length)}/${data.length}行`);
       }
     }
@@ -326,7 +341,11 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
 
     return { count, inserted };
   } catch (error) {
-    await client.query('ROLLBACK');
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Rollback error:', rollbackError);
+    }
     throw error;
   }
 }
