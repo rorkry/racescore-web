@@ -895,11 +895,14 @@ export default async function handler(
         try {
           const indexData = await db.prepare(`
             SELECT "L4F", "T2F", potential, makikaeshi
-            FROM indices WHERE race_id = ?
+            FROM indices WHERE race_id = $1
           `).get(fullRaceId);
-          if (indexData) indices = indexData;
-        } catch {
-          // 指数データがない場合は無視
+          if (indexData) {
+            indices = indexData;
+            console.log(`[saga-ai] Index found for ${fullRaceId}:`, JSON.stringify(indexData));
+          }
+        } catch (err) {
+          console.error(`[saga-ai] Index lookup error for ${fullRaceId}:`, err);
         }
 
         const pastRawPlace = race.place || '';
