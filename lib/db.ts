@@ -263,6 +263,26 @@ function initDb(database: Database.Database) {
     )
   `);
 
+  // レースレベルキャッシュ
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS race_levels (
+      race_id TEXT PRIMARY KEY,
+      level TEXT NOT NULL,
+      level_label TEXT NOT NULL,
+      total_horses_run INTEGER DEFAULT 0,
+      good_run_count INTEGER DEFAULT 0,
+      first_run_good_count INTEGER DEFAULT 0,
+      win_count INTEGER DEFAULT 0,
+      good_run_rate REAL DEFAULT 0,
+      first_run_good_rate REAL DEFAULT 0,
+      has_plus INTEGER DEFAULT 0,
+      ai_comment TEXT,
+      display_comment TEXT,
+      calculated_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT
+    )
+  `);
+
   // インデックス作成
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -280,6 +300,7 @@ function initDb(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id);
     CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_key);
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read);
+    CREATE INDEX IF NOT EXISTS idx_race_levels_expires ON race_levels(expires_at);
   `);
 }
 

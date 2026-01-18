@@ -15,6 +15,7 @@ interface SagaAnalysis {
   contextSummary?: string;   // コース・前走条件サマリー
   timeEvaluation?: string;   // タイム評価
   lapEvaluation?: string;    // ラップ評価
+  raceLevelNote?: string | null;  // レースレベル分析
   courseMatch: {
     rating: 'S' | 'A' | 'B' | 'C' | 'D';
     reason: string;
@@ -733,6 +734,14 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
                     <div className="text-slate-300 leading-relaxed">
                       <span className="text-orange-400 font-medium">【ラップ】</span>
                       <span className="break-words">{analysis.lapEvaluation}</span>
+                    </div>
+                  )}
+
+                  {/* レースレベル分析 */}
+                  {analysis.raceLevelNote && (
+                    <div className="text-slate-300 leading-relaxed">
+                      <span className="text-amber-400 font-medium">【レースレベル】</span>
+                      <span className="break-words">{analysis.raceLevelNote}</span>
                     </div>
                   )}
                   

@@ -150,6 +150,49 @@ function normalizeHorseName(name: string): string {
     .trim();
 }
 
+// ========================================
+// レースレベルキャッシュ取得
+// ========================================
+
+interface CachedRaceLevel {
+  race_id: string;
+  level: string;
+  level_label: string;
+  total_horses_run: number;
+  good_run_count: number;
+  win_count: number;
+  ai_comment: string | null;
+}
+
+/**
+ * 複数のレースIDからレースレベルを一括取得
+ */
+function getRaceLevelsFromCache(db: Database.Database, raceIds: string[]): Map<string, CachedRaceLevel> {
+  const result = new Map<string, CachedRaceLevel>();
+  if (raceIds.length === 0) return result;
+
+  try {
+    const uniqueIds = [...new Set(raceIds)];
+    const placeholders = uniqueIds.map(() => '?').join(',');
+    
+    const rows = db.prepare(`
+      SELECT race_id, level, level_label, total_horses_run, good_run_count, win_count, ai_comment
+      FROM race_levels
+      WHERE race_id IN (${placeholders})
+        AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).all(uniqueIds) as CachedRaceLevel[];
+
+    for (const row of rows) {
+      result.set(row.race_id, row);
+    }
+  } catch (error) {
+    // race_levelsテーブルがなくてもエラーにしない
+    console.log('[saga-ai] race_levelsテーブルからの取得スキップ:', error);
+  }
+
+  return result;
+}
+
 /**
  * 日付文字列をYYYYMMDD形式の数値に変換（比較用）
  * 例: "2024. 1. 5" -> 20240105, "2024.01.05" -> 20240105
@@ -904,6 +947,8 @@ export default async function handler(
           ownLast3F: parseFloat(race.last_3f || '0') || 0,          // 自身の上がり3F
           // 歴代比較用データ（1着レースのみ）
           historicalLapData,
+          // レースレベル判定用
+          raceId: raceIdBase,  // race_id_new_no_horse_num（馬番なし）
         };
       });
 
@@ -952,6 +997,43 @@ export default async function handler(
         indices: { T2F: avgT2F, L4F: avgL4F, relevantRaceCount, potential: avgPotential, makikaeshi: avgMakikaeshi },
         kisoScore: calculatedKisoScore,
       });
+    }
+
+    // ========================================
+    // レースレベルを一括取得して各馬のpastRacesに追加
+    // ========================================
+    try {
+      // 全ての過去走からraceIdを収集
+      const allRaceIds: string[] = [];
+      for (const { pastRaces } of horseDataList) {
+        for (const race of pastRaces.slice(0, 5)) {
+          if (race.raceId) {
+            allRaceIds.push(race.raceId);
+          }
+        }
+      }
+
+      // レースレベルを一括取得
+      const raceLevelCache = getRaceLevelsFromCache(db, allRaceIds);
+
+      // 各馬のpastRacesにレースレベル情報を追加
+      for (const horseData of horseDataList) {
+        for (const race of horseData.pastRaces) {
+          if (race.raceId && raceLevelCache.has(race.raceId)) {
+            const cached = raceLevelCache.get(race.raceId)!;
+            race.raceLevel = {
+              level: cached.level as any,
+              levelLabel: cached.level_label,
+              totalHorsesRun: cached.total_horses_run,
+              goodRunCount: cached.good_run_count,
+              winCount: cached.win_count,
+              aiComment: cached.ai_comment || '',
+            };
+          }
+        }
+      }
+    } catch (err) {
+      console.log('[saga-ai] レースレベル取得スキップ:', err);
     }
 
     const t2fWithData = memberIndices.filter(m => m.T2F > 0 && (m.relevantRaceCount || 0) > 0);
