@@ -838,9 +838,9 @@ export default async function handler(
 
     const horses = await db.prepare(`
       SELECT * FROM wakujun
-      WHERE date = ? AND place = ? AND race_number = ?
+      WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
       ORDER BY umaban::INTEGER
-    `).all(date, rawPlace, raceNumber) as any[];
+    `).all(date, rawPlace, raceNumber, parseInt(year, 10)) as any[];
 
     if (!horses || horses.length === 0) {
       return res.status(404).json({ error: 'No horses found' });

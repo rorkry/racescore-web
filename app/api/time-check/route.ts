@@ -199,9 +199,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ results });
   } catch (error) {
     console.error('Time check error:', error);
+    const errorDetails = error instanceof Error 
+      ? { message: error.message, stack: error.stack?.slice(0, 500) }
+      : 'Unknown';
     return NextResponse.json({ 
       error: 'Internal error',
-      details: error instanceof Error ? error.message : 'Unknown'
+      details: errorDetails,
+      params: { date, place, year }
     }, { status: 500 });
   }
 }
