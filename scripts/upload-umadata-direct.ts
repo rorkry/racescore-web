@@ -96,96 +96,68 @@ async function main() {
     console.log('削除完了');
     console.log('');
 
-    // アップロード開始
-    console.log('データをアップロード中...');
+    // アップロード開始（バッチINSERTで高速化）
+    console.log('データをアップロード中（高速バッチモード）...');
     const startTime = Date.now();
     
     let inserted = 0;
     let errors = 0;
-    const batchSize = 500;
-    const commitEvery = 5000;
+    const batchSize = 100; // 100行ずつバッチINSERT
 
     await client.query('BEGIN');
 
     for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize);
+      const batch = rows.slice(i, i + batchSize).filter(row => row.length >= 39);
       
-      for (const row of batch) {
-        if (row.length >= 39) {
-          try {
-            await client.query(`
-              INSERT INTO umadata (
-                race_id, date, place, course_type, distance, class_name, race_name,
-                gender_limit, age_limit, waku, umaban, horse_name,
-                corner_4_position, track_condition, field_size, popularity,
-                finish_position, last_3f, weight_carried, horse_weight, weight_change,
-                finish_time, race_count, margin, win_odds, place_odds,
-                win_payout, place_payout, rpci, pci, pci3, horse_mark,
-                passing_order, gender_age, jockey, trainer, sire, dam, lap_time
-              ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                $31, $32, $33, $34, $35, $36, $37, $38, $39
-              )
-            `, [
-              (row[0] || '').trim(),
-              (row[1] || '').trim(),
-              (row[2] || '').trim(),
-              (row[3] || '').trim(),
-              (row[4] || '').trim(),
-              (row[5] || '').trim(),
-              (row[6] || '').trim(),
-              (row[7] || '').trim(),
-              (row[8] || '').trim(),
-              (row[9] || '').trim(),
-              (row[10] || '').trim(),
-              (row[11] || '').trim(),
-              (row[12] || '').trim(),
-              (row[13] || '').trim(),
-              (row[14] || '').trim(),
-              (row[15] || '').trim(),
-              (row[16] || '').trim(),
-              (row[17] || '').trim(),
-              (row[18] || '').trim(),
-              (row[19] || '').trim(),
-              (row[20] || '').trim(),
-              (row[21] || '').trim(),
-              (row[22] || '').trim(),
-              (row[23] || '').trim(),
-              (row[24] || '').trim(),
-              (row[25] || '').trim(),
-              (row[26] || '').trim(),
-              (row[27] || '').trim(),
-              (row[28] || '').trim(),
-              (row[29] || '').trim(),
-              (row[30] || '').trim(),
-              (row[31] || '').trim(),
-              (row[32] || '').trim(),
-              (row[33] || '').trim(),
-              (row[34] || '').trim(),
-              (row[35] || '').trim(),
-              (row[36] || '').trim(),
-              (row[37] || '').trim(),
-              (row[38] || '').trim()
-            ]);
-            inserted++;
-          } catch (e: any) {
-            errors++;
-            if (errors <= 5) {
-              console.error(`Error at row ${i}: ${e.message}`);
-            }
+      if (batch.length === 0) continue;
+
+      try {
+        // バッチINSERT用のVALUES句を構築
+        const values: any[] = [];
+        const placeholders: string[] = [];
+        
+        batch.forEach((row, idx) => {
+          const offset = idx * 39;
+          const rowPlaceholders = [];
+          for (let j = 1; j <= 39; j++) {
+            rowPlaceholders.push(`$${offset + j}`);
+            values.push((row[j - 1] || '').trim());
           }
+          placeholders.push(`(${rowPlaceholders.join(', ')})`);
+        });
+
+        await client.query(`
+          INSERT INTO umadata (
+            race_id, date, place, course_type, distance, class_name, race_name,
+            gender_limit, age_limit, waku, umaban, horse_name,
+            corner_4_position, track_condition, field_size, popularity,
+            finish_position, last_3f, weight_carried, horse_weight, weight_change,
+            finish_time, race_count, margin, win_odds, place_odds,
+            win_payout, place_payout, rpci, pci, pci3, horse_mark,
+            passing_order, gender_age, jockey, trainer, sire, dam, lap_time
+          ) VALUES ${placeholders.join(', ')}
+        `, values);
+        
+        inserted += batch.length;
+      } catch (e: any) {
+        errors += batch.length;
+        if (errors <= 500) {
+          console.error(`Batch error at ${i}: ${e.message}`);
         }
       }
 
-      // 定期的にコミット
-      if (inserted > 0 && inserted % commitEvery === 0) {
-        await client.query('COMMIT');
-        await client.query('BEGIN');
+      // 進捗表示（1000行ごと）
+      if ((i + batchSize) % 1000 === 0 || i + batchSize >= rows.length) {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
         const speed = Math.round(inserted / (Date.now() - startTime) * 1000);
-        console.log(`  ${inserted.toLocaleString()} / ${rows.length.toLocaleString()} 件 (${elapsed}秒, ${speed}件/秒)`);
+        const percent = ((i + batchSize) / rows.length * 100).toFixed(1);
+        console.log(`  ${percent}% - ${inserted.toLocaleString()} 件 (${elapsed}秒, ${speed}件/秒)`);
+      }
+
+      // 定期的にコミット（10000行ごと）
+      if (inserted > 0 && inserted % 10000 === 0) {
+        await client.query('COMMIT');
+        await client.query('BEGIN');
       }
     }
 
