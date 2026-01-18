@@ -836,7 +836,7 @@ export default async function handler(
     const horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = ? AND place = ? AND race_number = ?
-      ORDER BY CAST(umaban AS INTEGER)
+      ORDER BY umaban::INTEGER
     `).all(date, rawPlace, raceNumber) as any[];
 
     if (!horses || horses.length === 0) {

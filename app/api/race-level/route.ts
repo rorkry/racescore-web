@@ -174,8 +174,8 @@ export async function GET(request: NextRequest) {
       SELECT DISTINCT horse_name, finish_position
       FROM umadata 
       WHERE race_id = ?
-        AND CAST(finish_position AS INTEGER) <= 3
-      ORDER BY CAST(finish_position AS INTEGER)
+        AND finish_position::INTEGER <= 3
+      ORDER BY finish_position::INTEGER
     `).all<{ horse_name: string; finish_position: string }>(raceId);
     
     if (topHorses.length === 0) {
@@ -349,7 +349,7 @@ export async function POST(request: NextRequest) {
           SELECT DISTINCT horse_name
           FROM umadata 
           WHERE race_id = ?
-            AND CAST(finish_position AS INTEGER) <= 3
+            AND finish_position::INTEGER <= 3
         `).all<{ horse_name: string }>(raceId);
         
         if (topHorses.length === 0) {

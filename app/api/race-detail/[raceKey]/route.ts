@@ -44,7 +44,7 @@ export async function GET(
       JOIN races  r ON r.raceId  = rr.raceId
       JOIN horses h ON h.horseId = rr.horseId
       WHERE rr.raceId = ?
-      ORDER BY CAST(rr.horseNo AS INTEGER);
+      ORDER BY rr.horseNo::INTEGER;
     `,
     )
     .all(key);

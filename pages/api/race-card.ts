@@ -49,7 +49,7 @@ export default async function handler(
     const raceCard = await db.prepare(`
       SELECT * FROM wakujun 
       WHERE date = $1 AND place = $2 AND race_number = $3
-      ORDER BY CAST(umaban AS INTEGER)
+      ORDER BY umaban::INTEGER
     `).all(date, place, raceNumber);
     
     if (raceCard.length === 0) {

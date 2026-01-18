@@ -103,7 +103,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       paramIndex++;
     }
 
-    raceQuery += ` ORDER BY w.place, CAST(w.race_number AS INTEGER)`;
+    raceQuery += ` ORDER BY w.place, w.race_number::INTEGER`;
 
     const entries = await db.prepare(raceQuery).all(...params) as any[];
 

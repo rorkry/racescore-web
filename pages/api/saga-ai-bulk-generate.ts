@@ -52,9 +52,9 @@ export default async function handler(
       params.push(place);
     }
 
-    racesQuery += ` ORDER BY place, CAST(race_number AS INTEGER)`;
+    racesQuery += ` ORDER BY place, race_number::INTEGER`;
 
-    const races = db.prepare(racesQuery).all(...params) as { place: string; race_number: string }[];
+    const races = await db.prepare(racesQuery).all(...params) as { place: string; race_number: string }[];
 
     if (!races || races.length === 0) {
       return res.status(404).json({ 

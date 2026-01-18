@@ -228,7 +228,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = $1 AND place = $2 AND race_number = $3 ${yearFilter ? 'AND year = $4' : ''}
-      ORDER BY CAST(umaban AS INTEGER)
+      ORDER BY umaban::INTEGER
     `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
     // デバッグ：取得された馬の数を確認
@@ -243,7 +243,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const horsesWithoutYear = await db.prepare(`
         SELECT * FROM wakujun
         WHERE date = $1 AND place = $2 AND race_number = $3
-        ORDER BY CAST(umaban AS INTEGER)
+        ORDER BY umaban::INTEGER
       `).all(date, place, raceNumber) as any[];
       console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
       
