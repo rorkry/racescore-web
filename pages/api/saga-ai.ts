@@ -527,13 +527,13 @@ async function getHistoricalLapData(
 
     const query = `
       SELECT 
-        date, place, class_name, track_condition, work_1s, horse_name
+        date, place, class_name, track_condition, lap_time, horse_name
       FROM umadata
       WHERE place LIKE ?
         AND distance = ?
         AND finish_position = '１'
-        AND work_1s IS NOT NULL
-        AND work_1s != ''
+        AND lap_time IS NOT NULL
+        AND lap_time != ''
         AND date >= '2019'
       ORDER BY date DESC
       LIMIT 200
@@ -557,7 +557,7 @@ async function getHistoricalLapData(
       if (!isTrackConditionComparableForHistorical(trackCondition, row.track_condition)) continue;
 
       // ラップ解析
-      const laps = parseLapTimesFromWorkString(row.work_1s);
+      const laps = parseLapTimesFromWorkString(row.lap_time);
       if (laps.length < 4) continue;
 
       const last4F = sumLastNLaps(laps, 4);
@@ -939,7 +939,7 @@ export default async function handler(
 
         // 1着レースの場合は歴代比較用データを取得
         let historicalLapData: HistoricalLapRow[] | undefined;
-        if (pastFinishPosition === 1 && race.work_1s) {
+        if (pastFinishPosition === 1 && (race.lap_time || race.work_1s)) {
           historicalLapData = await getHistoricalLapData(
             db,
             pastNormalizedPlace,
@@ -980,7 +980,7 @@ export default async function handler(
           trackCondition: race.track_condition || '良',
           horseAge: parseInt(toHalfWidth(race.age || '0'), 10),
           // ラップ分析用データ
-          lapString: race.work_1s || '',              // ラップタイム（"12.3-10.5-11.8..."）
+          lapString: race.lap_time || race.work_1s || '',  // ラップタイム（"12.3-10.5-11.8..."）- umadataではlap_time
           corner4Wide: parseInt(race.index_value || '2', 10) || 2,  // 4角位置（内外: 0-4）
           totalHorses: parseInt(race.field_size || race.number_of_horses || '16', 10), // 出走頭数
           ownLast3F: parseFloat(race.last_3f || '0') || 0,          // 自身の上がり3F
