@@ -23,9 +23,9 @@ interface DbPoints {
 }
 
 interface DbHorseMark {
-  horse_name: string;
+  horse_id: string;
   mark: string;
-  memo: string | null;
+  note: string | null;
   created_at: string;
 }
 
@@ -73,7 +73,7 @@ export async function GET() {
     let horseMarks: DbHorseMark[] = [];
     try {
       horseMarks = await db.prepare(
-        'SELECT horse_name, mark, memo, created_at FROM horse_marks WHERE user_id = ? ORDER BY created_at DESC'
+        'SELECT horse_id, mark, note, created_at FROM user_horse_marks WHERE user_id = ? ORDER BY created_at DESC'
       ).all<DbHorseMark>(user.id);
     } catch {
       // テーブルが存在しない場合は無視
