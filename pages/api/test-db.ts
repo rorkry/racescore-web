@@ -9,7 +9,7 @@ export default async function handler(
     const db = getRawDb();
     const raceId = req.query.raceId as string || '2025121406050412';
     
-    const result = db.prepare('SELECT * FROM umadata WHERE race_id_new_no_horse_num = ?').all(raceId);
+    const result = await db.prepare('SELECT * FROM umadata WHERE race_id = $1').all(raceId);
     
     res.status(200).json({
       success: true,
