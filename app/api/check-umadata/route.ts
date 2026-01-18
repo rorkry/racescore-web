@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     
     // サンプルデータ（最新10件）- race_idの形式を確認
     const sampleData = await db.prepare(`
-      SELECT race_id, horse_number, horse_name, date, place
+      SELECT race_id, umaban, horse_name, date, place
       FROM umadata
       ORDER BY race_id DESC
       LIMIT 10
@@ -33,12 +33,12 @@ export async function GET(req: NextRequest) {
       LIMIT 10
     `).all() as any[];
 
-    // 2026年1月18日のデータを確認
-    const todayData = await db.prepare(`
-      SELECT DISTINCT race_id, horse_number, horse_name
+    // 2026年1月のデータを確認
+    const recentData = await db.prepare(`
+      SELECT DISTINCT race_id, umaban, horse_name
       FROM umadata
-      WHERE race_id LIKE '2026011%'
-      ORDER BY race_id
+      WHERE race_id LIKE '2026%'
+      ORDER BY race_id DESC
       LIMIT 10
     `).all() as any[];
 
@@ -47,8 +47,8 @@ export async function GET(req: NextRequest) {
       totalCount: countResult?.count || 0,
       raceIdPatterns: patterns,
       sampleData: sampleData,
-      todayData: todayData,
-      note: 'race_id + horse_number (2桁) でindicesテーブルをクエリ'
+      recentData: recentData,
+      note: 'race_id + umaban (2桁) でindicesテーブルをクエリ'
     });
   } catch (error) {
     console.error('[check-umadata] Error:', error);
