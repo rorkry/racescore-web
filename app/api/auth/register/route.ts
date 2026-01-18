@@ -2,10 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
+import { checkRateLimit, getRateLimitIdentifier, strictRateLimit } from '@/lib/rate-limit';
+
+// 入力サニタイズ
+function sanitizeInput(input: string): string {
+  return input.trim().slice(0, 255); // 最大255文字
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, name } = await request.json();
+    // Rate Limiting（厳格：1分に10回まで）
+    const identifier = getRateLimitIdentifier(request);
+    const rateLimit = checkRateLimit(`register:${identifier}`, strictRateLimit);
+    
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'リクエストが多すぎます。しばらく待ってから再試行してください。' },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((rateLimit.resetTime - Date.now()) / 1000)),
+            'X-RateLimit-Remaining': '0',
+          }
+        }
+      );
+    }
+
+    const body = await request.json();
+    const email = sanitizeInput(body.email || '').toLowerCase();
+    const password = body.password || '';
+    const name = sanitizeInput(body.name || '');
 
     // バリデーション
     if (!email || !password) {
@@ -18,6 +44,13 @@ export async function POST(request: NextRequest) {
     if (password.length < 8) {
       return NextResponse.json(
         { error: 'パスワードは8文字以上で入力してください' },
+        { status: 400 }
+      );
+    }
+
+    if (password.length > 128) {
+      return NextResponse.json(
+        { error: 'パスワードは128文字以内で入力してください' },
         { status: 400 }
       );
     }

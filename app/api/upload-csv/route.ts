@@ -2,9 +2,33 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRawDb } from '../../../lib/db-new';
 import Papa from 'papaparse';
 import iconv from 'iconv-lite';
+import { auth } from '@/lib/auth';
+import { checkRateLimit, getRateLimitIdentifier, strictRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
+    // 管理者認証チェック
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: '未認証' }, { status: 401 });
+    }
+    
+    // 管理者権限チェック（roleがadminかどうか）
+    const userRole = (session.user as { role?: string }).role;
+    if (userRole !== 'admin') {
+      return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 });
+    }
+
+    // Rate Limiting（厳格：1分に10回まで）
+    const identifier = getRateLimitIdentifier(request);
+    const rateLimit = checkRateLimit(`upload-csv:${identifier}`, strictRateLimit);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'リクエストが多すぎます。しばらく待ってから再試行してください。' },
+        { status: 429 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
