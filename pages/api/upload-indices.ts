@@ -54,11 +54,11 @@ export default async function handler(
         
         for (const item of batch) {
           await client.query(`
-            INSERT INTO indices (race_id, L4F, T2F, potential, revouma, makikaeshi, cushion, updated_at)
+            INSERT INTO indices (race_id, "L4F", "T2F", potential, revouma, makikaeshi, cushion, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT(race_id) DO UPDATE SET
-              L4F = COALESCE($2, indices.L4F),
-              T2F = COALESCE($3, indices.T2F),
+              "L4F" = COALESCE($2, indices."L4F"),
+              "T2F" = COALESCE($3, indices."T2F"),
               potential = COALESCE($4, indices.potential),
               revouma = COALESCE($5, indices.revouma),
               makikaeshi = COALESCE($6, indices.makikaeshi),
