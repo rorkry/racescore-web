@@ -2,9 +2,21 @@
 
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, YAxis, Tooltip as RechartsTooltip } from 'recharts';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getCourseData, COURSE_DATABASE } from '@/lib/course-data/index';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
+import { RaceLevelBadge, getLevelScore, getLevelColor } from './RaceLevelBadge';
+
+type RaceLevel = 'S+' | 'S' | 'A' | 'B' | 'C' | 'LOW' | 'PENDING';
+
+interface RaceLevelInfo {
+  level: RaceLevel;
+  levelLabel: string;
+  totalHorsesRun: number;
+  goodRunCount: number;
+  winCount: number;
+  aiComment?: string;
+}
 
 interface PastRace {
   date: string;
@@ -19,6 +31,7 @@ interface PastRace {
     makikaeshi?: number;
     potential?: number;
   } | null;
+  raceLevel?: RaceLevelInfo;
 }
 
 interface Horse {
@@ -197,17 +210,18 @@ const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<
   return null;
 };
 
-// ポテンシャル用カスタムツールチップ
-const PotentialTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number; payload: { date: string } }> }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-black/95 border border-purple-500/60 rounded-lg px-2 py-1 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-        <p className="text-purple-300 text-xs" style={{ textShadow: '0 0 6px rgba(168,85,247,0.6)' }}>{payload[0].payload.date}</p>
-        <p className="text-white text-sm font-bold">{payload[0].value.toFixed(1)}</p>
-      </div>
-    );
+// レースレベルのラベル取得
+const getLevelLabel = (level: RaceLevel): string => {
+  switch (level) {
+    case 'S+': return '超ハイレベル';
+    case 'S': return 'ハイレベル';
+    case 'A': return '高レベル';
+    case 'B': return 'やや高い';
+    case 'C': return '標準';
+    case 'LOW': return '低レベル';
+    case 'PENDING': return '判定中';
+    default: return '';
   }
-  return null;
 };
 
 // アニメーション用のバリアント
@@ -618,26 +632,17 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
     else if (scoreValue >= 50) scoreRadarValue = 65;
     else if (scoreValue >= 40) scoreRadarValue = 45;
 
-    // 5. ローテーション
-    let rotationValue = 50;
-    const isCurrentlyFresh = pastRaces.length >= 2 && 
-      (new Date(pastRaces[0].date).getTime() - new Date(pastRaces[1].date).getTime()) / (1000 * 60 * 60 * 24) >= 90;
-    const isCurrentlyQuick = pastRaces.length >= 2 && 
-      (new Date(pastRaces[0].date).getTime() - new Date(pastRaces[1].date).getTime()) / (1000 * 60 * 60 * 24) <= 30;
-
-    if (isCurrentlyFresh && freshTotal > 0) {
-      const freshRate = (freshWins / freshTotal) * 100;
-      if (freshRate > 80) rotationValue = 80;
-      else if (freshRate >= 50) rotationValue = 60;
-      else if (freshWins >= 1) rotationValue = 40;
-      else rotationValue = 0;
-    } else if (isCurrentlyQuick && quickTotal > 0) {
-      const quickRate = (quickWins / quickTotal) * 100;
-      if (quickRate > 80) rotationValue = 80;
-      else if (quickRate >= 50) rotationValue = 60;
-      else if (quickWins >= 1) rotationValue = 40;
-      else rotationValue = 0;
-    }
+    // 5. 近3走レースレベル平均
+    const recent3Levels = pastRaces.slice(0, 3)
+      .map(r => r.raceLevel?.level)
+      .filter((l): l is RaceLevel => !!l);
+    
+    const avgLevelScore = recent3Levels.length > 0
+      ? recent3Levels.reduce((sum, level) => sum + getLevelScore(level), 0) / recent3Levels.length
+      : 40; // デフォルトはC（標準）
+    
+    const levelRadarValue = avgLevelScore;
+    const isHighLevelRaces = avgLevelScore >= 70; // A以上
 
     return {
       courseRadarValue,
@@ -652,9 +657,9 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
       isPotentialExcellent,
       scoreRadarValue,
       scoreValue,
-      rotationValue,
-      isCurrentlyFresh,
-      isCurrentlyQuick
+      levelRadarValue,
+      avgLevelScore,
+      isHighLevelRaces
     };
     } catch (error) {
       console.error('HorseDetailModal radarMetrics error:', error);
@@ -662,8 +667,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
         courseRadarValue: 0, courseRate: 0, turnBonus: 0, flatBonus: 0, steepBonus: 0,
         comebackRadarValue: 0, avgComebackIndex: 0, isComebackExcellent: false,
         potentialRadarValue: 0, isPotentialExcellent: false,
-        scoreRadarValue: 25, scoreValue: 0, rotationValue: 50,
-        isCurrentlyFresh: false, isCurrentlyQuick: false
+        scoreRadarValue: 25, scoreValue: 0, levelRadarValue: 40, avgLevelScore: 40, isHighLevelRaces: false
       };
     }
   }, [analysisData, horse?.score, raceInfo]);
@@ -671,13 +675,11 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
   // === メモ化: レーダーチャートデータ ===
   const radarData = useMemo(() => {
     try {
-      const { courseRadarValue = 0, courseRate = 0, rotationValue = 50, potentialRadarValue = 0, comebackRadarValue = 0, avgComebackIndex = 0, scoreRadarValue = 25, scoreValue = 0 } = radarMetrics || {};
-      const { maxPotential = 0 } = analysisData || {};
+      const { courseRadarValue = 0, courseRate = 0, levelRadarValue = 40, avgLevelScore = 40, comebackRadarValue = 0, avgComebackIndex = 0, scoreRadarValue = 25, scoreValue = 0 } = radarMetrics || {};
       
       return [
         { subject: 'コース適性', value: courseRadarValue, rawValue: courseRate, unit: '%' },
-        { subject: 'ローテ', value: rotationValue, rawValue: rotationValue, unit: '' },
-        { subject: 'ポテンシャル', value: potentialRadarValue, rawValue: maxPotential, unit: '' },
+        { subject: 'レースレベル', value: levelRadarValue, rawValue: avgLevelScore, unit: '' },
         { subject: '巻き返し', value: comebackRadarValue, rawValue: avgComebackIndex, unit: '' },
         { subject: '競うスコア', value: scoreRadarValue, rawValue: scoreValue, unit: '' },
       ];
@@ -685,13 +687,12 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
       console.error('HorseDetailModal radarData error:', error);
       return [
         { subject: 'コース適性', value: 0, rawValue: 0, unit: '%' },
-        { subject: 'ローテ', value: 50, rawValue: 50, unit: '' },
-        { subject: 'ポテンシャル', value: 0, rawValue: 0, unit: '' },
+        { subject: 'レースレベル', value: 40, rawValue: 40, unit: '' },
         { subject: '巻き返し', value: 0, rawValue: 0, unit: '' },
         { subject: '競うスコア', value: 25, rawValue: 0, unit: '' },
       ];
     }
-  }, [radarMetrics, analysisData]);
+  }, [radarMetrics]);
 
   // === メモ化: 特性バッジ用の分析結果 ===
   const characteristicData = useMemo(() => {
@@ -787,22 +788,12 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
     }
   }, [analysisData]);
 
-  // === メモ化: スパークラインデータ ===
-  const sparklineData = useMemo(() => {
-    try {
-      return [...(analysisData?.allPotentialData || [])].reverse().slice(-8);
-    } catch (error) {
-      console.error('HorseDetailModal sparklineData error:', error);
-      return [];
-    }
-  }, [analysisData?.allPotentialData]);
-
   // 早期リターン（Hooks の後に配置）
   if (!horse) return null;
 
   // 描画用に変数を展開
-  const { pastRaces, maxPotential } = analysisData;
-  const { avgComebackIndex, isComebackExcellent, isPotentialExcellent, scoreValue } = radarMetrics;
+  const { pastRaces } = analysisData;
+  const { avgComebackIndex, isComebackExcellent, isHighLevelRaces, scoreValue } = radarMetrics;
   const { favoriteCourse, excellentCourse, flatMaster, steepMaster, rightTurnMaster, leftTurnMaster, restMaster, restNegative, isCurrentlyDifficult, hasMegaIndex, megaIndexValue } = characteristicData;
   const hasAnyData = pastRaces.length > 0;
 
@@ -871,7 +862,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                 <CyberCard glowColor="cyan">
                   <GlowingTitle icon={<HexagonIcon />} color="cyan">
                     能力レーダー
-                    {(isComebackExcellent || isPotentialExcellent) && (
+                    {(isComebackExcellent || isHighLevelRaces) && (
                       <span className="text-xs px-2 py-0.5 bg-orange-500/20 border border-orange-500/40 rounded-full text-orange-300 ml-2 animate-pulse">
                         優秀
                       </span>
@@ -896,7 +887,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                         <Radar
                           name="能力値"
                           dataKey="value"
-                          stroke={isComebackExcellent || isPotentialExcellent ? "#f97316" : "#06b6d4"}
+                          stroke={isComebackExcellent || isHighLevelRaces ? "#f97316" : "#06b6d4"}
                           fill="url(#radarGradient)"
                           fillOpacity={0.5}
                           strokeWidth={2}
@@ -928,67 +919,63 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                   )}
                 </CyberCard>
 
-                {/* 右カラム: ポテンシャル + 特性 */}
+                {/* 右カラム: 近5走レースレベル + 特性 */}
                 <div className="space-y-3">
-                  {/* ポテンシャル推移 */}
+                  {/* 近5走レースレベル */}
                   <CyberCard glowColor="purple">
                     <GlowingTitleRight color="purple">
-                      ポテンシャル推移
-                      {isPotentialExcellent && (
-                        <span className="text-xs px-2 py-0.5 bg-purple-500/30 border border-purple-500/50 rounded-full ml-2 shadow-[0_0_10px_rgba(168,85,247,0.4)]">
-                          最高 {maxPotential.toFixed(1)}
+                      近5走レースレベル
+                      {isHighLevelRaces && (
+                        <span className="text-xs px-2 py-0.5 bg-amber-500/30 border border-amber-500/50 rounded-full ml-2 shadow-[0_0_10px_rgba(245,158,11,0.4)]">
+                          高レベル戦続き
                         </span>
                       )}
                     </GlowingTitleRight>
                     
-                    {sparklineData.length > 1 ? (
-                      <div className="h-20">
-                        <ResponsiveContainer width="100%" height="100%" minHeight={80} minWidth={0}>
-                          <LineChart data={sparklineData}>
-                            <YAxis domain={[0, 10]} hide />
-                            <RechartsTooltip content={<PotentialTooltip />} />
-                            <Line 
-                              type="monotone" 
-                              dataKey="potential" 
-                              stroke="#a855f7" 
-                              strokeWidth={2}
-                              style={{ filter: 'drop-shadow(0 0 4px rgba(168,85,247,0.5))' }}
-                              dot={(props) => {
-                                const { cx, cy, payload } = props;
-                                const isExcellent = payload.potential >= 7.0;
-                                return (
-                                  <g>
-                                    {isExcellent && (
-                                      <circle 
-                                        cx={cx} 
-                                        cy={cy} 
-                                        r={10} 
-                                        fill="none"
-                                        stroke="#f97316"
-                                        strokeWidth={1}
-                                        opacity={0.5}
-                                        style={{ filter: 'blur(2px)' }}
-                                      />
-                                    )}
-                                    <circle 
-                                      cx={cx} 
-                                      cy={cy} 
-                                      r={isExcellent ? 5 : 3} 
-                                      fill={isExcellent ? "#f97316" : "#a855f7"}
-                                      stroke={isExcellent ? "#fbbf24" : "#c084fc"}
-                                      strokeWidth={isExcellent ? 2 : 1}
-                                      style={{ filter: isExcellent ? 'drop-shadow(0 0 8px #f97316)' : 'drop-shadow(0 0 4px #a855f7)' }}
-                                    />
-                                  </g>
-                                );
-                              }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
+                    {pastRaces.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {pastRaces.slice(0, 5).map((race, index) => {
+                          const level = race.raceLevel?.level || 'PENDING';
+                          const levelLabel = getLevelLabel(level);
+                          const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
+                          const dateStr = race.date ? race.date.replace(/\./g, '/').slice(5) : ''; // MM/DD形式
+                          const marginFloat = parseFloat(race.margin);
+                          const marginText = !isNaN(marginFloat) 
+                            ? marginFloat > 0 ? `+${marginFloat.toFixed(1)}秒差` : `${marginFloat.toFixed(1)}秒差`
+                            : '';
+                          
+                          return (
+                            <div 
+                              key={index}
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/30 border border-slate-700/50"
+                            >
+                              {/* 走順ラベル */}
+                              <span className="text-[10px] text-slate-500 w-10 shrink-0">{raceLabel}</span>
+                              
+                              {/* 日付 */}
+                              <span className="text-[10px] text-slate-400 w-12 shrink-0">{dateStr}</span>
+                              
+                              {/* レースレベルバッジ */}
+                              {level !== 'PENDING' ? (
+                                <RaceLevelBadge level={level} size="sm" />
+                              ) : (
+                                <span className="text-[10px] text-slate-500 px-1.5 py-0.5 bg-slate-800 rounded">判定中</span>
+                              )}
+                              
+                              {/* レベル説明 */}
+                              <span className="text-[10px] text-slate-400 flex-1 truncate">{levelLabel}</span>
+                              
+                              {/* 着差 */}
+                              <span className={`text-[10px] font-mono ${marginFloat <= 0.3 ? 'text-green-400' : marginFloat >= 1.0 ? 'text-red-400' : 'text-slate-400'}`}>
+                                {marginText}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="h-20 flex items-center justify-center text-purple-300/50 text-xs">
-                        データ不足
+                        過去走データなし
                       </div>
                     )}
                   </CyberCard>

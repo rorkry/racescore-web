@@ -549,23 +549,70 @@ export class SagaBrain {
         analysis.warnings.push('低レベル戦での好走が多く、相手強化で割引が必要');
       }
 
-      // 前走がハイレベル戦で負けた馬への評価
+      // 前走のレースレベルと着差を組み合わせた詳細分析
       const lastRace = pastRaces[0];
-      if (lastRace?.raceLevel?.level === 'S+' || lastRace?.raceLevel?.level === 'S' || lastRace?.raceLevel?.level === 'A') {
-        if (lastRace.finishPosition > 3 && lastRace.finishPosition <= 5) {
-          analysis.comments.push('前走はハイレベル戦で掲示板確保。相手弱化で巻き返し候補');
-          analysis.tags.push('ハイレベル戦健闘');
-          analysis.score += 2;
+      if (lastRace?.raceLevel) {
+        const level = lastRace.raceLevel.level;
+        const marginNum = parseFloat(lastRace.margin || '0');
+        const levelLabel = this.getRaceLevelLabel(level);
+        
+        // ハイレベル戦での詳細分析
+        if (level === 'S+' || level === 'S' || level === 'A') {
+          if (lastRace.finishPosition <= 3) {
+            // 好走
+            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${lastRace.finishPosition}着好走。力は確か`);
+            analysis.tags.push('ハイレベル戦好走');
+            analysis.score += 4;
+          } else if (lastRace.finishPosition <= 5) {
+            // 掲示板確保
+            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で掲示板確保。相手弱化で巻き返し候補`);
+            analysis.tags.push('ハイレベル戦健闘');
+            analysis.score += 2;
+          } else if (!isNaN(marginNum) && marginNum <= 0.5) {
+            // 着差小さい
+            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${marginNum}秒差。この程度の差なら巻き返しの期待十分`);
+            analysis.tags.push('ハイレベル戦僅差');
+            analysis.score += 3;
+          } else if (!isNaN(marginNum) && marginNum <= 1.0) {
+            // 1秒以内
+            analysis.comments.push(`前走はレベル${level}の${levelLabel}戦で${marginNum}秒差。相手次第で浮上余地あり`);
+            analysis.score += 1;
+          }
         }
-      }
 
-      // 前走が低レベル戦で勝った馬への警告
-      if (lastRace?.raceLevel?.level === 'LOW') {
-        if (lastRace.finishPosition <= 2) {
-          analysis.warnings.push('前走は低レベル戦での好走。相手強化で割引');
-          analysis.score -= 2;
+        // 低レベル戦での警告
+        if (level === 'LOW') {
+          if (lastRace.finishPosition <= 2) {
+            analysis.warnings.push(`前走は低レベル戦での${lastRace.finishPosition}着。相手強化で割引必要`);
+            analysis.score -= 3;
+          } else if (lastRace.finishPosition <= 5) {
+            analysis.warnings.push('前走は低レベル戦でも掲示板止まり。今回も厳しいか');
+            analysis.score -= 4;
+          }
+        }
+
+        // Cレベル（標準）での分析
+        if (level === 'C') {
+          if (lastRace.finishPosition <= 2) {
+            analysis.comments.push('前走は標準レベル戦での好走。相手強化時は注意');
+          }
         }
       }
+    }
+  }
+
+  /**
+   * レースレベルのラベルを取得
+   */
+  private getRaceLevelLabel(level: string): string {
+    switch (level) {
+      case 'S+': return '超ハイレベル';
+      case 'S': return 'ハイレベル';
+      case 'A': return '高レベル';
+      case 'B': return 'やや高い';
+      case 'C': return '標準';
+      case 'LOW': return '低レベル';
+      default: return '';
     }
   }
 
