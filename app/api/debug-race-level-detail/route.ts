@@ -143,10 +143,32 @@ export async function GET(request: NextRequest) {
     // Step 5: レースレベルを判定
     const levelResult = analyzeRaceLevel(nextRaceResults);
 
+    // 追加デバッグ: 上位馬の全レース履歴を取得
+    let horseRaceHistory: any[] = [];
+    if (topHorses.length > 0) {
+      const firstHorse = topHorses[0].horse_name;
+      horseRaceHistory = await db.query<{ race_id: string; date: string; finish_position: string; place: string }>(`
+        SELECT race_id, date, finish_position, place
+        FROM umadata
+        WHERE horse_name = $1
+        ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+        LIMIT 10
+      `, [firstHorse]);
+    }
+
+    // race_idの日付部分をチェック
+    const raceDateFromId = targetRaceId.substring(0, 8);
+    const raceDateNum = parseInt(raceDateFromId, 10);
+
     return NextResponse.json({
       success: true,
       targetRaceId,
       raceInfo,
+      raceDateDebug: {
+        raceDateFromId,
+        raceDateNum,
+        note: 'race_idの最初の8桁がYYYYMMDD形式の日付',
+      },
       step1_allHorses: {
         count: allHorses.length,
         sample: allHorses.slice(0, 5),
@@ -167,6 +189,11 @@ export async function GET(request: NextRequest) {
         note: 'NextRaceResult形式に変換後',
       },
       step5_levelResult: levelResult,
+      horseRaceHistoryDebug: {
+        horseName: topHorses[0]?.horse_name || 'N/A',
+        races: horseRaceHistory,
+        note: '1着馬の全レース履歴（race_id日付降順）',
+      },
       diagnosis: {
         hasRaceInfo: !!raceInfo,
         hasTopHorses: topHorses.length > 0,
