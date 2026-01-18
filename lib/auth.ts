@@ -167,6 +167,7 @@ export const authConfig: NextAuthConfig = {
     strategy: 'jwt',
   },
   secret: process.env.NEXTAUTH_SECRET || 'stride-secret-key-change-in-production',
+  trustHost: true, // Railway等のプロキシ環境で必要
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
