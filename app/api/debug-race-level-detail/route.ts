@@ -8,6 +8,25 @@ import { analyzeRaceLevel, type NextRaceResult } from '@/lib/saga-ai/level-analy
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * 日付文字列をYYYYMMDD形式の数値に変換
+ * "2026. 1. 5" → 20260105
+ * "2026.01.05" → 20260105
+ */
+function convertDateToNumber(dateStr: string): number {
+  if (!dateStr) return 0;
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length !== 3) return 0;
+  
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return 0;
+  return year * 10000 + month * 100 + day;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -78,6 +97,10 @@ export async function GET(request: NextRequest) {
       const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
       const raceDate = raceInfo?.date || targetRaceDate;
       
+      // 日付をYYYYMMDD形式の数値に変換して比較
+      const raceDateNum = convertDateToNumber(raceDate);
+      
+      // race_idの最初の8桁が日付（YYYYMMDD）なので、それを使って比較
       nextRacesData = await db.query<{
         horse_name: string;
         finish_position: string;
@@ -88,12 +111,12 @@ export async function GET(request: NextRequest) {
         SELECT horse_name, finish_position, date, class_name, race_id
         FROM umadata
         WHERE horse_name IN (${placeholders})
-          AND date > $${horseNames.length + 1}
+          AND SUBSTRING(race_id, 1, 8)::INTEGER > $${horseNames.length + 1}
           AND finish_position IS NOT NULL
           AND finish_position != ''
-        ORDER BY horse_name, date ASC
+        ORDER BY horse_name, SUBSTRING(race_id, 1, 8)::INTEGER ASC
         LIMIT 50
-      `, [...horseNames, raceDate]);
+      `, [...horseNames, raceDateNum]);
 
       // NextRaceResult形式に変換
       const horseFirstRunMap = new Map<string, boolean>();

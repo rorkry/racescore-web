@@ -323,7 +323,10 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
     const horseNames = topHorses.map(h => h.horse_name);
     const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
 
-    // 各馬の次走以降の成績を取得
+    // race_idの最初の8桁が日付（YYYYMMDD）
+    const raceDateNum = parseInt(raceId.substring(0, 8), 10);
+
+    // 各馬の次走以降の成績を取得（race_idの日付部分で比較）
     const nextRaces = await db.query<{
       horse_name: string;
       finish_position: string;
@@ -333,11 +336,11 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
       SELECT horse_name, finish_position, date, class_name
       FROM umadata
       WHERE horse_name IN (${placeholders})
-        AND date > $${horseNames.length + 1}
+        AND SUBSTRING(race_id, 1, 8)::INTEGER > $${horseNames.length + 1}
         AND finish_position IS NOT NULL
         AND finish_position != ''
-      ORDER BY horse_name, date ASC
-    `, [...horseNames, raceDate]);
+      ORDER BY horse_name, SUBSTRING(race_id, 1, 8)::INTEGER ASC
+    `, [...horseNames, raceDateNum]);
 
     // NextRaceResult形式に変換
     const horseFirstRunMap = new Map<string, boolean>();

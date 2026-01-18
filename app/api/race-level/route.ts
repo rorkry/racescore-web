@@ -216,7 +216,10 @@ export async function GET(request: NextRequest) {
     
     const horseNames = topHorses.map(h => h.horse_name);
     
-    // 4. 各馬の次走以降の成績を取得（PostgreSQL用にプレースホルダーを$1, $2...に）
+    // race_idの最初の8桁が日付（YYYYMMDD）
+    const raceDateNum = parseInt(raceId.substring(0, 8), 10);
+    
+    // 4. 各馬の次走以降の成績を取得（race_idの日付部分で比較）
     const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
     const nextRaces = await db.query<UmadataRow>(`
       SELECT 
@@ -227,9 +230,9 @@ export async function GET(request: NextRequest) {
         race_id as race_id
       FROM umadata
       WHERE horse_name IN (${placeholders})
-        AND date > $${horseNames.length + 1}
-      ORDER BY horse_name, date ASC
-    `, [...horseNames, raceInfo.date]);
+        AND SUBSTRING(race_id, 1, 8)::INTEGER > $${horseNames.length + 1}
+      ORDER BY horse_name, SUBSTRING(race_id, 1, 8)::INTEGER ASC
+    `, [...horseNames, raceDateNum]);
     
     // 5. NextRaceResult形式に変換
     const horseFirstRunMap = new Map<string, boolean>();
@@ -389,14 +392,17 @@ export async function POST(request: NextRequest) {
         const horseNames = topHorses.map(h => h.horse_name);
         const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
         
-        // 次走成績を取得
+        // race_idの最初の8桁が日付（YYYYMMDD）
+        const raceDateNum = parseInt(raceId.substring(0, 8), 10);
+        
+        // 次走成績を取得（race_idの日付部分で比較）
         const nextRaces = await db.query<UmadataRow>(`
           SELECT horse_name, finish_position, date, class_name
           FROM umadata
           WHERE horse_name IN (${placeholders})
-            AND date > $${horseNames.length + 1}
-          ORDER BY horse_name, date ASC
-        `, [...horseNames, raceInfo.date]);
+            AND SUBSTRING(race_id, 1, 8)::INTEGER > $${horseNames.length + 1}
+          ORDER BY horse_name, SUBSTRING(race_id, 1, 8)::INTEGER ASC
+        `, [...horseNames, raceDateNum]);
         
         // NextRaceResult形式に変換
         const horseFirstRunMap = new Map<string, boolean>();
