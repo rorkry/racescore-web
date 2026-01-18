@@ -143,7 +143,7 @@ async function initTables(db: RawDatabaseWrapper) {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS umadata (
       id SERIAL PRIMARY KEY,
-      race_id_new_no_horse_num TEXT,
+      race_id TEXT,
       date TEXT,
       distance TEXT,
       horse_number TEXT,
@@ -282,7 +282,7 @@ async function initTables(db: RawDatabaseWrapper) {
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_horse_name ON umadata(horse_name)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_date ON umadata(date DESC)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_horse_date ON umadata(horse_name, date DESC)`);
-  await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_race_id ON umadata(race_id_new_no_horse_num)`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_race_id ON umadata(race_id)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_place_distance ON umadata(place, distance)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_umadata_date_place_distance ON umadata(date, place, distance)`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_indices_race_id ON indices(race_id)`);

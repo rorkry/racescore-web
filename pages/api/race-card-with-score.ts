@@ -150,13 +150,13 @@ function mapUmadataToRecordRow(dbRow: any): RecordRow {
   result['走破タイム'] = result['finish_time'] || '';
   result['time'] = result['finish_time'] || '';
   result['クラス名'] = result['class_name'] || '';
-  result['レースID'] = result['race_id_new_no_horse_num'] || '';
-  result['レースID(新/馬番無)'] = result['race_id_new_no_horse_num'] || '';
-  result['raceId'] = result['race_id_new_no_horse_num'] || '';
+  result['レースID'] = result['race_id'] || '';
+  result['レースID(新/馬番無)'] = result['race_id'] || '';
+  result['raceId'] = result['race_id'] || '';
   
   // レースIDからレース番号を抽出（最後の2桁）
   // 形式: 20260112060501 → 01 (1R)
-  const raceId = result['race_id_new_no_horse_num'] || '';
+  const raceId = result['race_id'] || '';
   if (raceId.length >= 2) {
     const raceNumberStr = raceId.slice(-2);
     result['race_number'] = String(parseInt(raceNumberStr, 10)); // "01" → "1"
@@ -348,11 +348,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     for (const horseName of uniqueHorseNames) {
       const rawRaces = pastRacesByHorse.get(horseName) || [];
       
-      // 重複排除（race_id_new_no_horse_numで）- 全走取得（最大50走）
+      // 重複排除（race_idで）- 全走取得（最大50走）
       const uniqueRaces = Array.from(
         new Map(
           rawRaces.map((race: any) => [
-            race.race_id_new_no_horse_num || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
+            race.race_id || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
             race
           ])
         ).values()
@@ -363,7 +363,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 指数IDを収集（直近10走分のみ - パフォーマンス最適化）
       const racesForIndices = uniqueRaces.slice(0, 10);
       for (const race of racesForIndices) {
-        const raceIdBase = race.race_id_new_no_horse_num || '';
+        const raceIdBase = race.race_id || '';
         const horseNum = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         if (fullRaceId && fullRaceId.length > 2) {
@@ -415,7 +415,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // 過去走データに指数を紐づけ（メモリ上のMapから取得）
       const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
-        const raceIdBase = race.race_id_new_no_horse_num || '';
+        const raceIdBase = race.race_id || '';
         const horseNum = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         

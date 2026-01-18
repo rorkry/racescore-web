@@ -550,18 +550,18 @@ function calculateAvgIndicesForDistance(
     // umadataからこの馬のレースを取得
     const raceIdsQuery = `
       SELECT DISTINCT 
-        race_id_new_no_horse_num, 
+        race_id, 
         horse_number, 
         corner_2,
         date,
         distance
       FROM umadata
       WHERE horse_name = ?
-      ORDER BY race_id_new_no_horse_num DESC
+      ORDER BY race_id DESC
     `;
     
     const allRaceRecords = db.prepare(raceIdsQuery).all(horseName) as Array<{
-      race_id_new_no_horse_num: string;
+      race_id: string;
       horse_number: string;
       corner_2: string;
       date: string;
@@ -610,7 +610,7 @@ function calculateAvgIndicesForDistance(
       }
       
       // 18桁のrace_idを構築
-      const raceId16 = record.race_id_new_no_horse_num;
+      const raceId16 = record.race_id;
       const horseNum = record.horse_number.padStart(2, '0');
       const fullRaceId = raceId16 + horseNum;
       
@@ -715,7 +715,7 @@ function getFirstCornerPositions(
       WHERE horse_name = ?
         AND corner_1 IS NOT NULL
         AND corner_1 != ''
-      ORDER BY race_id_new_no_horse_num DESC
+      ORDER BY race_id DESC
       LIMIT ?
     `;
     
@@ -762,7 +762,7 @@ function calculateAvgPosition2C(
       WHERE horse_name = ?
         AND corner_2 IS NOT NULL
         AND corner_2 != ''
-      ORDER BY race_id_new_no_horse_num DESC
+      ORDER BY race_id DESC
     `;
     
     const records = db.prepare(query).all(horseName) as Array<{
@@ -832,7 +832,7 @@ function getLastDistance(
     SELECT distance, date
     FROM umadata
     WHERE horse_name = ?
-    ORDER BY race_id_new_no_horse_num DESC
+    ORDER BY race_id DESC
     LIMIT 10
   `;
   
@@ -920,7 +920,7 @@ export function checkRecentBadPerformance(
       SELECT finish_position, margin, corner_2, corner_4, date
       FROM umadata
       WHERE horse_name = ?
-      ORDER BY race_id_new_no_horse_num DESC
+      ORDER BY race_id DESC
       LIMIT ?
     `;
     

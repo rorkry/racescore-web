@@ -70,13 +70,13 @@ export const appRouter = router({
       
       // 既存データを削除（レースIDが指定されている場合）
       if (input.raceId) {
-        db.prepare('DELETE FROM umadata WHERE race_id_new_no_horse_num = ?').run(input.raceId);
+        db.prepare('DELETE FROM umadata WHERE race_id = ?').run(input.raceId);
       }
       
       // 新しいデータを一括挿入
       const insertStmt = db.prepare(`
         INSERT INTO umadata (
-          race_id_new_no_horse_num, date, distance, horse_number, horse_name, 
+          race_id, date, distance, horse_number, horse_name, 
           index_value, class_name, track_condition, finish_position, last_3f,
           finish_time, standard_time, rpci, pci, good_run, pci3, horse_mark, 
           corner_2, corner_3, corner_4, gender, age, horse_weight, weight_change, 
@@ -173,7 +173,7 @@ export const appRouter = router({
       
       if (input.raceId) {
         // レースIDで絞り込み
-        const result = db.prepare('SELECT * FROM umadata WHERE race_id_new_no_horse_num = ?').all(input.raceId);
+        const result = db.prepare('SELECT * FROM umadata WHERE race_id = ?').all(input.raceId);
         return result;
       } else {
         // 全データを取得（非推奨：データ量が多い場合は使用しない）
@@ -198,7 +198,7 @@ export const appRouter = router({
   getRaceIds: publicProcedure
     .query(async () => {
       const db = getRawDb();
-      const result = db.prepare('SELECT DISTINCT race_id_new_no_horse_num FROM umadata ORDER BY race_id_new_no_horse_num DESC LIMIT 100').all();
+      const result = db.prepare('SELECT DISTINCT race_id FROM umadata ORDER BY race_id DESC LIMIT 100').all();
       return result;
     }),
 });

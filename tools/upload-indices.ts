@@ -22,8 +22,11 @@ const INDEX_BASE_FOLDERS = [
 ];
 
 /**
- * Get all year folders (2024, 2025, 2026, etc.) from a base path
+ * Get recent year folders from a base path
+ * Limited to 2024+ to save database storage
  */
+const MIN_YEAR = 2024; // 2024年以降のデータのみ（ストレージ節約）
+
 function getYearFolders(basePath: string): string[] {
   if (!fs.existsSync(basePath)) {
     return [];
@@ -32,6 +35,7 @@ function getYearFolders(basePath: string): string[] {
   const entries = fs.readdirSync(basePath, { withFileTypes: true });
   const yearFolders = entries
     .filter(e => e.isDirectory() && /^\d{4}$/.test(e.name))
+    .filter(e => parseInt(e.name, 10) >= MIN_YEAR) // 2024年以降のみ
     .map(e => path.join(basePath, e.name))
     .sort();
   

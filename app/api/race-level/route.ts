@@ -17,7 +17,7 @@ interface UmadataRow {
   finish_position: string;
   date: string;
   class_name: string;
-  race_id_new_no_horse_num: string;
+  race_id: string;
   place: string;
   distance: string;
   work_1s: string | null;
@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         date, place, distance, class_name, track_condition, work_1s
       FROM umadata 
-      WHERE race_id_new_no_horse_num = ?
+      WHERE race_id = ?
       LIMIT 1
     `).get<RaceInfoRow>(raceId);
     
@@ -173,7 +173,7 @@ export async function GET(request: NextRequest) {
     const topHorses = await db.prepare(`
       SELECT DISTINCT horse_name, finish_position
       FROM umadata 
-      WHERE race_id_new_no_horse_num = ?
+      WHERE race_id = ?
         AND CAST(finish_position AS INTEGER) <= 3
       ORDER BY CAST(finish_position AS INTEGER)
     `).all<{ horse_name: string; finish_position: string }>(raceId);
@@ -213,7 +213,7 @@ export async function GET(request: NextRequest) {
         finish_position,
         date,
         class_name,
-        race_id_new_no_horse_num as race_id
+        race_id as race_id
       FROM umadata
       WHERE horse_name IN (${placeholders})
         AND date > $${horseNames.length + 1}
@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
         const raceInfo = await db.prepare(`
           SELECT date, place, distance, class_name, track_condition, work_1s
           FROM umadata 
-          WHERE race_id_new_no_horse_num = ?
+          WHERE race_id = ?
           LIMIT 1
         `).get<RaceInfoRow>(raceId);
         
@@ -348,7 +348,7 @@ export async function POST(request: NextRequest) {
         const topHorses = await db.prepare(`
           SELECT DISTINCT horse_name
           FROM umadata 
-          WHERE race_id_new_no_horse_num = ?
+          WHERE race_id = ?
             AND CAST(finish_position AS INTEGER) <= 3
         `).all<{ horse_name: string }>(raceId);
         

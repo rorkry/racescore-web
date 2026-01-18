@@ -451,7 +451,7 @@ async function getTimeComparisonRaces(
     const query = `
       SELECT 
         date, place, distance, class_name, finish_time, track_condition, 
-        horse_name, age, race_id_new_no_horse_num
+        horse_name, age, race_id
       FROM umadata
       WHERE date IN (?, ?, ?, ?, ?, ?)
         AND place LIKE ?
@@ -476,8 +476,8 @@ async function getTimeComparisonRaces(
       const isGradedRace = /G[123]|Ｇ[１２３]|重賞|JG[123]|ＪＧ[１２３]/i.test(className);
       const isYoungHorse = age === 2 || age === 3;
 
-      // race_id_new_no_horse_numからレース番号を抽出（末尾2桁がレース番号と推定）
-      const raceId = row.race_id_new_no_horse_num || '';
+      // race_idからレース番号を抽出（末尾2桁がレース番号と推定）
+      const raceId = row.race_id || '';
       const raceNumber = raceId ? raceId.slice(-2).replace(/^0/, '') : '';
 
       return {
@@ -661,9 +661,9 @@ function mapUmadataToRecordRow(dbRow: any, indices: any = null): RecordRow {
   result['走破タイム'] = result['finish_time'] || '';
   result['time'] = result['finish_time'] || '';
   result['クラス名'] = result['class_name'] || '';
-  result['レースID'] = result['race_id_new_no_horse_num'] || '';
-  result['レースID(新/馬番無)'] = result['race_id_new_no_horse_num'] || '';
-  result['raceId'] = result['race_id_new_no_horse_num'] || '';
+  result['レースID'] = result['race_id'] || '';
+  result['レースID(新/馬番無)'] = result['race_id'] || '';
+  result['raceId'] = result['race_id'] || '';
 
   if (indices) {
     result['indices'] = indices;
@@ -876,14 +876,14 @@ export default async function handler(
       const pastRacesRaw = Array.from(
         new Map(
           filteredPastRaces.map((race: any) => [
-            race.race_id_new_no_horse_num || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
+            race.race_id || `${race.date}_${race.place}_${race.race_name || ''}_${race.distance}`,
             race
           ])
         ).values()
       ).slice(0, 50);
 
       const pastRacesWithIndices = await Promise.all(pastRacesRaw.map(async (race: any) => {
-        const raceIdBase = race.race_id_new_no_horse_num || '';
+        const raceIdBase = race.race_id || '';
         const horseNumStr = String(race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNumStr}`;
 
@@ -948,7 +948,7 @@ export default async function handler(
           // 歴代比較用データ（1着レースのみ）
           historicalLapData,
           // レースレベル判定用
-          raceId: raceIdBase,  // race_id_new_no_horse_num（馬番なし）
+          raceId: raceIdBase,  // race_id（馬番なし）
         };
       }));
 

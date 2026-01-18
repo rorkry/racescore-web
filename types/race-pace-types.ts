@@ -47,7 +47,7 @@ export interface RacePacePrediction {
 }
 
 export interface UmadataRecord {
-  race_id_new_no_horse_num: string;
+  race_id: string;
   horse_name: string;
   horse_number: string;
   corner_2?: string;

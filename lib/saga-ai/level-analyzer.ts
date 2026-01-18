@@ -350,10 +350,10 @@ export function buildNextRaceQuery(raceId: string, targetHorses: string[]): stri
       finish_position,
       date,
       class_name,
-      race_id_new_no_horse_num as race_id
+      race_id as race_id
     FROM umadata
     WHERE horse_name IN (${horseNames})
-      AND date > (SELECT date FROM umadata WHERE race_id_new_no_horse_num = '${raceId}' LIMIT 1)
+      AND date > (SELECT date FROM umadata WHERE race_id = '${raceId}' LIMIT 1)
     ORDER BY horse_name, date ASC
   `;
 }
