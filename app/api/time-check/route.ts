@@ -69,11 +69,11 @@ export async function GET(request: NextRequest) {
     const db = getRawDb();
 
     // その日のレース一覧を取得
-    const races = db.prepare(`
+    const races = await db.prepare(`
       SELECT DISTINCT race_number
       FROM wakujun
-      WHERE date = ? AND place = ?
-      ORDER BY CAST(race_number AS INTEGER)
+      WHERE date = $1 AND place = $2
+      ORDER BY race_number::INTEGER
     `).all(date, place) as { race_number: string }[];
 
     const results: TimeCheckResult[] = [];
@@ -82,9 +82,9 @@ export async function GET(request: NextRequest) {
       const raceNumber = race.race_number;
       
       // そのレースの出走馬を取得
-      const horses = db.prepare(`
+      const horses = await db.prepare(`
         SELECT umamei FROM wakujun
-        WHERE date = ? AND place = ? AND race_number = ?
+        WHERE date = $1 AND place = $2 AND race_number = $3
       `).all(date, place, raceNumber) as { umamei: string }[];
 
       let hasExcellentTime = false;
@@ -98,10 +98,10 @@ export async function GET(request: NextRequest) {
         if (!horseName) continue;
 
         // 過去3走を取得
-        const pastRaces = db.prepare(`
+        const pastRaces = await db.prepare(`
           SELECT date, place, distance, class_name, finish_time, track_condition
           FROM umadata
-          WHERE TRIM(horse_name) = ?
+          WHERE TRIM(horse_name) = $1
           ORDER BY date DESC
           LIMIT 3
         `).all(horseName) as any[];
@@ -142,12 +142,12 @@ export async function GET(request: NextRequest) {
           const normalizedPlace = (pastRace.place || '').replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
 
           // 上位クラスの勝ち馬時計を取得
-          const comparisonRaces = db.prepare(`
+          const comparisonRaces = await db.prepare(`
             SELECT class_name, finish_time, track_condition
             FROM umadata
-            WHERE date IN (?, ?, ?, ?, ?, ?)
-              AND place LIKE ?
-              AND distance = ?
+            WHERE date IN ($1, $2, $3, $4, $5, $6)
+              AND place LIKE $7
+              AND distance = $8
               AND finish_position = '１'
           `).all(
             ...dateRange,
@@ -195,8 +195,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // シングルトン接続は閉じない
-
     return NextResponse.json({ results });
   } catch (error) {
     console.error('Time check error:', error);
@@ -206,7 +204,3 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
-
-
-
-

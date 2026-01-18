@@ -326,9 +326,19 @@ async function initDb(database: DatabaseWrapper) {
       mark TEXT NOT NULL,
       result_position INTEGER,
       is_hit INTEGER DEFAULT 0,
+      tansho_payout INTEGER DEFAULT 0,
+      fukusho_payout INTEGER DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  // predictions テーブルにカラムが存在しない場合は追加
+  try {
+    await database.exec(`ALTER TABLE predictions ADD COLUMN IF NOT EXISTS tansho_payout INTEGER DEFAULT 0`);
+    await database.exec(`ALTER TABLE predictions ADD COLUMN IF NOT EXISTS fukusho_payout INTEGER DEFAULT 0`);
+  } catch (e) {
+    // カラムが既に存在する場合のエラーは無視
+  }
 
   // 予想いいね
   await database.exec(`

@@ -3,18 +3,18 @@ import { getRawDb } from '@/lib/db-new';
 import { predictRacePace } from '@/lib/race-pace-predictor';
 
 // DBキャッシュから展開予想を取得
-function getPaceFromDBCache(
+async function getPaceFromDBCache(
   db: ReturnType<typeof getRawDb>,
   year: string,
   date: string,
   place: string,
   raceNumber: string
-): any | null {
+): Promise<any | null> {
   try {
-    const row = db.prepare(`
+    const row = await db.prepare(`
       SELECT prediction_json
       FROM race_pace_cache
-      WHERE year = ? AND date = ? AND place = ? AND race_number = ?
+      WHERE year = $1 AND date = $2 AND place = $3 AND race_number = $4
     `).get(year, date, place, raceNumber) as { prediction_json: string } | undefined;
 
     if (!row) return null;
@@ -26,19 +26,20 @@ function getPaceFromDBCache(
 }
 
 // 展開予想をDBキャッシュに保存
-function savePaceToDBCache(
+async function savePaceToDBCache(
   db: ReturnType<typeof getRawDb>,
   year: string,
   date: string,
   place: string,
   raceNumber: string,
   prediction: any
-): void {
+): Promise<void> {
   try {
-    db.prepare(`
-      INSERT OR REPLACE INTO race_pace_cache 
-      (year, date, place, race_number, prediction_json, created_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    await db.prepare(`
+      INSERT INTO race_pace_cache (year, date, place, race_number, prediction_json, created_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (year, date, place, race_number) 
+      DO UPDATE SET prediction_json = $5, created_at = NOW()
     `).run(year, date, place, raceNumber, JSON.stringify(prediction));
     
     console.log(`[race-pace] DBキャッシュ保存: ${year}/${date}/${place}/${raceNumber}`);
@@ -74,14 +75,14 @@ export async function GET(request: NextRequest) {
 
     // DBキャッシュチェック（強制再計算でない場合）
     if (!forceRecalculate) {
-      const cached = getPaceFromDBCache(db, year, date, place, raceNumber);
+      const cached = await getPaceFromDBCache(db, year, date, place, raceNumber);
       if (cached) {
         console.log(`[race-pace] DBキャッシュヒット: ${year}/${date}/${place}/${raceNumber}`);
         return NextResponse.json({ ...cached, fromCache: true });
       }
     }
     
-    const prediction = predictRacePace(db, {
+    const prediction = await predictRacePace(db, {
       year,
       date,
       place,
@@ -90,7 +91,7 @@ export async function GET(request: NextRequest) {
 
     // DBキャッシュに保存（saveToDB指定時、または通常時）
     if (saveToDB || !forceRecalculate) {
-      savePaceToDBCache(db, year, date, place, raceNumber, prediction);
+      await savePaceToDBCache(db, year, date, place, raceNumber, prediction);
     }
 
     return NextResponse.json(prediction);
