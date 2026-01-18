@@ -148,8 +148,10 @@ function getAdjacentDate(currentDate: string, availableDates: string[], directio
 }
 
 export default function RaceCardPage() {
-  const [selectedYear, setSelectedYear] = useState<number>(getTodayYear());
-  const [date, setDate] = useState(getTodayDate());
+  // SSRハイドレーション対応: 初期値は固定、useEffectでクライアント側の日付を設定
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [date, setDate] = useState('');
+  const [isDateInitialized, setIsDateInitialized] = useState(false);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<string>('');
@@ -203,6 +205,17 @@ export default function RaceCardPage() {
   useEffect(() => {
     fetchFavoriteHorses();
   }, [sessionStatus]);
+
+  // クライアント側で日付を初期化（SSRハイドレーション対応）
+  useEffect(() => {
+    if (!isDateInitialized) {
+      const todayDate = getTodayDate();
+      const todayYear = getTodayYear();
+      setDate(todayDate);
+      setSelectedYear(todayYear);
+      setIsDateInitialized(true);
+    }
+  }, [isDateInitialized]);
 
   // レースキーを生成
   const raceKey = raceCard 
@@ -276,8 +289,10 @@ export default function RaceCardPage() {
   }, []);
 
   useEffect(() => {
-    fetchAvailableDates();
-  }, [selectedYear]);
+    if (isDateInitialized) {
+      fetchAvailableDates();
+    }
+  }, [selectedYear, isDateInitialized]);
 
   const fetchAvailableDates = async () => {
     try {
@@ -287,13 +302,16 @@ export default function RaceCardPage() {
       const dates = (data.dates || []).map((d: { date: string }) => d.date);
       setAvailableDates(dates);
       
-      const today = getTodayDate();
-      const currentYear = getTodayYear();
-      
-      if (selectedYear === currentYear && dates.includes(today)) {
-        setDate(today);
-      } else if (dates.length > 0) {
-        setDate(dates[0]);
+      // 日付が空の場合のみ自動設定
+      if (!date) {
+        const today = getTodayDate();
+        const currentYear = getTodayYear();
+        
+        if (selectedYear === currentYear && dates.includes(today)) {
+          setDate(today);
+        } else if (dates.length > 0) {
+          setDate(dates[0]);
+        }
       }
     } catch (err: any) {
       console.error('Failed to fetch available dates:', err);

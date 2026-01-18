@@ -69,11 +69,12 @@ export async function GET(request: NextRequest) {
     const db = getRawDb();
 
     // wakujunはyear + dateの組み合わせで検索する必要がある場合がある
-    // その日のレース一覧を取得
+    // その日のレース一覧を取得（GROUP BYでユニーク化）
     const races = await db.prepare(`
-      SELECT DISTINCT race_number
+      SELECT race_number
       FROM wakujun
       WHERE date = $1 AND place = $2 AND year = $3
+      GROUP BY race_number
       ORDER BY race_number::INTEGER
     `).all(date, place, parseInt(year, 10)) as { race_number: string }[];
 
