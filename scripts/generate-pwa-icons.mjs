@@ -36,72 +36,36 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
  * - 薄い縦線パターン（芝生のテクスチャ）
  */
 function createTurfBackgroundSvg(size) {
-  // アイコンサイズに応じて縦線の間隔を調整
-  const lineSpacing = size > 100 ? 6 : 3;
-  
+  // トップページと同じ白背景 + 緑とゴールドの光の装飾
   return `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <!-- ベースグラデーション（より深みのある緑） -->
-        <linearGradient id="baseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" style="stop-color:#0d2818;stop-opacity:1" />
-          <stop offset="40%" style="stop-color:#0a1f13;stop-opacity:1" />
-          <stop offset="100%" style="stop-color:#071510;stop-opacity:1" />
-        </linearGradient>
-        
-        <!-- 左下の緑の光（強め） -->
-        <radialGradient id="greenGlow1" cx="15%" cy="70%" r="60%">
-          <stop offset="0%" style="stop-color:#166534;stop-opacity:0.5" />
-          <stop offset="50%" style="stop-color:#14532d;stop-opacity:0.2" />
-          <stop offset="100%" style="stop-color:#166534;stop-opacity:0" />
-        </radialGradient>
-        
-        <!-- 右上の明るい緑の光 -->
-        <radialGradient id="greenGlow2" cx="85%" cy="15%" r="50%">
-          <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.25" />
-          <stop offset="60%" style="stop-color:#16a34a;stop-opacity:0.1" />
+        <!-- 左上の緑の光（トップページと同じ） -->
+        <radialGradient id="greenGlow1" cx="10%" cy="20%" r="60%">
+          <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.15" />
           <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0" />
         </radialGradient>
         
-        <!-- 中央のゴールドの光（アクセント） -->
-        <radialGradient id="goldGlow" cx="50%" cy="50%" r="45%">
-          <stop offset="0%" style="stop-color:#d4af37;stop-opacity:0.08" />
-          <stop offset="100%" style="stop-color:#d4af37;stop-opacity:0" />
+        <!-- 右下のゴールドの光 -->
+        <radialGradient id="goldGlow" cx="90%" cy="80%" r="60%">
+          <stop offset="0%" style="stop-color:#eab308;stop-opacity:0.08" />
+          <stop offset="100%" style="stop-color:#eab308;stop-opacity:0" />
         </radialGradient>
         
-        <!-- 芝生の縦線パターン（より目立つ） -->
-        <pattern id="turfLines" patternUnits="userSpaceOnUse" width="${lineSpacing}" height="${size}">
-          <rect width="${lineSpacing}" height="${size}" fill="transparent"/>
-          <line x1="1" y1="0" x2="1" y2="${size}" stroke="rgba(34,197,94,0.12)" stroke-width="1"/>
-        </pattern>
-        
-        <!-- 斜めの芝生テクスチャ -->
-        <pattern id="turfTexture" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
-          <rect width="8" height="8" fill="transparent"/>
-          <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(22,101,52,0.06)" stroke-width="2"/>
-        </pattern>
-        
-        <!-- 周囲のビネット効果 -->
-        <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
-          <stop offset="0%" style="stop-color:transparent;stop-opacity:0" />
-          <stop offset="100%" style="stop-color:#000000;stop-opacity:0.4" />
+        <!-- 中央の緑の光（大きくぼかした） -->
+        <radialGradient id="greenGlow2" cx="50%" cy="50%" r="70%">
+          <stop offset="0%" style="stop-color:#16a34a;stop-opacity:0.06" />
+          <stop offset="100%" style="stop-color:#16a34a;stop-opacity:0" />
         </radialGradient>
       </defs>
       
-      <!-- ベース背景 -->
-      <rect width="${size}" height="${size}" fill="url(#baseGrad)"/>
+      <!-- 白背景 -->
+      <rect width="${size}" height="${size}" fill="#ffffff"/>
       
-      <!-- 光のエフェクト（レイヤー順に重ねる） -->
+      <!-- 光のエフェクト（トップページ風） -->
       <rect width="${size}" height="${size}" fill="url(#greenGlow1)"/>
-      <rect width="${size}" height="${size}" fill="url(#greenGlow2)"/>
       <rect width="${size}" height="${size}" fill="url(#goldGlow)"/>
-      
-      <!-- 芝生パターン（縦線 + 斜めテクスチャ） -->
-      <rect width="${size}" height="${size}" fill="url(#turfLines)"/>
-      <rect width="${size}" height="${size}" fill="url(#turfTexture)"/>
-      
-      <!-- 周囲のビネット効果（深み） -->
-      <rect width="${size}" height="${size}" fill="url(#vignette)" opacity="0.3"/>
+      <rect width="${size}" height="${size}" fill="url(#greenGlow2)"/>
     </svg>
   `;
 }
