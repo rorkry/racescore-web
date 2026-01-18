@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "generate-courses": "node scripts/generate-course-db.js",
-    "setup-admin": "tsx scripts/setup-admin.ts"
+    "setup-admin": "tsx scripts/setup-admin.ts",
+    "postinstall": "npm rebuild lightningcss || true"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
