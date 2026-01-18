@@ -36,51 +36,10 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
  * - 薄い縦線パターン（芝生のテクスチャ）
  */
 function createTurfBackgroundSvg(size) {
-  // 左が緑 → 右が白のグラデーション + スマホで見える太い縦線
-  const lineSpacing = size > 100 ? 6 : 3; // 縦線の間隔（広め）
-  const lineWidth = size > 100 ? 3.5 : 2; // 縦線の太さ（二段階太く）
-  
-  // 縦線を直接描画（位置に応じて色と透明度を調整）
-  let lines = '';
-  for (let x = 0; x < size; x += lineSpacing) {
-    const progress = x / size; // 0（左）〜 1（右）
-    
-    // 薄緑の縦線（白背景に映える色）
-    const r = 134;
-    const g = 239;
-    const b = 172;  // #86efac (green-300)
-    
-    // 透明度（しっかり認識できるレベル）
-    const opacity = 0.6;
-    
-    lines += `<line x1="${x}" y1="0" x2="${x}" y2="${size}" stroke="rgb(${r},${g},${b})" stroke-width="${lineWidth}" stroke-opacity="${opacity.toFixed(2)}"/>`;
-  }
-  
+  // シンプルな白背景
   return `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <!-- 白背景 -->
-        <linearGradient id="greenToWhiteGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#ffffff"/>
-          <stop offset="100%" stop-color="#ffffff"/>
-        </linearGradient>
-        
-        <!-- 上下の深み（微妙な陰影） -->
-        <linearGradient id="verticalDepth" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#000000" stop-opacity="0.015"/>
-          <stop offset="50%" stop-color="#000000" stop-opacity="0"/>
-          <stop offset="100%" stop-color="#000000" stop-opacity="0.02"/>
-        </linearGradient>
-      </defs>
-      
-      <!-- グラデーション背景（左緑→右白） -->
-      <rect width="${size}" height="${size}" fill="url(#greenToWhiteGrad)"/>
-      
-      <!-- 芝生の縦線（左は濃い緑、右はグレー） -->
-      ${lines}
-      
-      <!-- 微妙な上下の深み -->
-      <rect width="${size}" height="${size}" fill="url(#verticalDepth)"/>
+      <rect width="${size}" height="${size}" fill="#ffffff"/>
     </svg>
   `;
 }
