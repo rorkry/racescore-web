@@ -96,7 +96,11 @@ export async function POST(request: NextRequest) {
     }
   } catch (error: any) {
     console.error('CSV upload error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: error?.message || 'Unknown error',
+      stack: error?.stack,
+      name: error?.name
+    }, { status: 500 });
   }
 }
 

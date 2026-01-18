@@ -79,13 +79,15 @@ export default function AdminPage() {
       const result = await response.json();
 
       if (response.ok) {
-        setMessage(`✅ アップロード成功: ${result.count}件のデータを保存しました`);
+        setMessage(`✅ アップロード成功: ${result.message || result.count + '件のデータを保存しました'}`);
         setFile(null);
         // ファイル入力をリセット
         const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
       } else {
-        setMessage(`❌ エラー: ${result.error}`);
+        const errorDetail = result.error || result.details || JSON.stringify(result);
+        setMessage(`❌ エラー: ${errorDetail}`);
+        console.error('Upload error:', result);
       }
     } catch (error: any) {
       setMessage(`❌ アップロードエラー: ${error.message}`);
