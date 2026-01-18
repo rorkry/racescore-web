@@ -52,7 +52,7 @@ export const authConfig: NextAuthConfig = {
           
           // データベースからユーザーを検索（非同期）
           const user = await db.prepare(
-            'SELECT id, email, password_hash, name, role FROM users WHERE email = ?'
+            'SELECT id, email, password_hash, name, role FROM users WHERE email = $1'
           ).get<DbUser>(email);
 
           if (!user || !user.password_hash) {
@@ -90,13 +90,13 @@ export const authConfig: NextAuthConfig = {
           
           // 既存ユーザーを検索
           const existingUser = await db.prepare(
-            'SELECT id, role FROM users WHERE email = ?'
+            'SELECT id, role FROM users WHERE email = $1'
           ).get<{ id: string; role: string }>(user.email);
 
           if (existingUser) {
             // 既存ユーザーの場合、名前と画像を更新
             await db.prepare(
-              'UPDATE users SET name = ?, image = ?, updated_at = NOW() WHERE id = ?'
+              'UPDATE users SET name = $1, image = $2, updated_at = NOW() WHERE id = $3'
             ).run(user.name || '', user.image || '', existingUser.id);
             
             // IDをユーザーオブジェクトに設定
@@ -108,25 +108,25 @@ export const authConfig: NextAuthConfig = {
             
             await db.prepare(`
               INSERT INTO users (id, email, name, image, role, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+              VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
             `).run(newId, user.email, user.name || '', user.image || '', role);
             
             // ポイントを初期化
             await db.prepare(`
               INSERT INTO user_points (id, user_id, balance, total_earned, total_spent, updated_at)
-              VALUES (?, ?, 100, 100, 0, NOW())
+              VALUES ($1, $2, 100, 100, 0, NOW())
             `).run(crypto.randomUUID(), newId);
             
             // ポイント履歴に記録
             await db.prepare(`
               INSERT INTO point_history (id, user_id, amount, type, description, created_at)
-              VALUES (?, ?, 100, 'welcome', '新規登録ボーナス', NOW())
+              VALUES ($1, $2, 100, 'welcome', '新規登録ボーナス', NOW())
             `).run(crypto.randomUUID(), newId);
             
             // サブスクリプションを初期化（無料プラン）
             await db.prepare(`
               INSERT INTO subscriptions (id, user_id, plan, status, created_at, updated_at)
-              VALUES (?, ?, 'free', 'active', NOW(), NOW())
+              VALUES ($1, $2, 'free', 'active', NOW(), NOW())
             `).run(crypto.randomUUID(), newId);
             
             user.id = newId;
