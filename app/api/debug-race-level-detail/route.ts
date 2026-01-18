@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       SELECT horse_name, finish_position, umaban
       FROM umadata 
       WHERE race_id = $1
-      ORDER BY umaban::INTEGER
+      ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 999 END
     `, [targetRaceId]);
 
     // Step 3: 上位3頭を取得（数値フィルタ付き）
