@@ -24,6 +24,14 @@ export interface HorseAnalysisInput {
   distance: number;
   trackCondition?: '良' | '稍' | '重' | '不'; // 馬場状態
 
+  // 馬の基本情報
+  gender?: '牡' | '牝' | 'セ';  // 性別
+
+  // レース条件
+  isFilliesOnlyRace?: boolean;  // 牝馬限定戦かどうか
+  raceAgeCondition?: string;    // 年齢条件（'2歳', '3歳', '3歳以上', '4歳以上'）
+  isAgeRestricted?: boolean;    // 世代限定戦かどうか（2歳限定、3歳限定）
+
   // 過去走情報
   pastRaces: PastRaceInfo[];
 
@@ -98,6 +106,11 @@ export interface PastRaceInfo {
   };
   // レースID（レースレベル取得用）
   raceId?: string;
+  // 牝馬限定戦判定用
+  isMixedGenderRace?: boolean;  // 牡馬混合戦かどうか（牝馬限定戦ではない）
+  // 年齢制限判定用
+  isAgeRestrictedRace?: boolean;  // 世代限定戦かどうか（2歳限定、3歳限定）
+  raceAgeCondition?: string;      // レースの年齢条件
 }
 
 // 時計比較用のレース情報
@@ -106,11 +119,14 @@ export interface TimeComparisonRace {
   place: string;
   distance: string;        // "芝1600"形式
   className: string;       // クラス名
+  classLabel?: string;     // クラス表示ラベル
   finishTime: number;      // 勝ち時計
+  winTime?: number;        // 勝ち時計（エイリアス）
   trackCondition: string;  // 馬場状態
   horseName: string;       // 勝ち馬名
   horseAge: number;        // 勝ち馬年齢
   isAgeRestricted: boolean; // 世代限定戦かどうか
+  raceAgeCondition?: string; // 年齢条件（'2歳', '3歳', '3歳以上'など）
   raceNumber?: string;     // レース番号（○R表示用）
 }
 
@@ -120,8 +136,10 @@ export interface PastRaceTimeComparison {
   pastRaceDate: string;
   pastRaceClass: string;
   pastRaceTime: number;
+  ownTime?: number;        // 自身の時計（秒）- pastRaceTimeのエイリアス
   pastRaceCondition: string;
   comparisonRaces: TimeComparisonRace[];
+  comparisons?: TimeComparisonRace[];  // comparisonRacesのエイリアス
 }
 
 // 時計比較結果
@@ -422,13 +440,19 @@ export class SagaBrain {
     // 8. 休み明け得意・不得意判定
     this.analyzeLayoffPattern(input, analysis);
 
-    // 9. スコア最終調整
+    // 9. 牝馬限定戦判定（ダート牡馬混合経験評価）
+    this.analyzeFilliesOnlyRace(input, analysis);
+
+    // 10. 2歳戦・3歳戦の古馬比較時計評価
+    this.analyzeYoungHorseTimeComparison(input, analysis);
+
+    // 11. スコア最終調整
     analysis.score = Math.max(0, Math.min(100, analysis.score));
 
-    // 10. レースレベル分析（過去走のレースレベルを評価）
+    // 12. レースレベル分析（過去走のレースレベルを評価）
     this.analyzeRaceLevel(input, analysis);
 
-    // 11. サマリー生成（デバッグ用の整理されたコメント）
+    // 13. サマリー生成（デバッグ用の整理されたコメント）
     this.generateSummaries(input, analysis);
 
     return analysis;
@@ -2357,6 +2381,234 @@ export class SagaBrain {
       analysis.warnings.push(`休み明けが苦手なタイプ。過去${layoffRaces}走で好走わずか${layoffTop3}回。`);
       analysis.score -= 5;
     }
+  }
+
+  /**
+   * 牝馬限定戦判定ロジック
+   * 
+   * 今回が牝馬限定戦の場合、過去走でダート牡馬混合戦に出走して
+   * 好走した経験があれば評価アップ
+   * 
+   * ロジック:
+   * - 今回のレースが牝馬限定戦で、この馬が牝馬である
+   * - 過去走でダート牡馬混合戦（牝馬限定ではない）に出走経験あり
+   * - その牡馬混合戦で好走（3着以内）していれば加点
+   * - 特にダート牡馬混合で勝利経験があれば大きく加点
+   */
+  private analyzeFilliesOnlyRace(input: HorseAnalysisInput, analysis: SagaAnalysis): void {
+    // 今回が牝馬限定戦でない場合はスキップ
+    if (!input.isFilliesOnlyRace) return;
+    
+    // 馬が牝馬でない場合はスキップ（セン馬は牝馬限定戦に出走不可）
+    if (input.gender !== '牝') return;
+    
+    const pastRaces = input.pastRaces || [];
+    if (pastRaces.length === 0) return;
+    
+    // 過去走で牡馬混合戦の成績を集計
+    let mixedGenderRaces = 0;
+    let mixedGenderTop3 = 0;
+    let mixedGenderWins = 0;
+    let dirtMixedTop3 = 0;
+    let dirtMixedWins = 0;
+    
+    for (const race of pastRaces) {
+      // 牡馬混合戦（牝馬限定ではない）の場合
+      if (race.isMixedGenderRace === true || race.isMixedGenderRace === undefined) {
+        // クラス名から牝馬限定戦を推測（「牝」を含む場合は牝馬限定）
+        const className = race.className || '';
+        const isFilliesRace = className.includes('牝') || className.includes('フィリーズ');
+        
+        if (!isFilliesRace) {
+          mixedGenderRaces++;
+          
+          if (race.finishPosition <= 3 && race.finishPosition > 0) {
+            mixedGenderTop3++;
+            
+            // ダートの牡馬混合で好走
+            if (race.surface === 'ダ') {
+              dirtMixedTop3++;
+            }
+          }
+          
+          if (race.finishPosition === 1) {
+            mixedGenderWins++;
+            if (race.surface === 'ダ') {
+              dirtMixedWins++;
+            }
+          }
+        }
+      }
+    }
+    
+    // 牡馬混合戦の経験がない場合はスキップ
+    if (mixedGenderRaces === 0) return;
+    
+    // 評価
+    if (dirtMixedWins >= 1 && input.surface === 'ダ') {
+      // ダート牡馬混合で勝利経験あり & 今回もダート
+      analysis.comments.push(`【牝馬限定戦】ダート牡馬混合で${dirtMixedWins}勝の実績！牝馬限定なら楽なはず`);
+      analysis.tags.push('牡馬混合◎');
+      analysis.score += 8;
+    } else if (mixedGenderWins >= 1) {
+      // 牡馬混合で勝利経験あり
+      analysis.comments.push(`【牝馬限定戦】牡馬混合で${mixedGenderWins}勝経験。牝馬限定で楽になる`);
+      analysis.tags.push('牡馬混合○');
+      analysis.score += 5;
+    } else if (dirtMixedTop3 >= 2 && input.surface === 'ダ') {
+      // ダート牡馬混合で複数回好走
+      analysis.comments.push(`【牝馬限定戦】ダート牡馬混合で${dirtMixedTop3}回好走。牝馬限定なら期待`);
+      analysis.tags.push('牡馬混合○');
+      analysis.score += 4;
+    } else if (mixedGenderTop3 >= 2) {
+      // 牡馬混合で複数回好走
+      analysis.comments.push(`【牝馬限定戦】牡馬混合${mixedGenderRaces}走で${mixedGenderTop3}回好走。牝馬限定で評価上げ`);
+      analysis.score += 3;
+    } else if (mixedGenderTop3 >= 1) {
+      // 牡馬混合で1回好走
+      analysis.comments.push(`【牝馬限定戦】牡馬混合でも好走経験あり`);
+      analysis.score += 2;
+    }
+  }
+
+  /**
+   * 2歳戦・3歳戦の古馬比較時計評価
+   * 
+   * 世代限定戦（2歳限定、3歳限定）で好時計を出している場合、
+   * 同条件の古馬混合戦の勝ち時計と比較してレベル判定を強化
+   * 
+   * ロジック:
+   * - 過去走が2歳限定戦or3歳限定戦の場合
+   * - その時計を同条件の古馬混合戦（3歳以上or4歳以上）の勝ち時計と比較
+   * - 古馬レベルに遜色ない時計なら「古馬級」として大きく評価
+   * - これは timeComparisonData に古馬データがあれば活用
+   */
+  private analyzeYoungHorseTimeComparison(input: HorseAnalysisInput, analysis: SagaAnalysis): void {
+    const pastRaces = input.pastRaces || [];
+    const timeComparisonData = input.timeComparisonData || [];
+    
+    if (pastRaces.length === 0) return;
+    
+    let youngHorseHighLevelCount = 0;
+    const youngHorseComments: string[] = [];
+    
+    for (let i = 0; i < pastRaces.length; i++) {
+      const race = pastRaces[i];
+      const compData = timeComparisonData[i];
+      
+      // 世代限定戦かどうか判定
+      const className = race.className || '';
+      const isYoungHorseRace = this.isYoungHorseOnlyRace(className, race.raceAgeCondition);
+      
+      if (!isYoungHorseRace) continue;
+      if (!race.finishTime || race.finishTime <= 0) continue;
+      
+      // 時計比較データがある場合、古馬レースとの比較を確認
+      if (compData && compData.comparisons) {
+        // 古馬混合戦との比較を探す
+        const olderHorseComparisons = compData.comparisons.filter(c => 
+          !this.isYoungHorseOnlyRace(c.className, c.raceAgeCondition)
+        );
+        
+        for (const comp of olderHorseComparisons) {
+          const timeDiff = compData.ownTime - comp.winTime;
+          
+          // 1.0秒以内なら古馬級
+          if (timeDiff <= 1.0) {
+            youngHorseHighLevelCount++;
+            const raceLabel = this.getYoungHorseLabel(className, race.raceAgeCondition);
+            
+            if (timeDiff <= 0) {
+              youngHorseComments.push(`${raceLabel}で古馬${comp.classLabel}勝ち時計を上回る！`);
+            } else if (timeDiff <= 0.5) {
+              youngHorseComments.push(`${raceLabel}で古馬${comp.classLabel}級の好時計`);
+            } else {
+              youngHorseComments.push(`${raceLabel}で古馬${comp.classLabel}に近い時計`);
+            }
+            break; // 1つ見つかれば十分
+          }
+        }
+      }
+      
+      // 時計比較データがない場合でも、クラス名から推測
+      // 2歳重賞、3歳クラシック等で好走していれば評価
+      if (this.isHighClassYoungRace(className) && race.finishPosition <= 3) {
+        const raceLabel = this.getYoungHorseLabel(className, race.raceAgeCondition);
+        if (!youngHorseComments.some(c => c.includes(raceLabel))) {
+          youngHorseComments.push(`${raceLabel}で好走、世代上位の能力`);
+          youngHorseHighLevelCount++;
+        }
+      }
+    }
+    
+    // 評価
+    if (youngHorseHighLevelCount >= 2) {
+      analysis.comments.push(`【古馬級】${youngHorseComments.slice(0, 2).join('。')}`);
+      analysis.tags.push('古馬級');
+      analysis.score += 6;
+    } else if (youngHorseHighLevelCount === 1 && youngHorseComments.length > 0) {
+      analysis.comments.push(`【世代上位】${youngHorseComments[0]}`);
+      analysis.score += 3;
+    }
+  }
+
+  /**
+   * 世代限定戦かどうか判定
+   */
+  private isYoungHorseOnlyRace(className: string, raceAgeCondition?: string): boolean {
+    if (raceAgeCondition) {
+      return raceAgeCondition === '2歳' || raceAgeCondition === '3歳';
+    }
+    
+    // クラス名から推測
+    const name = className || '';
+    return (
+      name.includes('2歳') || 
+      name.includes('3歳') ||
+      name.includes('新馬') ||
+      name.includes('未勝利') ||  // 多くが若馬
+      /ジュニア|ベイビー|フューチャリティ/.test(name)
+    );
+  }
+
+  /**
+   * 若馬重賞・クラシックかどうか判定
+   */
+  private isHighClassYoungRace(className: string): boolean {
+    const name = className || '';
+    return (
+      // 2歳重賞
+      name.includes('朝日杯') ||
+      name.includes('阪神ジュベナイル') ||
+      name.includes('ホープフルS') ||
+      name.includes('デイリー杯') ||
+      name.includes('東京スポーツ杯') ||
+      name.includes('京王杯') ||
+      // 3歳クラシック
+      name.includes('皐月賞') ||
+      name.includes('ダービー') ||
+      name.includes('オークス') ||
+      name.includes('桜花賞') ||
+      name.includes('NHKマイル') ||
+      name.includes('菊花賞') ||
+      name.includes('秋華賞') ||
+      // その他重賞
+      /G[1-3]|重賞/.test(name)
+    );
+  }
+
+  /**
+   * 若馬レースのラベル取得
+   */
+  private getYoungHorseLabel(className: string, raceAgeCondition?: string): string {
+    if (raceAgeCondition === '2歳') return '2歳戦';
+    if (raceAgeCondition === '3歳') return '3歳戦';
+    
+    const name = className || '';
+    if (name.includes('2歳')) return '2歳戦';
+    if (name.includes('3歳')) return '3歳戦';
+    if (name.includes('新馬')) return '新馬戦';
+    return '世代限定戦';
   }
 
   /**

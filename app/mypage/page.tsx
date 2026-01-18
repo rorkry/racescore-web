@@ -308,6 +308,34 @@ export default function MyPage() {
             </Link>
           </div>
         </div>
+
+        {/* データ分析 */}
+        <div className="bg-white rounded-xl shadow-lg p-6 md:col-span-2">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-xl">📊</span> データ分析
+          </h2>
+          <div className="text-center py-4">
+            <p className="text-gray-600 mb-4 text-pretty">
+              種牡馬の成績を競馬場・芝/ダート・距離で<br />
+              絞り込んで分析できます
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 text-sm text-gray-500">
+              <span className="px-2 py-1 bg-gray-100 rounded">勝率</span>
+              <span className="px-2 py-1 bg-gray-100 rounded">連対率</span>
+              <span className="px-2 py-1 bg-gray-100 rounded">複勝率</span>
+              <span className="px-2 py-1 bg-gray-100 rounded">単勝回収率</span>
+              <span className="px-2 py-1 bg-gray-100 rounded">複勝回収率</span>
+            </div>
+          </div>
+          <div className="mt-4">
+            <Link
+              href="/mypage/analysis"
+              className="block w-full py-3 text-center btn-turf rounded-lg font-bold"
+            >
+              📊 種牡馬成績を分析する →
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
