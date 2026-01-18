@@ -1032,11 +1032,11 @@ export async function checkRecentBadPerformance(
  * 
  * ※ 互換性のために残す（内部でcheckRecentBadPerformanceを呼ぶ）
  */
-function checkConsistentLoser(
-  db: Database.Database,
+async function checkConsistentLoser(
+  db: any,
   horseName: string,
   currentRaceDateNum: number = 99999999
-): boolean {
+): Promise<boolean> {
   const result = await checkRecentBadPerformance(db, horseName, 3, currentRaceDateNum);
   return result.isBadPerformer;
 }
