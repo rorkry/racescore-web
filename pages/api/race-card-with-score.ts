@@ -389,7 +389,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (allIndexIds.length > 0) {
       const indexPlaceholders = allIndexIds.map((_, i) => `$${i + 1}`).join(',');
       const allIndices = await db.prepare(`
-        SELECT race_id, L4F, T2F, potential, revouma, makikaeshi, cushion
+        SELECT race_id, "L4F", "T2F", potential, revouma, makikaeshi, cushion
         FROM indices
         WHERE race_id IN (${indexPlaceholders})
       `).all(...allIndexIds) as any[];
