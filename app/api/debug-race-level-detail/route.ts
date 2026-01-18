@@ -55,17 +55,18 @@ export async function GET(request: NextRequest) {
       ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 999 END
     `, [targetRaceId]);
 
-    // Step 3: 上位3頭を取得（数値フィルタ付き）
+    // Step 3: 上位3頭を取得（全角数字を半角に変換してフィルタ）
+    // PostgreSQLで全角数字を半角に変換: TRANSLATE関数を使用
     const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
-        AND finish_position ~ '^[0-9]+$'
-        AND finish_position::INTEGER <= 3
+        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
       GROUP BY horse_name, finish_position
-      ORDER BY MIN(finish_position::INTEGER)
+      ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [targetRaceId]);
 
     // Step 4: 上位馬の次走データを取得

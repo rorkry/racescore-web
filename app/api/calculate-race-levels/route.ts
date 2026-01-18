@@ -92,16 +92,17 @@ async function saveRaceLevel(db: ReturnType<typeof getDb>, raceId: string, resul
  */
 async function calculateSingleRaceLevel(db: ReturnType<typeof getDb>, race: RaceRow): Promise<RaceLevelResult | null> {
   try {
-    // 対象レースの上位3頭を取得（着順が数値の場合のみ）
+    // 対象レースの上位3頭を取得（全角数字を半角に変換してフィルタ）
     const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
-      SELECT DISTINCT horse_name, finish_position
+      SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
-        AND finish_position ~ '^[0-9]+$'
-        AND finish_position::INTEGER <= 3
-      ORDER BY finish_position::INTEGER
+        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
+      GROUP BY horse_name, finish_position
+      ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [race.race_id]);
 
     if (topHorses.length === 0) {
