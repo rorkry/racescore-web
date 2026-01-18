@@ -884,7 +884,8 @@ export default async function handler(
 
       const pastRacesWithIndices = await Promise.all(pastRacesRaw.map(async (race: any) => {
         const raceIdBase = race.race_id || '';
-        const horseNumStr = String(race.horse_number || '').padStart(2, '0');
+        // umadataテーブルではカラム名は 'umaban'
+        const horseNumStr = String(race.umaban || race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNumStr}`;
 
         let indices: any = null;

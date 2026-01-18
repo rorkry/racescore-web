@@ -364,7 +364,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const racesForIndices = uniqueRaces.slice(0, 10);
       for (const race of racesForIndices) {
         const raceIdBase = race.race_id || '';
-        const horseNum = String(race.horse_number || '').padStart(2, '0');
+        // umadataテーブルではカラム名は 'umaban'
+        const horseNum = String(race.umaban || race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         if (fullRaceId && fullRaceId.length > 2) {
           allPastRaceIndexIds.push(fullRaceId);
@@ -416,7 +417,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 過去走データに指数を紐づけ（メモリ上のMapから取得）
       const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
         const raceIdBase = race.race_id || '';
-        const horseNum = String(race.horse_number || '').padStart(2, '0');
+        // umadataテーブルではカラム名は 'umaban'
+        const horseNum = String(race.umaban || race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         
         const raceIndices = indicesMap.get(fullRaceId) || null;
