@@ -38,11 +38,18 @@ function getYearFolders(basePath: string): string[] {
   return yearFolders;
 }
 
-// API endpoint (port will be auto-detected or default to 3000)
+// API endpoint - Railway production or local
+const RAILWAY_URL = 'https://racescore-web-production.up.railway.app';
 const DEFAULT_PORT = process.env.PORT || '3000';
-const API_URL = `http://localhost:${DEFAULT_PORT}/api/upload-indices`;
+
+// 環境変数 USE_RAILWAY=true でRailwayにアップロード
+const useRailway = process.env.USE_RAILWAY === 'true';
+const API_URL = useRailway 
+  ? `${RAILWAY_URL}/api/upload-indices`
+  : `http://localhost:${DEFAULT_PORT}/api/upload-indices`;
 
 console.log(`Using API endpoint: ${API_URL}`);
+console.log(`Mode: ${useRailway ? 'RAILWAY (Production)' : 'LOCAL (Development)'}`);
 
 interface IndexRecord {
   race_id: string;
