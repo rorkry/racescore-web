@@ -7,10 +7,13 @@ export async function middleware(req: NextRequest) {
   
   // /admin ルートの保護
   if (pathname.startsWith('/admin')) {
-    // JWTトークンからセッション情報を取得（Edgeランタイム互換）
+    // NextAuth.js v5のcookie名に対応
     const token = await getToken({ 
       req, 
-      secret: process.env.NEXTAUTH_SECRET || 'stride-secret-key-change-in-production'
+      secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'stride-secret-key-change-in-production',
+      cookieName: process.env.NODE_ENV === 'production' 
+        ? '__Secure-authjs.session-token' 
+        : 'authjs.session-token',
     });
     
     // 未ログインまたは管理者でない場合
