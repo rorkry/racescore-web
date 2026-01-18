@@ -38,7 +38,7 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
 function createTurfBackgroundSvg(size) {
   // 左が緑 → 右が白のグラデーション + スマホで見える太い縦線
   const lineSpacing = size > 100 ? 6 : 3; // 縦線の間隔（広め）
-  const lineWidth = size > 100 ? 2 : 1;   // 縦線の太さ（太め）
+  const lineWidth = size > 100 ? 2.5 : 1.5; // 縦線の太さ（少しだけ太く）
   
   // 縦線を直接描画（位置に応じて色と透明度を調整）
   let lines = '';
