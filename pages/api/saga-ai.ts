@@ -638,7 +638,7 @@ async function getTimeComparisonRaces(
         AND place LIKE ?
         AND distance = ?
         AND finish_position = '１'
-      ORDER BY date DESC
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
     `;
 
     const rows = await db.query(
@@ -715,8 +715,8 @@ async function getHistoricalLapData(
         AND finish_position = '１'
         AND lap_time IS NOT NULL
         AND lap_time != ''
-        AND date >= '2019'
-      ORDER BY date DESC
+        AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
       LIMIT 200
     `;
 
@@ -1066,10 +1066,11 @@ export default async function handler(
       const horseName = normalizeHorseName(rawHorseName);
       const horseNum = parseInt(horse.umaban || '0', 10);
 
+      // 過去走を取得（race_idの日付部分で降順ソート = 最新が先頭）
       const pastRacesRawWithDuplicates = await db.prepare(`
         SELECT * FROM umadata
         WHERE TRIM(horse_name) = ?
-        ORDER BY date DESC
+        ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
         LIMIT 100
       `).all(horseName) as any[];
 

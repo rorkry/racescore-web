@@ -34,23 +34,31 @@ export async function GET(request: NextRequest) {
     
     const db = getDb();
     
-    // raceIdが指定されていない場合、最新のレースを1件取得
+    // raceIdが指定されていない場合、60日以上前のレースを1件取得（次走データがある可能性が高い）
     let targetRaceId = raceId;
     let targetRaceDate = '';
     
     if (!targetRaceId) {
-      const latestRace = await db.prepare(`
+      // 60日前の日付を計算（YYYYMMDD形式）
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      const cutoffDate = sixtyDaysAgo.getFullYear() * 10000 + 
+                         (sixtyDaysAgo.getMonth() + 1) * 100 + 
+                         sixtyDaysAgo.getDate();
+      
+      const oldRace = await db.prepare(`
         SELECT race_id, date
         FROM umadata
-        WHERE date IS NOT NULL
+        WHERE SUBSTRING(race_id, 1, 8)::INTEGER < ?
+          AND finish_position IS NOT NULL
         GROUP BY race_id, date
-        ORDER BY date DESC
+        ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
         LIMIT 1
-      `).get<{ race_id: string; date: string }>();
+      `).get<{ race_id: string; date: string }>(cutoffDate);
       
-      if (latestRace) {
-        targetRaceId = latestRace.race_id;
-        targetRaceDate = latestRace.date;
+      if (oldRace) {
+        targetRaceId = oldRace.race_id;
+        targetRaceDate = oldRace.date;
       }
     }
     
