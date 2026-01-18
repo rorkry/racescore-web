@@ -60,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 特定の日付・場所のレース一覧を取得
       const yearFilter = year ? parseInt(year as string, 10) : null;
       const races = await db.prepare(`
-        SELECT DISTINCT 
+        SELECT 
           date, 
           place, 
           race_number, 
@@ -71,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         FROM wakujun
         WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
         GROUP BY date, place, race_number, class_name_1, track_type, distance
-        ORDER BY CAST(race_number AS INTEGER)
+        ORDER BY race_number::INTEGER
       `).all(...(yearFilter ? [date, place, yearFilter] : [date, place]));
 
       const response = { races };
@@ -96,7 +96,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const result = await Promise.all(places.map(async (p: any) => {
         const races = await db.prepare(`
-          SELECT DISTINCT 
+          SELECT 
             date, 
             place, 
             race_number, 
@@ -107,7 +107,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           FROM wakujun
           WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
           GROUP BY date, place, race_number, class_name_1, track_type, distance
-          ORDER BY CAST(race_number AS INTEGER)
+          ORDER BY race_number::INTEGER
         `).all(...(yearFilter ? [dateStr, p.place, yearFilter] : [dateStr, p.place]));
 
         return {
