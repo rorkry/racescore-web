@@ -1177,6 +1177,19 @@ export default async function handler(
 
       const analysis = brain.analyzeHorse(input);
 
+      // デバッグログ: コメント生成の確認
+      console.log(`[saga-ai] Horse ${horseNum} analysis:`, {
+        commentsCount: analysis.comments.length,
+        warningsCount: analysis.warnings.length,
+        tagsCount: analysis.tags.length,
+        hasAbilitySummary: !!analysis.abilitySummary,
+        hasTimeEvaluation: !!analysis.timeEvaluation,
+        hasLapEvaluation: !!analysis.lapEvaluation,
+        hasRaceLevelNote: !!analysis.raceLevelNote,
+        pastRacesWithLap: pastRaces.filter(r => r.lapString).length,
+        timeComparisonCount: timeComparisonData.length,
+      });
+
       analysis.debugInfo = {
         t2f: {
           value: indices.T2F || 0,
