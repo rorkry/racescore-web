@@ -246,16 +246,20 @@ async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceL
  */
 async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDate: string): Promise<RaceLevelResult | null> {
   try {
-    // 対象レースの上位3頭を取得
+    // 対象レースの上位3頭を取得（着順が数値の場合のみ）
     const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT DISTINCT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
+        AND finish_position IS NOT NULL
+        AND finish_position != ''
+        AND finish_position ~ '^[0-9]+$'
         AND finish_position::INTEGER <= 3
       ORDER BY finish_position::INTEGER
     `, [raceId]);
 
     if (topHorses.length === 0) {
+      // 上位馬がいない場合はUNKNOWNを返す
       return {
         level: 'UNKNOWN',
         levelLabel: 'UNKNOWN',
@@ -290,29 +294,38 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
       FROM umadata
       WHERE horse_name IN (${placeholders})
         AND date > $${horseNames.length + 1}
+        AND finish_position IS NOT NULL
+        AND finish_position != ''
       ORDER BY horse_name, date ASC
     `, [...horseNames, raceDate]);
 
     // NextRaceResult形式に変換
     const horseFirstRunMap = new Map<string, boolean>();
-    const nextRaceResults: NextRaceResult[] = nextRaces.map(race => {
-      const isFirstRun = !horseFirstRunMap.has(race.horse_name);
-      if (isFirstRun) {
-        horseFirstRunMap.set(race.horse_name, true);
-      }
-      return {
-        horseName: race.horse_name,
-        finishPosition: parseInt(race.finish_position, 10) || 99,
-        isFirstRun,
-        raceDate: race.date,
-        className: race.class_name,
-      };
-    });
+    const nextRaceResults: NextRaceResult[] = nextRaces
+      .filter(race => {
+        // 数値に変換可能な着順のみ
+        const pos = parseInt(race.finish_position, 10);
+        return !isNaN(pos) && pos > 0;
+      })
+      .map(race => {
+        const isFirstRun = !horseFirstRunMap.has(race.horse_name);
+        if (isFirstRun) {
+          horseFirstRunMap.set(race.horse_name, true);
+        }
+        return {
+          horseName: race.horse_name,
+          finishPosition: parseInt(race.finish_position, 10),
+          isFirstRun,
+          raceDate: race.date,
+          className: race.class_name,
+        };
+      });
 
     // レースレベルを判定
-    return analyzeRaceLevel(nextRaceResults);
+    const result = analyzeRaceLevel(nextRaceResults);
+    return result;
   } catch (err) {
-    console.log('[saga-ai] レースレベル計算エラー:', err);
+    console.error('[saga-ai] レースレベル計算エラー:', raceId, err);
     return null;
   }
 }
@@ -1217,7 +1230,9 @@ export default async function handler(
       
       // 並列で計算
       if (calculatePromises.length > 0) {
+        console.log(`[saga-ai] Calculating ${calculatePromises.length} race levels on-demand...`);
         await Promise.all(calculatePromises);
+        console.log(`[saga-ai] Race level calculation complete. Cache now has ${raceLevelCache.size} entries`);
       }
 
       // 各馬のpastRacesにレースレベル情報を追加
