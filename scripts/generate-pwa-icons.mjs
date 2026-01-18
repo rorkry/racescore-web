@@ -36,36 +36,54 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
  * - 薄い縦線パターン（芝生のテクスチャ）
  */
 function createTurfBackgroundSvg(size) {
-  // トップページと同じ白背景 + 緑とゴールドの光の装飾
+  // レースカードと同じダークグリーン芝生背景 + 強めの縦線
+  const lineSpacing = size > 100 ? 4 : 2; // 縦線の間隔
+  
   return `
     <svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <!-- 左上の緑の光（トップページと同じ） -->
-        <radialGradient id="greenGlow1" cx="10%" cy="20%" r="60%">
-          <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.15" />
+        <!-- ベースグラデーション（turf-bgと同じ） -->
+        <linearGradient id="baseGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" style="stop-color:#0a1f13;stop-opacity:1" />
+          <stop offset="50%" style="stop-color:#0f1a14;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#0a1510;stop-opacity:1" />
+        </linearGradient>
+        
+        <!-- 左の緑の光（強め） -->
+        <radialGradient id="greenGlow1" cx="20%" cy="50%" r="50%">
+          <stop offset="0%" style="stop-color:#166534;stop-opacity:0.4" />
+          <stop offset="100%" style="stop-color:#166534;stop-opacity:0" />
+        </radialGradient>
+        
+        <!-- 右上の明るい緑の光 -->
+        <radialGradient id="greenGlow2" cx="80%" cy="20%" r="40%">
+          <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.2" />
           <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0" />
         </radialGradient>
         
         <!-- 右下のゴールドの光 -->
-        <radialGradient id="goldGlow" cx="90%" cy="80%" r="60%">
-          <stop offset="0%" style="stop-color:#eab308;stop-opacity:0.08" />
-          <stop offset="100%" style="stop-color:#eab308;stop-opacity:0" />
+        <radialGradient id="goldGlow" cx="60%" cy="80%" r="50%">
+          <stop offset="0%" style="stop-color:#d4af37;stop-opacity:0.15" />
+          <stop offset="100%" style="stop-color:#d4af37;stop-opacity:0" />
         </radialGradient>
         
-        <!-- 中央の緑の光（大きくぼかした） -->
-        <radialGradient id="greenGlow2" cx="50%" cy="50%" r="70%">
-          <stop offset="0%" style="stop-color:#16a34a;stop-opacity:0.06" />
-          <stop offset="100%" style="stop-color:#16a34a;stop-opacity:0" />
-        </radialGradient>
+        <!-- 芝生の縦線パターン（強め - レースカード同様） -->
+        <pattern id="turfLines" patternUnits="userSpaceOnUse" width="${lineSpacing}" height="${size}">
+          <rect width="${lineSpacing}" height="${size}" fill="transparent"/>
+          <line x1="0" y1="0" x2="0" y2="${size}" stroke="rgba(34,197,94,0.25)" stroke-width="1"/>
+        </pattern>
       </defs>
       
-      <!-- 白背景 -->
-      <rect width="${size}" height="${size}" fill="#ffffff"/>
+      <!-- ベース背景 -->
+      <rect width="${size}" height="${size}" fill="url(#baseGrad)"/>
       
-      <!-- 光のエフェクト（トップページ風） -->
+      <!-- 光のエフェクト -->
       <rect width="${size}" height="${size}" fill="url(#greenGlow1)"/>
-      <rect width="${size}" height="${size}" fill="url(#goldGlow)"/>
       <rect width="${size}" height="${size}" fill="url(#greenGlow2)"/>
+      <rect width="${size}" height="${size}" fill="url(#goldGlow)"/>
+      
+      <!-- 芝生の縦線パターン（強め） -->
+      <rect width="${size}" height="${size}" fill="url(#turfLines)"/>
     </svg>
   `;
 }
