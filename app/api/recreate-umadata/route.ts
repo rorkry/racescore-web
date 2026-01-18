@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
 // umadataテーブルを新フォーマットで再作成するAPI
-// 本番運用後は削除すること
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,49 +22,58 @@ export async function GET(request: Request) {
     // 既存テーブルを削除
     await client.query('DROP TABLE IF EXISTS umadata CASCADE');
     
-    // 新フォーマットでテーブル作成（39列）
+    // 新フォーマットでテーブル作成（47列）
     await client.query(`
       CREATE TABLE umadata (
         id SERIAL PRIMARY KEY,
-        race_id TEXT,
-        date TEXT,
-        place TEXT,
-        course_type TEXT,
-        distance TEXT,
-        class_name TEXT,
-        race_name TEXT,
-        gender_limit TEXT,
-        age_limit TEXT,
-        waku TEXT,
-        umaban TEXT,
-        horse_name TEXT,
-        corner_4_position TEXT,
-        track_condition TEXT,
-        field_size TEXT,
-        popularity TEXT,
-        finish_position TEXT,
-        last_3f TEXT,
-        weight_carried TEXT,
-        horse_weight TEXT,
-        weight_change TEXT,
-        finish_time TEXT,
-        race_count TEXT,
-        margin TEXT,
-        win_odds TEXT,
-        place_odds TEXT,
-        win_payout TEXT,
-        place_payout TEXT,
-        rpci TEXT,
-        pci TEXT,
-        pci3 TEXT,
-        horse_mark TEXT,
-        passing_order TEXT,
-        gender_age TEXT,
-        jockey TEXT,
-        trainer TEXT,
-        sire TEXT,
-        dam TEXT,
-        lap_time TEXT
+        race_id TEXT,              -- 0: レースID(新/馬番無)
+        date TEXT,                 -- 1: 日付(yyyy.mm.dd)
+        place TEXT,                -- 2: 場所
+        course_type TEXT,          -- 3: 芝(内・外)
+        distance TEXT,             -- 4: 距離
+        class_name TEXT,           -- 5: クラス名
+        race_name TEXT,            -- 6: レース名
+        gender_limit TEXT,         -- 7: 性別限定
+        age_limit TEXT,            -- 8: 年齢限定
+        waku TEXT,                 -- 9: 枠番
+        umaban TEXT,               -- 10: 馬番
+        horse_name TEXT,           -- 11: 馬名S
+        index_value TEXT,          -- 12: 指数（4角位置）
+        track_condition TEXT,      -- 13: 馬場状態
+        field_size TEXT,           -- 14: 頭数
+        popularity TEXT,           -- 15: 人気
+        finish_position TEXT,      -- 16: 着順
+        last_3f TEXT,              -- 17: 上り3F
+        weight_carried TEXT,       -- 18: 斤量
+        horse_weight TEXT,         -- 19: 馬体重
+        weight_change TEXT,        -- 20: 馬体重増減
+        finish_time TEXT,          -- 21: 走破タイム
+        race_count TEXT,           -- 22: 休み明け～戦目
+        margin TEXT,               -- 23: 着差
+        win_odds TEXT,             -- 24: 単勝オッズ
+        place_odds_low TEXT,       -- 25: 複勝オッズ下限
+        place_odds_high TEXT,      -- 26: 複勝オッズ上限
+        win_payout TEXT,           -- 27: 単勝配当
+        place_payout TEXT,         -- 28: 複勝配当
+        rpci TEXT,                 -- 29: RPCI
+        pci TEXT,                  -- 30: PCI
+        good_run TEXT,             -- 31: 好走
+        pci3 TEXT,                 -- 32: PCI3
+        horse_mark TEXT,           -- 33: 馬印
+        corner_1 TEXT,             -- 34: 1角
+        corner_2 TEXT,             -- 35: 2角
+        corner_3 TEXT,             -- 36: 3角
+        corner_4 TEXT,             -- 37: 4角
+        gender TEXT,               -- 38: 性別
+        age TEXT,                  -- 39: 年齢
+        jockey TEXT,               -- 40: 騎手
+        multi_entry TEXT,          -- 41: 多頭出し
+        affiliation TEXT,          -- 42: 所属
+        trainer TEXT,              -- 43: 調教師
+        sire TEXT,                 -- 44: 種牡馬
+        dam TEXT,                  -- 45: 母馬
+        lap_time TEXT,             -- 46: ワーク1（ラップタイム）
+        work_2 TEXT                -- 47: ワーク2
       )
     `);
 
@@ -82,7 +90,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      message: 'umadataテーブルを新フォーマット（39列）で再作成しました'
+      message: 'umadataテーブルを新フォーマット（47列）で再作成しました'
     });
   } catch (error: any) {
     console.error('Recreate umadata error:', error);
