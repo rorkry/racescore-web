@@ -68,13 +68,14 @@ export async function GET(request: NextRequest) {
   try {
     const db = getRawDb();
 
+    // wakujunはyear + dateの組み合わせで検索する必要がある場合がある
     // その日のレース一覧を取得
     const races = await db.prepare(`
       SELECT DISTINCT race_number
       FROM wakujun
-      WHERE date = $1 AND place = $2
+      WHERE date = $1 AND place = $2 AND year = $3
       ORDER BY race_number::INTEGER
-    `).all(date, place) as { race_number: string }[];
+    `).all(date, place, parseInt(year, 10)) as { race_number: string }[];
 
     const results: TimeCheckResult[] = [];
 
@@ -84,8 +85,8 @@ export async function GET(request: NextRequest) {
       // そのレースの出走馬を取得
       const horses = await db.prepare(`
         SELECT umamei FROM wakujun
-        WHERE date = $1 AND place = $2 AND race_number = $3
-      `).all(date, place, raceNumber) as { umamei: string }[];
+        WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
+      `).all(date, place, raceNumber, parseInt(year, 10)) as { umamei: string }[];
 
       let hasExcellentTime = false;
       let hasGoodTime = false;

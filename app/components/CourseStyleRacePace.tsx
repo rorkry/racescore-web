@@ -60,25 +60,25 @@ export default function CourseStyleRacePace({
   console.log('[CourseStyleRacePace] 受け取った競うスコア:', kisouScores);
   console.log('[CourseStyleRacePace] スコアの数:', Object.keys(kisouScores).length);
   
-  // バイアスをレースごとにlocalStorageから復元
+  // バイアス状態（SSRハイドレーション対応のため、初期値はデフォルト）
   const [bias, setBias] = useState<
     'none' | 'uchi-mae' | 'soto-mae' | 'mae' | 'ushiro' | 'uchi' | 'soto' | 'soto-ushiro'
-  >(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(`bias_${raceKey}`);
-      return (saved as typeof bias) || 'none';
-    }
-    return 'none';
-  });
+  >('none');
   
-  // 馬場状態をレースごとにlocalStorageから復元
-  const [trackCondition, setTrackCondition] = useState<'良' | '稍' | '重' | '不'>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(`condition_${raceKey}`);
-      return (saved as '良' | '稍' | '重' | '不') || '良';
+  // 馬場状態（SSRハイドレーション対応のため、初期値はデフォルト）
+  const [trackCondition, setTrackCondition] = useState<'良' | '稍' | '重' | '不'>('良');
+  
+  // クライアント側でlocalStorageから復元（ハイドレーション後）
+  useEffect(() => {
+    const savedBias = localStorage.getItem(`bias_${raceKey}`);
+    if (savedBias) {
+      setBias(savedBias as typeof bias);
     }
-    return '良';
-  });
+    const savedCondition = localStorage.getItem(`condition_${raceKey}`);
+    if (savedCondition) {
+      setTrackCondition(savedCondition as '良' | '稍' | '重' | '不');
+    }
+  }, [raceKey]);
   
   const [prediction, setPrediction] = useState<RacePacePrediction | null>(null);
   const [loading, setLoading] = useState(true);
