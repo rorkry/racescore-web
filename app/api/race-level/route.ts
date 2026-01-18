@@ -62,6 +62,10 @@ async function getCachedLevel(raceId: string): Promise<RaceLevelResult | null> {
   
   if (!cached) return null;
   
+  // has_plus に plusCount の値（0, 1, 2, 3）が保存されている
+  const plusCount = cached.has_plus || 0;
+  const plusLabel = '+'.repeat(plusCount);
+  
   return {
     level: cached.level as RaceLevelResult['level'],
     levelLabel: cached.level_label,
@@ -80,9 +84,10 @@ async function getCachedLevel(raceId: string): Promise<RaceLevelResult | null> {
     },
     displayComment: cached.display_comment || '',
     aiComment: cached.ai_comment || '',
-    hasPlus: cached.has_plus === 1,
-    isDataInsufficient: false,
-    lapLevelBoost: false,
+    plusCount: plusCount,
+    plusLabel: plusLabel,
+    isUnknownWithPotential: cached.level === 'UNKNOWN' && cached.level_label?.includes('+'),
+    isDataInsufficient: cached.level === 'UNKNOWN',
   };
 }
 
@@ -95,6 +100,7 @@ async function cacheLevel(raceId: string, result: RaceLevelResult): Promise<void
   expiresAt.setDate(expiresAt.getDate() + CACHE_EXPIRY_DAYS);
   
   // PostgreSQLではINSERT ... ON CONFLICT ... DO UPDATE を使用
+  // has_plus カラムには plusCount の値（0, 1, 2, 3）を保存
   await db.query(`
     INSERT INTO race_levels (
       race_id, level, level_label, total_horses_run, good_run_count,
@@ -125,7 +131,7 @@ async function cacheLevel(raceId: string, result: RaceLevelResult): Promise<void
     result.winCount,
     result.goodRunRate,
     result.firstRunGoodRate,
-    result.hasPlus ? 1 : 0,
+    result.plusCount || 0,  // plusCount を has_plus カラムに保存
     result.aiComment,
     result.displayComment,
     expiresAt.toISOString()
@@ -179,9 +185,9 @@ export async function GET(request: NextRequest) {
     `).all<{ horse_name: string; finish_position: string }>(raceId);
     
     if (topHorses.length === 0) {
-      const pendingResult: RaceLevelResult = {
-        level: 'PENDING',
-        levelLabel: '判定保留',
+      const unknownResult: RaceLevelResult = {
+        level: 'UNKNOWN',
+        levelLabel: '判定不能',
         totalHorsesRun: 0,
         totalRuns: 0,
         goodRunCount: 0,
@@ -192,14 +198,15 @@ export async function GET(request: NextRequest) {
         commentData: { totalHorses: 0, goodRuns: 0, winners: 0, details: [] },
         displayComment: 'データなし',
         aiComment: '対象馬のデータがありません',
-        hasPlus: false,
+        plusCount: 0,
+        plusLabel: '',
+        isUnknownWithPotential: false,
         isDataInsufficient: true,
-        lapLevelBoost: false,
       };
       return NextResponse.json({
         raceId,
         raceInfo,
-        level: pendingResult,
+        level: unknownResult,
       });
     }
     
@@ -249,10 +256,8 @@ export async function GET(request: NextRequest) {
       lapString: raceInfo.work_1s || undefined,
     });
     
-    // 7. キャッシュに保存（PENDINGでない場合）
-    if (levelResult.level !== 'PENDING') {
-      await cacheLevel(raceId, levelResult);
-    }
+    // 7. キャッシュに保存（UNKNOWNでもデータがある場合は保存）
+    await cacheLevel(raceId, levelResult);
     
     // 8. 詳細データも返す（デバッグ/表示用）
     return NextResponse.json({

@@ -6,6 +6,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db-new';
 import { SagaBrain, HorseAnalysisInput, SagaAnalysis, TimeComparisonRace, PastRaceTimeComparison } from '../../lib/saga-ai/saga-brain';
 import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
+import { analyzeRaceLevel, type NextRaceResult, type RaceLevelResult } from '../../lib/saga-ai/level-analyzer';
 import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
@@ -190,6 +191,130 @@ async function getRaceLevelsFromCache(db: DbWrapper, raceIds: string[]): Promise
   }
 
   return result;
+}
+
+/**
+ * レースレベルをキャッシュに保存
+ */
+async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceLevelResult): Promise<void> {
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7日間有効
+
+    await db.query(`
+      INSERT INTO race_levels (
+        race_id, level, level_label, total_horses_run, good_run_count,
+        first_run_good_count, win_count, good_run_rate, first_run_good_rate,
+        has_plus, ai_comment, display_comment, calculated_at, expires_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), $13)
+      ON CONFLICT (race_id) DO UPDATE SET
+        level = EXCLUDED.level,
+        level_label = EXCLUDED.level_label,
+        total_horses_run = EXCLUDED.total_horses_run,
+        good_run_count = EXCLUDED.good_run_count,
+        first_run_good_count = EXCLUDED.first_run_good_count,
+        win_count = EXCLUDED.win_count,
+        good_run_rate = EXCLUDED.good_run_rate,
+        first_run_good_rate = EXCLUDED.first_run_good_rate,
+        has_plus = EXCLUDED.has_plus,
+        ai_comment = EXCLUDED.ai_comment,
+        display_comment = EXCLUDED.display_comment,
+        calculated_at = NOW(),
+        expires_at = EXCLUDED.expires_at
+    `, [
+      raceId,
+      result.level,
+      result.levelLabel,
+      result.totalHorsesRun,
+      result.goodRunCount,
+      result.firstRunGoodCount,
+      result.winCount,
+      result.goodRunRate,
+      result.firstRunGoodRate,
+      result.plusCount || 0,
+      result.aiComment,
+      result.displayComment,
+      expiresAt.toISOString()
+    ]);
+  } catch (err) {
+    console.log('[saga-ai] レースレベルキャッシュ保存スキップ:', err);
+  }
+}
+
+/**
+ * 単一レースのレベルを計算（オンデマンド）
+ */
+async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDate: string): Promise<RaceLevelResult | null> {
+  try {
+    // 対象レースの上位3頭を取得
+    const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
+      SELECT DISTINCT horse_name, finish_position
+      FROM umadata 
+      WHERE race_id = $1
+        AND finish_position::INTEGER <= 3
+      ORDER BY finish_position::INTEGER
+    `, [raceId]);
+
+    if (topHorses.length === 0) {
+      return {
+        level: 'UNKNOWN',
+        levelLabel: 'UNKNOWN',
+        totalHorsesRun: 0,
+        totalRuns: 0,
+        goodRunCount: 0,
+        firstRunGoodCount: 0,
+        winCount: 0,
+        goodRunRate: 0,
+        firstRunGoodRate: 0,
+        commentData: { totalHorses: 0, goodRuns: 0, winners: 0, details: [] },
+        displayComment: 'データなし',
+        aiComment: '',
+        plusCount: 0,
+        plusLabel: '',
+        isUnknownWithPotential: false,
+        isDataInsufficient: true,
+      };
+    }
+
+    const horseNames = topHorses.map(h => h.horse_name);
+    const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
+
+    // 各馬の次走以降の成績を取得
+    const nextRaces = await db.query<{
+      horse_name: string;
+      finish_position: string;
+      date: string;
+      class_name: string;
+    }>(`
+      SELECT horse_name, finish_position, date, class_name
+      FROM umadata
+      WHERE horse_name IN (${placeholders})
+        AND date > $${horseNames.length + 1}
+      ORDER BY horse_name, date ASC
+    `, [...horseNames, raceDate]);
+
+    // NextRaceResult形式に変換
+    const horseFirstRunMap = new Map<string, boolean>();
+    const nextRaceResults: NextRaceResult[] = nextRaces.map(race => {
+      const isFirstRun = !horseFirstRunMap.has(race.horse_name);
+      if (isFirstRun) {
+        horseFirstRunMap.set(race.horse_name, true);
+      }
+      return {
+        horseName: race.horse_name,
+        finishPosition: parseInt(race.finish_position, 10) || 99,
+        isFirstRun,
+        raceDate: race.date,
+        className: race.class_name,
+      };
+    });
+
+    // レースレベルを判定
+    return analyzeRaceLevel(nextRaceResults);
+  } catch (err) {
+    console.log('[saga-ai] レースレベル計算エラー:', err);
+    return null;
+  }
 }
 
 /**
@@ -1046,30 +1171,69 @@ export default async function handler(
     // レースレベルを一括取得して各馬のpastRacesに追加
     // ========================================
     try {
-      // 全ての過去走からraceIdを収集
-      const allRaceIds: string[] = [];
+      // 全ての過去走からraceIdと日付を収集（最大5走）
+      const allRaceData: { raceId: string; date: string }[] = [];
       for (const { pastRaces } of horseDataList) {
         for (const race of pastRaces.slice(0, 5)) {
-          if (race.raceId) {
-            allRaceIds.push(race.raceId);
+          if (race.raceId && race.date) {
+            allRaceData.push({ raceId: race.raceId, date: race.date });
           }
         }
       }
+      const allRaceIds = allRaceData.map(r => r.raceId);
 
-      // レースレベルを一括取得
-      const raceLevelCache = getRaceLevelsFromCache(db, allRaceIds);
+      // レースレベルを一括取得（awaitを追加）
+      const raceLevelCache = await getRaceLevelsFromCache(db, allRaceIds);
+      
+      // キャッシュにないレースはオンデマンドで計算（前走のみ）
+      const uncachedRaces = allRaceData.filter(r => !raceLevelCache.has(r.raceId));
+      const calculatePromises: Promise<void>[] = [];
+      
+      // 前走（最新走）だけを対象にオンデマンド計算（全レースだと重すぎる）
+      const uniqueUncachedRaces = Array.from(new Map(uncachedRaces.map(r => [r.raceId, r])).values())
+        .slice(0, 20); // 最大20レースまで
+      
+      for (const race of uniqueUncachedRaces) {
+        calculatePromises.push(
+          (async () => {
+            const levelResult = await calculateRaceLevelOnDemand(db, race.raceId, race.date);
+            if (levelResult) {
+              // キャッシュに保存
+              await saveRaceLevelToCache(db, race.raceId, levelResult);
+              // 一時キャッシュに追加
+              raceLevelCache.set(race.raceId, {
+                race_id: race.raceId,
+                level: levelResult.level,
+                level_label: levelResult.levelLabel,
+                total_horses_run: levelResult.totalHorsesRun,
+                good_run_count: levelResult.goodRunCount,
+                win_count: levelResult.winCount,
+                ai_comment: levelResult.aiComment,
+              });
+            }
+          })()
+        );
+      }
+      
+      // 並列で計算
+      if (calculatePromises.length > 0) {
+        await Promise.all(calculatePromises);
+      }
 
       // 各馬のpastRacesにレースレベル情報を追加
       for (const horseData of horseDataList) {
         for (const race of horseData.pastRaces) {
           if (race.raceId && raceLevelCache.has(race.raceId)) {
             const cached = raceLevelCache.get(race.raceId)!;
+            // plusCountを計算（levelLabelの+の数をカウント）
+            const plusCount = (cached.level_label?.match(/\+/g) || []).length;
             race.raceLevel = {
               level: cached.level as any,
-              levelLabel: cached.level_label,
+              levelLabel: cached.level_label || cached.level,
               totalHorsesRun: cached.total_horses_run,
               goodRunCount: cached.good_run_count,
               winCount: cached.win_count,
+              plusCount: plusCount,
               aiComment: cached.ai_comment || '',
             };
           }
