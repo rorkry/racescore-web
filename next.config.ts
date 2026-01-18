@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // standalone出力（軽量デプロイ用）
-  output: 'standalone',
-  
   // 本番ビルドの最適化
   compress: true,
   
