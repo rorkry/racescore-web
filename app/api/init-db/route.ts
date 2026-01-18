@@ -110,28 +110,48 @@ export async function GET(request: Request) {
         nenrei_display TEXT
       );
 
-      -- umadata（過去走データ）
+      -- umadata（過去走データ）- 新フォーマット39列
       CREATE TABLE IF NOT EXISTS umadata (
         id SERIAL PRIMARY KEY,
-        horse_name TEXT,
+        race_id TEXT,
         date TEXT,
         place TEXT,
-        race_name TEXT,
+        course_type TEXT,
         distance TEXT,
-        track_condition TEXT,
-        finish_position TEXT,
-        finish_time TEXT,
-        margin TEXT,
-        corner_1 TEXT,
-        corner_2 TEXT,
-        corner_3 TEXT,
-        corner_4 TEXT,
-        number_of_horses TEXT,
         class_name TEXT,
-        horse_number TEXT,
-        race_id_new_no_horse_num TEXT,
+        race_name TEXT,
+        gender_limit TEXT,
+        age_limit TEXT,
+        waku TEXT,
+        umaban TEXT,
+        horse_name TEXT,
+        corner_4_position TEXT,
+        track_condition TEXT,
+        field_size TEXT,
+        popularity TEXT,
+        finish_position TEXT,
+        last_3f TEXT,
+        weight_carried TEXT,
+        horse_weight TEXT,
+        weight_change TEXT,
+        finish_time TEXT,
+        race_count TEXT,
+        margin TEXT,
+        win_odds TEXT,
+        place_odds TEXT,
+        win_payout TEXT,
+        place_payout TEXT,
+        rpci TEXT,
         pci TEXT,
-        work_1s TEXT
+        pci3 TEXT,
+        horse_mark TEXT,
+        passing_order TEXT,
+        gender_age TEXT,
+        jockey TEXT,
+        trainer TEXT,
+        sire TEXT,
+        dam TEXT,
+        lap_time TEXT
       );
 
       -- 指数テーブル

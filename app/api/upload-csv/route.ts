@@ -13,13 +13,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未認証' }, { status: 401 });
     }
     
-    // 管理者権限チェック（roleがadminかどうか）
     const userRole = (session.user as { role?: string }).role;
     if (userRole !== 'admin') {
       return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 });
     }
 
-    // Rate Limiting（厳格：1分に10回まで）
+    // Rate Limiting
     const identifier = getRateLimitIdentifier(request);
     const rateLimit = checkRateLimit(`upload-csv:${identifier}`, strictRateLimit);
     if (!rateLimit.allowed) {
@@ -36,11 +35,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ファイルが選択されていません' }, { status: 400 });
     }
 
-    // ファイルをArrayBufferとして読み込み
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
-    // Shift_JIS (CP932) からUTF-8に変換
     let text: string;
     try {
       text = iconv.decode(buffer, 'Shift_JIS');
@@ -48,7 +45,6 @@ export async function POST(request: NextRequest) {
       text = buffer.toString('utf-8');
     }
     
-    // CSVをパース（ヘッダーなし）
     const { data } = Papa.parse(text, {
       header: false,
       skipEmptyLines: true,
@@ -58,7 +54,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CSVデータが空です' }, { status: 400 });
     }
 
-    // PostgreSQL接続
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -67,7 +62,6 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect();
 
     try {
-      // ファイル名でテーブルを判定
       if (file.name.includes('wakujun')) {
         const result = await importWakujun(client, data);
         client.release();
@@ -121,18 +115,15 @@ async function importWakujun(client: any, data: any[]): Promise<{ count: number;
     year = yearMatch[1];
   }
 
-  // 既存データ確認
   const existingResult = await client.query(
     'SELECT COUNT(*) as count FROM wakujun WHERE date = $1 AND year = $2',
     [date, year]
   );
   const isUpdate = existingResult.rows[0].count > 0;
 
-  // トランザクション開始
   await client.query('BEGIN');
 
   try {
-    // 同じ年・日付のデータを削除
     if (isUpdate) {
       await client.query('DELETE FROM wakujun WHERE date = $1 AND year = $2', [date, year]);
     }
@@ -190,6 +181,48 @@ async function importWakujun(client: any, data: any[]): Promise<{ count: number;
   }
 }
 
+/**
+ * 新umadataフォーマット（39列）
+ * 0: race_id - レースID(馬番号あり)
+ * 1: date - 日付
+ * 2: place - 場所
+ * 3: course_type - 内/外回り
+ * 4: distance - 距離(芝2200等)
+ * 5: class_name - クラス
+ * 6: race_name - レース名
+ * 7: gender_limit - 牝馬限定フラグ
+ * 8: age_limit - 2歳/3歳限定
+ * 9: waku - 枠
+ * 10: umaban - 馬番
+ * 11: horse_name - 馬名
+ * 12: corner_4_position - 4角位置
+ * 13: track_condition - 馬場状態
+ * 14: field_size - 頭数
+ * 15: popularity - 人気
+ * 16: finish_position - 着順
+ * 17: last_3f - 上がり3F
+ * 18: weight_carried - 斤量
+ * 19: horse_weight - 馬体重
+ * 20: weight_change - 馬体重増減
+ * 21: finish_time - 走破タイム
+ * 22: race_count - 休み明けから何戦目
+ * 23: margin - 着差
+ * 24: win_odds - 単勝オッズ
+ * 25: place_odds - 複勝オッズ
+ * 26: win_payout - 単勝配当
+ * 27: place_payout - 複勝配当
+ * 28: rpci - RPCI
+ * 29: pci - PCI
+ * 30: pci3 - PCI3
+ * 31: horse_mark - 印
+ * 32: passing_order - 通過順
+ * 33: gender_age - 性齢(牡3等)
+ * 34: jockey - 騎手
+ * 35: trainer - 調教師
+ * 36: sire - 種牡馬
+ * 37: dam - 母馬名
+ * 38: lap_time - ラップタイム
+ */
 async function importUmadata(client: any, data: any[]): Promise<{ count: number; inserted: number }> {
   console.log(`[importUmadata] 開始: ${data.length}行`);
   const startTime = Date.now();
@@ -200,43 +233,75 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
     let count = 0;
     let inserted = 0;
     
-    // バッチ処理（100行ずつ）
     const batchSize = 100;
     
     for (let i = 0; i < data.length; i += batchSize) {
       const batch = data.slice(i, i + batchSize);
       
       for (const row of batch) {
-        if (Array.isArray(row) && row.length >= 42) {
+        if (Array.isArray(row) && row.length >= 39) {
           try {
+            // 馬名の正規化（半角化、$マーク削除は既に行われている前提）
+            const horseName = (row[11] || '').trim();
+            
             await client.query(`
               INSERT INTO umadata (
-                race_id_new_no_horse_num, date, distance, horse_number, horse_name, index_value,
-                class_name, track_condition, finish_position, last_3f, finish_time, standard_time,
-                rpci, pci, good_run, pci3, horse_mark, corner_2, corner_3, corner_4, gender, age,
-                horse_weight, weight_change, jockey_weight, jockey, multiple_entries, affiliation,
-                trainer, place, number_of_horses, popularity, sire, dam, track_condition_2, place_2,
-                margin, corner_1, corner_2_2, corner_3_2, corner_4_2, work_1s
+                race_id, date, place, course_type, distance, class_name, race_name,
+                gender_limit, age_limit, waku, umaban, horse_name,
+                corner_4_position, track_condition, field_size, popularity,
+                finish_position, last_3f, weight_carried, horse_weight, weight_change,
+                finish_time, race_count, margin, win_odds, place_odds,
+                win_payout, place_payout, rpci, pci, pci3, horse_mark,
+                passing_order, gender_age, jockey, trainer, sire, dam, lap_time
               ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-                $41, $42
+                $31, $32, $33, $34, $35, $36, $37, $38, $39
               )
-              ON CONFLICT (id) DO NOTHING
             `, [
-              row[0], row[1], row[2], row[3], row[4], row[5],
-              row[6], row[7], row[8], row[9], row[10], row[11],
-              row[12], row[13], row[14], row[15], row[16], row[17],
-              row[18], row[19], row[20], row[21], row[22], row[23],
-              row[24], row[25], row[26], row[27], row[28], row[29],
-              row[30], row[31], row[32], row[33], row[34], row[35],
-              row[36], row[37], row[38], row[39], row[40], row[41]
+              (row[0] || '').trim(),   // race_id
+              (row[1] || '').trim(),   // date
+              (row[2] || '').trim(),   // place
+              (row[3] || '').trim(),   // course_type
+              (row[4] || '').trim(),   // distance
+              (row[5] || '').trim(),   // class_name
+              (row[6] || '').trim(),   // race_name
+              (row[7] || '').trim(),   // gender_limit
+              (row[8] || '').trim(),   // age_limit
+              (row[9] || '').trim(),   // waku
+              (row[10] || '').trim(),  // umaban
+              horseName,               // horse_name
+              (row[12] || '').trim(),  // corner_4_position
+              (row[13] || '').trim(),  // track_condition
+              (row[14] || '').trim(),  // field_size
+              (row[15] || '').trim(),  // popularity
+              (row[16] || '').trim(),  // finish_position
+              (row[17] || '').trim(),  // last_3f
+              (row[18] || '').trim(),  // weight_carried
+              (row[19] || '').trim(),  // horse_weight
+              (row[20] || '').trim(),  // weight_change
+              (row[21] || '').trim(),  // finish_time
+              (row[22] || '').trim(),  // race_count
+              (row[23] || '').trim(),  // margin
+              (row[24] || '').trim(),  // win_odds
+              (row[25] || '').trim(),  // place_odds
+              (row[26] || '').trim(),  // win_payout
+              (row[27] || '').trim(),  // place_payout
+              (row[28] || '').trim(),  // rpci
+              (row[29] || '').trim(),  // pci
+              (row[30] || '').trim(),  // pci3
+              (row[31] || '').trim(),  // horse_mark
+              (row[32] || '').trim(),  // passing_order
+              (row[33] || '').trim(),  // gender_age
+              (row[34] || '').trim(),  // jockey
+              (row[35] || '').trim(),  // trainer
+              (row[36] || '').trim(),  // sire
+              (row[37] || '').trim(),  // dam
+              (row[38] || '').trim()   // lap_time
             ]);
             inserted++;
           } catch (e: any) {
-            // 重複エラーは無視
             if (!e.message.includes('duplicate')) {
               console.error('Error processing umadata row:', e.message);
             }
