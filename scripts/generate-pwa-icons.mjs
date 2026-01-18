@@ -36,8 +36,9 @@ const BG_R = 10, BG_G = 31, BG_B = 19; // #0a1f13
  * - 薄い縦線パターン（芝生のテクスチャ）
  */
 function createTurfBackgroundSvg(size) {
-  // 左が緑 → 右が白のグラデーション + 背景に馴染む縦線
-  const lineSpacing = 3; // 縦線の間隔（固定）
+  // 左が緑 → 右が白のグラデーション + スマホで見える太い縦線
+  const lineSpacing = size > 100 ? 6 : 3; // 縦線の間隔（広め）
+  const lineWidth = size > 100 ? 2 : 1;   // 縦線の太さ（太め）
   
   // 縦線を直接描画（位置に応じて色と透明度を調整）
   let lines = '';
@@ -50,10 +51,10 @@ function createTurfBackgroundSvg(size) {
     const g = Math.round(185 + (180 - 185) * progress);
     const b = Math.round(129 + (180 - 129) * progress);
     
-    // 透明度も調整（左0.6 → 右0.25）- より濃く
-    const opacity = 0.6 - (progress * 0.35);
+    // 透明度も調整（左0.7 → 右0.3）- スマホで見えるレベル
+    const opacity = 0.7 - (progress * 0.4);
     
-    lines += `<line x1="${x}" y1="0" x2="${x}" y2="${size}" stroke="rgb(${r},${g},${b})" stroke-width="1" stroke-opacity="${opacity.toFixed(2)}"/>`;
+    lines += `<line x1="${x}" y1="0" x2="${x}" y2="${size}" stroke="rgb(${r},${g},${b})" stroke-width="${lineWidth}" stroke-opacity="${opacity.toFixed(2)}"/>`;
   }
   
   return `
