@@ -58,7 +58,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (date && place) {
       // 特定の日付・場所のレース一覧を取得
-      const yearFilter = year ? parseInt(year as string, 10) : null;
+      const yearFilter = year ? String(year) : null;  // yearは文字列として渡す
       const races = await db.prepare(`
         SELECT 
           date, 
@@ -82,7 +82,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else if (date) {
       // 特定の日付の全場所・全レースを取得
       const dateStr = String(date).trim();
-      const yearFilter = year ? parseInt(year as string, 10) : null;
+      const yearFilter = year ? String(year) : null;  // yearは文字列として渡す
       console.log(`[api/races] date parameter: "${dateStr}", year: ${yearFilter}`);
       
       const places = await db.prepare(`
@@ -124,7 +124,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(response);
     } else if (year) {
       // 特定の年の全日付を取得
-      const yearFilter = parseInt(year as string, 10);
+      const yearFilter = String(year);  // yearは文字列として渡す
       const datesForYear = await db.prepare(`
         SELECT DISTINCT date
         FROM wakujun

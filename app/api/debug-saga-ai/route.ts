@@ -24,7 +24,7 @@ export async function GET() {
     const sampleQuery = await db.query(`
       SELECT date, place, race_number, year, umamei
       FROM wakujun
-      WHERE year = 2026
+      WHERE year = '2026'
       ORDER BY date DESC
       LIMIT 3
     `);
@@ -37,7 +37,7 @@ export async function GET() {
     const testDate = '2026. 1.18';
     const testPlace = '中山';
     const testRaceNumber = '9';
-    const testYear = 2026;
+    const testYear = '2026';  // 文字列に変更
     
     const sagaQuery = await db.query(`
       SELECT * FROM wakujun

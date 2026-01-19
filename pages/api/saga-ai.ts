@@ -1044,7 +1044,7 @@ export default async function handler(
       SELECT * FROM wakujun
       WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
       ORDER BY umaban::INTEGER
-    `).all(date, rawPlace, raceNumber, parseInt(year, 10)) as any[];
+    `).all(date, rawPlace, raceNumber, year) as any[];  // yearは文字列のまま渡す
 
     if (!horses || horses.length === 0) {
       return res.status(404).json({ error: 'No horses found' });

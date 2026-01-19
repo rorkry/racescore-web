@@ -45,7 +45,7 @@ export default async function handler(
       FROM wakujun
       WHERE date = ? AND year = ?
     `;
-    const params: any[] = [date, parseInt(year, 10)];
+    const params: any[] = [date, year];  // yearは文字列として渡す
 
     if (place) {
       racesQuery += ` AND place = ?`;

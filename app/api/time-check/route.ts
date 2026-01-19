@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       WHERE date = $1 AND place = $2 AND year = $3
       GROUP BY race_number
       ORDER BY race_number::INTEGER
-    `).all(date, place, parseInt(year, 10)) as { race_number: string }[];
+    `).all(date, place, year) as { race_number: string }[];  // yearは文字列として渡す
 
     const results: TimeCheckResult[] = [];
 
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       const horses = await db.prepare(`
         SELECT umamei FROM wakujun
         WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
-      `).all(date, place, raceNumber, parseInt(year, 10)) as { umamei: string }[];
+      `).all(date, place, raceNumber, year) as { umamei: string }[];  // yearは文字列として渡す
 
       let hasExcellentTime = false;
       let hasGoodTime = false;
