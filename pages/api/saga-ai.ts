@@ -346,8 +346,9 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
     const horseFirstRunMap = new Map<string, boolean>();
     const nextRaceResults: NextRaceResult[] = nextRaces
       .filter(race => {
-        // 数値に変換可能な着順のみ
-        const pos = parseInt(race.finish_position, 10);
+        // 全角数字を半角に変換してから数値判定
+        const posStr = toHalfWidth(race.finish_position || '');
+        const pos = parseInt(posStr, 10);
         return !isNaN(pos) && pos > 0;
       })
       .map(race => {
@@ -355,9 +356,11 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
         if (isFirstRun) {
           horseFirstRunMap.set(race.horse_name, true);
         }
+        // 全角数字を半角に変換
+        const posStr = toHalfWidth(race.finish_position || '');
         return {
           horseName: race.horse_name,
-          finishPosition: parseInt(race.finish_position, 10),
+          finishPosition: parseInt(posStr, 10),
           isFirstRun,
           raceDate: race.date,
           className: race.class_name,

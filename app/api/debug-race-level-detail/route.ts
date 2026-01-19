@@ -130,7 +130,9 @@ export async function GET(request: NextRequest) {
       const horseFirstRunMap = new Map<string, boolean>();
       nextRaceResults = nextRacesData
         .filter(race => {
-          const pos = parseInt(race.finish_position, 10);
+          // 全角数字を半角に変換してから数値判定
+          const posStr = (race.finish_position || '').replace(/[０-９]/g, (s: string) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+          const pos = parseInt(posStr, 10);
           return !isNaN(pos) && pos > 0;
         })
         .map(race => {
@@ -138,9 +140,11 @@ export async function GET(request: NextRequest) {
           if (isFirstRun) {
             horseFirstRunMap.set(race.horse_name, true);
           }
+          // 全角数字を半角に変換
+          const posStr = (race.finish_position || '').replace(/[０-９]/g, (s: string) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
           return {
             horseName: race.horse_name,
-            finishPosition: parseInt(race.finish_position, 10),
+            finishPosition: parseInt(posStr, 10),
             isFirstRun,
             raceDate: race.date,
             className: race.class_name,
