@@ -9,51 +9,59 @@ export async function GET() {
   const results: Record<string, unknown> = {};
   
   try {
-    // 1. 最新のレースを取得
-    results.step1_getLatestRace = 'checking...';
-    const latestRaceQuery = await db.query(`
-      SELECT DISTINCT race_id, date, place, race_number
+    // 0. wakujunテーブルのスキーマ確認
+    results.step0_wakujunSchema = 'checking...';
+    const schemaQuery = await db.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'wakujun'
+      ORDER BY ordinal_position
+    `);
+    results.step0_wakujunSchema = schemaQuery.rows;
+
+    // 1. wakujunの最新のレースサンプルを取得
+    results.step1_wakujunSample = 'checking...';
+    const sampleQuery = await db.query(`
+      SELECT date, place, race_number, year, umamei
       FROM wakujun
       WHERE year = 2026
-      ORDER BY race_id DESC
-      LIMIT 1
+      ORDER BY date DESC
+      LIMIT 3
     `);
-    const latestRace = latestRaceQuery.rows[0];
-    results.step1_getLatestRace = latestRace || 'none';
+    results.step1_wakujunSample = sampleQuery.rows;
+
+    // 2. saga-aiと同じ条件でwakujunを取得
+    results.step2_sagaAiQuery = 'checking...';
+    // saga-aiは date, place, race_number, year で検索
+    // dateの形式を確認（例: "2026. 1.18" vs "0118"）
+    const testDate = '2026. 1.18';
+    const testPlace = '中山';
+    const testRaceNumber = '9';
+    const testYear = 2026;
     
-    if (!latestRace) {
-      return NextResponse.json({ error: 'No races found', results });
-    }
-
-    const { place, race_number, date } = latestRace;
-    const year = 2026;
-    const dateStr = '0118'; // テスト用
-
-    // 2. wakujunからレースデータを取得
-    results.step2_getWakujun = 'checking...';
-    const wakujunQuery = await db.query(`
+    const sagaQuery = await db.query(`
       SELECT * FROM wakujun
-      WHERE date LIKE $1
-        AND place = $2
-        AND race_number = $3
-        AND year = $4
+      WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
+      ORDER BY umaban::INTEGER
       LIMIT 5
-    `, [`%${dateStr}%`, place, race_number, year]);
-    results.step2_getWakujun = {
-      count: wakujunQuery.rows.length,
-      sample: wakujunQuery.rows.slice(0, 2)
+    `, [testDate, testPlace, testRaceNumber, testYear]);
+    results.step2_sagaAiQuery = {
+      params: { date: testDate, place: testPlace, race_number: testRaceNumber, year: testYear },
+      count: sagaQuery.rows.length,
+      sample: sagaQuery.rows.slice(0, 2)
     };
 
-    // 3. umadataを取得
+    // 3. umadataを取得（saga-aiと同じクエリ）
     results.step3_getUmadata = 'checking...';
-    if (wakujunQuery.rows.length > 0) {
-      const firstHorse = wakujunQuery.rows[0];
+    if (sagaQuery.rows.length > 0) {
+      const firstHorse = sagaQuery.rows[0];
       const horseNameForUmadata = (firstHorse.umamei || '').trim();
       
+      // saga-aiと同じクエリ: horse_nameカラムを使用
       const umadataQuery = await db.query(`
-        SELECT race_id, umamei, finish_position, date, lap_time, passing_order
+        SELECT race_id, horse_name, finish_position, date, lap_time, passing_order
         FROM umadata
-        WHERE umamei = $1
+        WHERE TRIM(horse_name) = $1
         ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
         LIMIT 3
       `, [horseNameForUmadata]);
@@ -62,6 +70,8 @@ export async function GET() {
         count: umadataQuery.rows.length,
         sample: umadataQuery.rows
       };
+    } else {
+      results.step3_getUmadata = 'skipped - no wakujun data';
     }
 
     // 4. レースレベルキャッシュを確認
