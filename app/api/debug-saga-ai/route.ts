@@ -59,8 +59,9 @@ export async function GET() {
       const horseNameForUmadata = (firstHorse.umamei || '').trim();
       
       // saga-aiと同じクエリ: horse_nameカラムを使用
+      // passing_orderカラムは存在しない可能性があるので除外
       const umadataRows = await db.query(`
-        SELECT race_id, horse_name, finish_position, date, lap_time, passing_order
+        SELECT race_id, horse_name, finish_position, date, lap_time
         FROM umadata
         WHERE TRIM(horse_name) = $1
         ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
