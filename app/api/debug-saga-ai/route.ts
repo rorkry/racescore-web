@@ -32,9 +32,10 @@ export async function GET() {
 
     // 2. saga-aiと同じ条件でwakujunを取得
     results.step2_sagaAiQuery = 'checking...';
-    // saga-aiは date, place, race_number, year で検索
-    // dateの形式を確認（例: "2026. 1.18" vs "0118"）
-    const testDate = '2026. 1.18';
+    // wakujunテーブルのdateは"0118"形式（MMDD）
+    // step1で取得した実際の日付形式を使用
+    const actualDate = sampleRows.length > 0 ? (sampleRows[0] as any).date : '0118';
+    const testDate = actualDate;  // 実際のDB形式を使用
     const testPlace = '中山';
     const testRaceNumber = '9';
     const testYear = '2026';
