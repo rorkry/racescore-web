@@ -56,7 +56,12 @@ export async function GET() {
     results.step3_getUmadata = 'checking...';
     if (sagaRows.length > 0) {
       const firstHorse = sagaRows[0] as any;
-      const horseNameForUmadata = (firstHorse.umamei || '').trim();
+      // saga-aiと同じnormalizeHorseName処理: $, *, スペースを除去
+      const rawHorseName = (firstHorse.umamei || '').trim();
+      const horseNameForUmadata = rawHorseName
+        .replace(/^[\$\*＄＊\s　]+/, '')
+        .replace(/[\s　]+$/, '')
+        .trim();
       
       // saga-aiと同じクエリ: horse_nameカラムを使用
       // passing_orderカラムは存在しない可能性があるので除外
@@ -68,7 +73,8 @@ export async function GET() {
         LIMIT 3
       `, [horseNameForUmadata]);
       results.step3_getUmadata = {
-        horseName: horseNameForUmadata,
+        rawHorseName: rawHorseName,
+        normalizedHorseName: horseNameForUmadata,
         count: umadataRows.length,
         sample: umadataRows
       };
