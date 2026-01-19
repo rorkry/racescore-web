@@ -14,8 +14,8 @@ function GET(row: any, ...keys: string[]): string {
 
 function normalizeHorseName(name: string): string {
   return name
-    .replace(/^[\$\*\s]+/, '')
-    .replace(/[\s]+$/, '')
+    .replace(/^[\$\*＄＊\s　]+/, '')  // 半角・全角の$*とスペースを先頭から除去
+    .replace(/[\s　]+$/, '')           // 末尾のスペースを除去
     .trim();
 }
 
