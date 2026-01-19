@@ -329,9 +329,9 @@ export default function EntryTable({
                       border: '1px solid #ccc',
                       borderRadius: '3px',
                       cursor: 'pointer',
-                      backgroundColor: currentMark ? '#1f2937' : 'white',
-                      color: currentMark ? 'white' : '#000',
-                      fontWeight: currentMark ? 'bold' : 'normal',
+                      backgroundColor: currentMark ? '#e2e8f0' : 'white',
+                      color: '#334155',
+                      fontWeight: 'bold',
                     }}
                   >
                     <option value="">-</option>
@@ -339,7 +339,9 @@ export default function EntryTable({
                     <option value="○">○</option>
                     <option value="▲">▲</option>
                     <option value="△">△</option>
-                    <option value="×">×</option>
+                    <option value="☆">☆</option>
+                    <option value="紐">紐</option>
+                    <option value="消">消</option>
                   </select>
                 </td>
                 <td className="horse-name">

@@ -1,867 +1,315 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import Link from 'next/link';
+import { useState, useEffect } from 'react';
 
-interface PastRaceIndices {
-  L4F: number | null;
-  T2F: number | null;
-  potential: number | null;
-  revouma: number | null;
-  makikaeshi: number | null;
-  cushion: number | null;
-}
-
-interface PastRace {
-  date: string;
+interface TodayRace {
+  place: string;
+  raceNumber: string;
+  className: string;
+  trackType: string;
   distance: string;
-  class_name: string;
-  finish_position: string;
-  finish_time: string;
-  margin: string;
-  index_value: string;
-  corner_2: string;
-  corner_3: string;
-  corner_4: string;
-  pci: string;
-  popularity: string;
-  track_condition: string;
-  place: string;
-  indices?: PastRaceIndices | null;
-  indexRaceId?: string;
+  isGrade?: boolean;
 }
 
-interface Race {
-  date: string;
-  place: string;
-  race_number: string;
-  class_name: string;
-  track_type: string;
-  distance: string;
-  field_size: number;
-}
+export default function HomePage() {
+  const [todayRaces, setTodayRaces] = useState<TodayRace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [todayDate, setTodayDate] = useState('');
 
-interface Venue {
-  place: string;
-  races: Race[];
-}
-
-interface Indices {
-  L4F: number | null;
-  T2F: number | null;
-  potential: number | null;
-  revouma: number | null;
-  makikaeshi: number | null;
-  cushion: number | null;
-}
-
-interface Horse {
-  umaban: string;
-  waku: string;
-  umamei: string;
-  kishu: string;
-  kinryo: string;
-  score: number;
-  hasData: boolean;
-  past: PastRace[];
-  indices: Indices | null;
-  indexRaceId?: string;
-}
-
-interface RaceCard {
-  raceInfo: {
-    date: string;
-    place: string;
-    raceNumber: string;
-    className: string;
-    trackType: string;
-    distance: string;
-    fieldSize: number;
-  };
-  horses: Horse[];
-}
-
-// 全角→半角変換
-function toHalfWidth(str: string): string {
-  return str.replace(/[！-～]/g, s =>
-    String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
-}
-
-// 馬名から$マーク・*マークを除去
-function normalizeHorseName(name: string): string {
-  return name
-    .replace(/^[\$\*＄＊\s　]+/, '')  // 半角・全角の$*とスペースを先頭から除去
-    .replace(/[\s　]+$/, '')           // 末尾のスペースを除去
-    .trim();
-}
-
-// 日付フォーマット変換（"2025.12. 6" → "1206"）
-function formatDateForQuery(dateStr: string): string {
-  // "2025.12. 6" or "2025. 1. 5" のような形式を "1206" or "0105" に変換
-  const match = dateStr.match(/(\d{4})\.?\s*(\d{1,2})\.?\s*(\d{1,2})/);
-  if (match) {
-    const month = match[2].padStart(2, '0');
-    const day = match[3].padStart(2, '0');
-    return `${month}${day}`;
-  }
-  return dateStr;
-}
-
-// 日付表示用フォーマット（"1220" → "12/20"）
-function formatDateForDisplay(dateStr: string): string {
-  if (dateStr.length === 4) {
-    return `${dateStr.slice(0, 2)}/${dateStr.slice(2)}`;
-  }
-  return dateStr;
-}
-
-export default function RaceCardPage() {
-  const [date, setDate] = useState('1220');
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [venues, setVenues] = useState<Venue[]>([]);
-  const [selectedVenue, setSelectedVenue] = useState<string>('');
-  const [selectedRace, setSelectedRace] = useState<string>('');
-  const [raceCard, setRaceCard] = useState<RaceCard | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
-  const [expandedHorse, setExpandedHorse] = useState<string | null>(null);
-  const [venuePdfGenerating, setVenuePdfGenerating] = useState<string | null>(null);
-
-  // 利用可能な日付一覧を取得
   useEffect(() => {
-    fetchAvailableDates();
+    const fetchTodayRaces = async () => {
+      try {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${month}${day}`;
+        setTodayDate(`${month}/${day}`);
+
+        const res = await fetch(`/api/races?date=${dateStr}&year=${year}`);
+        if (res.ok) {
+          const data = await res.json();
+          const races: TodayRace[] = [];
+          
+          for (const venue of data.venues || []) {
+            for (const race of venue.races || []) {
+              const isGrade = race.class_name?.includes('G1') || 
+                             race.class_name?.includes('G2') || 
+                             race.class_name?.includes('G3') ||
+                             race.class_name?.includes('重賞');
+              races.push({
+                place: venue.place,
+                raceNumber: race.race_number,
+                className: race.class_name || '',
+                trackType: race.track_type || '',
+                distance: race.distance || '',
+                isGrade,
+              });
+            }
+          }
+          
+          races.sort((a, b) => {
+            if (a.isGrade && !b.isGrade) return -1;
+            if (!a.isGrade && b.isGrade) return 1;
+            return parseInt(b.raceNumber) - parseInt(a.raceNumber);
+          });
+          
+          setTodayRaces(races.slice(0, 6));
+        }
+      } catch (err) {
+        console.error('Failed to fetch today races:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTodayRaces();
   }, []);
 
-  const fetchAvailableDates = async () => {
-    try {
-      const res = await fetch('/api/races');
-      if (!res.ok) throw new Error('Failed to fetch dates');
-      const data = await res.json();
-      const dates = (data.dates || []).map((d: { date: string }) => d.date);
-      setAvailableDates(dates);
-    } catch (err: any) {
-      console.error('Failed to fetch available dates:', err);
-    }
-  };
-
-  useEffect(() => {
-    if (date) {
-      fetchVenues();
-    }
-  }, [date]);
-
-  const fetchVenues = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`/api/races?date=${date}`);
-      if (!res.ok) throw new Error('Failed to fetch venues');
-      const data = await res.json();
-      setVenues(data.venues || []);
-      
-      if (data.venues && data.venues.length > 0) {
-        setSelectedVenue(data.venues[0].place);
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchRaceCard = async (place: string, raceNumber: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`/api/race-card-with-score?date=${date}&place=${place}&raceNumber=${raceNumber}`);
-      if (!res.ok) throw new Error('Failed to fetch race card');
-      const data = await res.json();
-      setRaceCard(data);
-      setExpandedHorse(null);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const currentRaces = venues.find(v => v.place === selectedVenue)?.races || [];
-
-  useEffect(() => {
-    if (selectedVenue && selectedRace) {
-      fetchRaceCard(selectedVenue, selectedRace);
-    }
-  }, [selectedVenue, selectedRace]);
-
-  // スコアの文字色を取得（背景色ではなく文字色のみ）
-  const getScoreTextColor = (score: number, hasData: boolean) => {
-    if (!hasData) return 'text-slate-400';
-    if (score >= 50) return 'text-red-600 font-bold';
-    if (score >= 40) return 'text-orange-500 font-bold';
-    if (score >= 30) return 'text-yellow-600 font-bold';
-    if (score >= 20) return 'text-green-600';
-    return 'text-slate-500';
-  };
-
-  const getWakuColor = (waku: string) => {
-    const wakuNum = parseInt(waku);
-    const colors: Record<number, string> = {
-      1: 'bg-white border-2 border-slate-800',
-      2: 'bg-black text-white',
-      3: 'bg-red-500 text-white',
-      4: 'bg-blue-500 text-white',
-      5: 'bg-yellow-400 text-black',
-      6: 'bg-green-500 text-white',
-      7: 'bg-orange-500 text-white',
-      8: 'bg-pink-400 text-white',
-    };
-    return colors[wakuNum] || 'bg-slate-200';
-  };
-
-  // 着順の色を取得（文字色のみ）
-  const getFinishColor = (finish: string) => {
-    const finishNum = parseInt(toHalfWidth(finish));
-    if (finishNum === 1) return 'text-red-600 font-bold';
-    if (finishNum === 2) return 'text-blue-600 font-bold';
-    if (finishNum === 3) return 'text-green-600 font-bold';
-    return 'text-slate-800';
-  };
-
-  // 巻き返し指数の色を取得（文字色のみ）
-  const getIndexColor = (indexValue: string) => {
-    const value = parseFloat(indexValue);
-    if (value >= 9) return 'text-red-600 font-bold';
-    if (value >= 5) return 'text-orange-500 font-bold';
-    if (value >= 1) return 'text-blue-600';
-    return 'text-slate-800';
-  };
-
-  const toggleHorseExpand = (umaban: string) => {
-    setExpandedHorse(expandedHorse === umaban ? null : umaban);
-  };
-
-  // 日付クリックで過去レースカードに遷移
-  const navigateToDate = (pastDate: string) => {
-    const queryDate = formatDateForQuery(pastDate);
-    // 利用可能な日付に含まれているか確認
-    if (availableDates.includes(queryDate)) {
-      setDate(queryDate);
-      setSelectedRace('');
-      setRaceCard(null);
-    } else {
-      // 利用可能でない場合はアラート表示
-      alert(`${pastDate}のレースカードデータはありません`);
-    }
-  };
-
-  // 日付がクリック可能かどうかを判定
-  const isDateClickable = (pastDate: string): boolean => {
-    const queryDate = formatDateForQuery(pastDate);
-    return availableDates.includes(queryDate);
-  };
-
-  // PDF生成のためのスコア色取得（HEX形式）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const getScoreColorHex = (rank: number, total: number) => {
-    const percentage = (rank / total) * 100;
-    if (percentage <= 10) return '#dc2626'; // red-600
-    if (percentage <= 25) return '#f97316'; // orange-500
-    if (percentage <= 40) return '#ca8a04'; // yellow-600
-    if (percentage <= 60) return '#16a34a'; // green-600
-    return '#64748b'; // slate-500
-  };
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const getFrameColorHex = (waku: string) => {
-    const wakuNum = parseInt(waku);
-    const colors: Record<number, string> = {
-      1: '#ffffff',
-      2: '#000000',
-      3: '#ef4444',
-      4: '#3b82f6',
-      5: '#facc15',
-      6: '#22c55e',
-      7: '#f97316',
-      8: '#f472b6',
-    };
-    return colors[wakuNum] || '#e2e8f0';
-  };
-
-  // 競馬場毎のPDF生成（html2canvas方式で日本語対応）
-  const generateVenuePDF = async (venue: Venue) => {
-    setVenuePdfGenerating(venue.place);
-    try {
-      const doc = new jsPDF({ compress: true });
-      let isFirstPage = true;
-
-      for (const race of venue.races) {
-        const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
-        if (!res.ok) continue;
-        const data = await res.json();
-
-        if (!isFirstPage) {
-          doc.addPage();
-        }
-        isFirstPage = false;
-
-        // HTMLテーブルを作成
-        const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'absolute';
-        tempDiv.style.left = '-9999px';
-        tempDiv.style.width = '800px';
-        tempDiv.style.backgroundColor = 'white';
-        tempDiv.style.padding = '20px';
-
-        const raceTitle = `${venue.place}${race.race_number}R ${race.class_name || ''} ${race.track_type}${race.distance}m`;
-
-        // ソート済み馬リスト
-        const sortedHorses = [...data.horses].sort((a: Horse, b: Horse) => {
-          if (a.hasData && !b.hasData) return -1;
-          if (!a.hasData && b.hasData) return 1;
-          if (a.hasData && b.hasData) return b.score - a.score;
-          return parseInt(a.umaban) - parseInt(b.umaban);
-        });
-
-        const getFrameColorForPDF = (waku: string) => {
-          const wakuNum = parseInt(waku);
-          const colors: Record<number, { bg: string; text: string }> = {
-            1: { bg: '#ffffff', text: '#000000' },
-            2: { bg: '#000000', text: '#ffffff' },
-            3: { bg: '#ff0000', text: '#ffffff' },
-            4: { bg: '#0000ff', text: '#ffffff' },
-            5: { bg: '#ffff00', text: '#000000' },
-            6: { bg: '#00ff00', text: '#000000' },
-            7: { bg: '#ff8c00', text: '#ffffff' },
-            8: { bg: '#ff69b4', text: '#ffffff' },
-          };
-          return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
-        };
-
-        const getScoreColorForPDF = (rank: number, totalHorses: number) => {
-          if (rank === 0) return '#ff4444';
-          if (rank === 1) return '#ff8844';
-          if (rank === 2) return '#ffcc44';
-          if (rank < totalHorses / 2) return '#88dd88';
-          return '#dddddd';
-        };
-
-        const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
-          const frameColor = getFrameColorForPDF(horse.waku);
-          const scoreColor = getScoreColorForPDF(rank, data.horses.length);
-          const horseName = normalizeHorseName(horse.umamei);
-          const jockey = horse.kishu.trim();
-          const weight = horse.kinryo.trim();
-          const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
-
-          return `
-            <tr>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horse.umaban}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
-              <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${scoreDisplay}</td>
-            </tr>
-          `;
-        }).join('');
-
-        tempDiv.innerHTML = `
-          <div style="font-family: 'Noto Sans JP', sans-serif;">
-            <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #166534;">${raceTitle}</h2>
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr style="background-color: #166534; color: white;">
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 25px;">枠</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 50px;">馬番</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">騎手</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">斤量</th>
-                  <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${tableRows}
-              </tbody>
-            </table>
-          </div>
-        `;
-
-        document.body.appendChild(tempDiv);
-
-        const canvas = await html2canvas(tempDiv, {
-          scale: 1,
-          useCORS: true,
-          logging: false
-        });
-
-        document.body.removeChild(tempDiv);
-
-        const imgData = canvas.toDataURL('image/jpeg', 0.7);
-        const imgWidth = 190;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
-      }
-
-      doc.save(`${date}_${venue.place}.pdf`);
-    } catch (err: any) {
-      setError(`PDF生成エラー: ${err.message}`);
-    } finally {
-      setVenuePdfGenerating(null);
-    }
-  };
-
-  // 全レースPDF生成（html2canvas方式で日本語対応）
-  const generateAllRacesPDF = async () => {
-    setPdfGenerating(true);
-    try {
-      const doc = new jsPDF({ compress: true });
-      let isFirstPage = true;
-
-      for (const venue of venues) {
-        for (const race of venue.races) {
-          const res = await fetch(`/api/race-card-with-score?date=${date}&place=${venue.place}&raceNumber=${race.race_number}`);
-          if (!res.ok) continue;
-          const data = await res.json();
-
-          if (!isFirstPage) {
-            doc.addPage();
-          }
-          isFirstPage = false;
-
-          // HTMLテーブルを作成
-          const tempDiv = document.createElement('div');
-          tempDiv.style.position = 'absolute';
-          tempDiv.style.left = '-9999px';
-          tempDiv.style.width = '800px';
-          tempDiv.style.backgroundColor = 'white';
-          tempDiv.style.padding = '20px';
-
-          const raceTitle = `${venue.place}${race.race_number}R ${race.class_name || ''} ${race.track_type}${race.distance}m`;
-
-          // ソート済み馬リスト
-          const sortedHorses = [...data.horses].sort((a: Horse, b: Horse) => {
-            if (a.hasData && !b.hasData) return -1;
-            if (!a.hasData && b.hasData) return 1;
-            if (a.hasData && b.hasData) return b.score - a.score;
-            return parseInt(a.umaban) - parseInt(b.umaban);
-          });
-
-          const getFrameColorForPDF = (waku: string) => {
-            const wakuNum = parseInt(waku);
-            const colors: Record<number, { bg: string; text: string }> = {
-              1: { bg: '#ffffff', text: '#000000' },
-              2: { bg: '#000000', text: '#ffffff' },
-              3: { bg: '#ff0000', text: '#ffffff' },
-              4: { bg: '#0000ff', text: '#ffffff' },
-              5: { bg: '#ffff00', text: '#000000' },
-              6: { bg: '#00ff00', text: '#000000' },
-              7: { bg: '#ff8c00', text: '#ffffff' },
-              8: { bg: '#ff69b4', text: '#ffffff' },
-            };
-            return colors[wakuNum] || { bg: '#cccccc', text: '#000000' };
-          };
-
-          const getScoreColorForPDF = (rank: number, totalHorses: number) => {
-            if (rank === 0) return '#ff4444';
-            if (rank === 1) return '#ff8844';
-            if (rank === 2) return '#ffcc44';
-            if (rank < totalHorses / 2) return '#88dd88';
-            return '#dddddd';
-          };
-
-          const tableRows = sortedHorses.map((horse: Horse, rank: number) => {
-            const frameColor = getFrameColorForPDF(horse.waku);
-            const scoreColor = getScoreColorForPDF(rank, data.horses.length);
-            const horseName = normalizeHorseName(horse.umamei);
-            const jockey = horse.kishu.trim();
-            const weight = horse.kinryo.trim();
-            const scoreDisplay = horse.hasData ? Math.round(horse.score) : '-';
-
-            return `
-              <tr>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${frameColor.bg}; width: 25px;"></td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: #ffffff; color: #000000; font-size: 18px; font-weight: bold; width: 50px;">${horse.umaban}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 18px; font-weight: bold;">${horseName}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 100px;">${jockey}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 14px; width: 60px;">${weight}</td>
-                <td style="border: 1px solid #333; padding: 10px; text-align: center; background-color: ${scoreColor}; font-size: 18px; font-weight: bold; width: 80px;">${scoreDisplay}</td>
-              </tr>
-            `;
-          }).join('');
-
-          tempDiv.innerHTML = `
-            <div style="font-family: 'Noto Sans JP', sans-serif;">
-              <h2 style="font-size: 24px; font-weight: bold; margin-bottom: 15px; color: #166534;">${raceTitle}</h2>
-              <table style="width: 100%; border-collapse: collapse;">
-                <thead>
-                  <tr style="background-color: #166534; color: white;">
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 25px;">枠</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 50px;">馬番</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: left; font-size: 16px; font-weight: bold;">馬名</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 100px;">騎手</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 60px;">斤量</th>
-                    <th style="border: 1px solid #333; padding: 10px; text-align: center; font-size: 16px; font-weight: bold; width: 80px;">競う<br/>スコア</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tableRows}
-                </tbody>
-              </table>
-            </div>
-          `;
-
-          document.body.appendChild(tempDiv);
-
-          const canvas = await html2canvas(tempDiv, {
-            scale: 1,
-            useCORS: true,
-            logging: false
-          });
-
-          document.body.removeChild(tempDiv);
-
-          const imgData = canvas.toDataURL('image/jpeg', 0.7);
-          const imgWidth = 190;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          doc.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight);
-        }
-      }
-
-      doc.save(`${date}_全レース.pdf`);
-    } catch (err: any) {
-      setError(`PDF生成エラー: ${err.message}`);
-    } finally {
-      setPdfGenerating(false);
-    }
-  };
-
-  // 過去走詳細を表示するコンポーネント
-  const PastRaceDetail = ({ pastRaces }: { pastRaces: PastRace[] }) => {
-    if (!pastRaces || pastRaces.length === 0) {
-      return <div className="text-slate-500 text-sm p-4">過去走データなし</div>;
-    }
-
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-max text-sm border-collapse">
-          <thead>
-            <tr className="bg-slate-100">
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">日付</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">場所</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">クラス</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">距離</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">人気</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着順</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">着差</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">通過</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-slate-700 whitespace-nowrap">巻き返し指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">L4F指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">T2F指数</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">ポテンシャル</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">レボウマ</th>
-              <th className="border border-slate-300 px-2 py-1 text-center text-blue-700 bg-blue-50 whitespace-nowrap">クッション値</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pastRaces.map((race, idx) => {
-              const passing = [race.corner_2, race.corner_3, race.corner_4]
-                .filter(c => c && c !== '')
-                .join('-');
-              const clickable = isDateClickable(race.date);
-              
-              return (
-                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                  <td 
-                    className={`border border-slate-300 px-2 py-1 text-center text-xs whitespace-nowrap ${
-                      clickable 
-                        ? 'text-blue-600 underline cursor-pointer hover:bg-blue-50' 
-                        : 'text-slate-800'
-                    }`}
-                    onClick={() => clickable && navigateToDate(race.date)}
-                    title={clickable ? 'クリックしてこの日のレースカードを表示' : ''}
-                  >
-                    {race.date || '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
-                    {race.place || '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
-                    {race.class_name || '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800 whitespace-nowrap">
-                    {race.distance || '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
-                    {race.popularity || '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center ${getFinishColor(race.finish_position || '')}`}>
-                    {toHalfWidth(race.finish_position || '-')}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-slate-800">
-                    {race.margin || '-'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-1 text-center text-xs text-slate-800 whitespace-nowrap">
-                    {passing || '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center ${getIndexColor(race.index_value || '0')}`}>
-                    {parseFloat(race.index_value || '0').toFixed(1)}
-                  </td>
-                  {/* 指数データ */}
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.L4F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices && race.indices.L4F != null ? Number(race.indices.L4F).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.T2F != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices && race.indices.T2F != null ? Number(race.indices.T2F).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.potential != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices && race.indices.potential != null ? Number(race.indices.potential).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.revouma != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices && race.indices.revouma != null ? Number(race.indices.revouma).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-2 py-1 text-center bg-blue-50/50 ${race.indices && race.indices.cushion != null ? 'text-blue-700 font-medium' : 'text-slate-400'}`}>
-                    {race.indices && race.indices.cushion != null ? Number(race.indices.cushion).toFixed(1) : '-'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="text-xs text-slate-400 mt-2">※ 横スクロールで全てのカラムを確認できます。指数データが「-」の場合は、該当レースの指数が未アップロードです。</p>
-      </div>
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* ヘッダー */}
-      <header className="bg-green-800 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">緑の組織</h1>
-          <a
-            href="/admin"
-            className="flex items-center gap-2 px-3 py-2 bg-green-700 hover:bg-green-600 rounded transition-colors"
-            title="管理者画面"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-            </svg>
-            <span className="text-sm">管理</span>
-          </a>
+    <div className="min-h-screen">
+      {/* ヒーローセクション */}
+      <section className="relative py-10 md:py-16 overflow-hidden">
+        {/* 装飾 */}
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute top-20 left-10 w-72 h-72 bg-green-500/10 rounded-full blur-3xl"></div>
+          <div className="absolute bottom-10 right-10 w-96 h-96 bg-yellow-500/5 rounded-full blur-3xl"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-600/5 rounded-full blur-3xl"></div>
         </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto p-4">
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-slate-800 mb-2">日付</label>
-          <div className="flex gap-2 items-center">
-            {availableDates.length > 0 ? (
-              <select
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  setSelectedRace('');
-                  setRaceCard(null);
-                }}
-                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
-              >
-                {availableDates.map((d) => (
-                  <option key={d} value={d}>
-                    {formatDateForDisplay(d)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="border border-slate-200 rounded px-3 py-2 bg-white text-slate-800"
-                placeholder="例: 1220"
-              />
-            )}
-            <span className="text-sm text-slate-500">
-              {availableDates.length > 0 ? `${availableDates.length}日分のデータ` : ''}
+        
+        <div className="container mx-auto px-4 text-center relative z-10">
+          {/* メインタイトル */}
+          <div className="mb-6">
+            <span className="inline-block px-4 py-2 rounded-full text-sm font-bold bg-green-700 text-white shadow-md mb-4">
+              🏆 競馬データ分析プラットフォーム
             </span>
           </div>
-        </div>
-
-        {venues.length > 0 && (
-          <div className="mb-4">
-            <button
-              onClick={generateAllRacesPDF}
-              disabled={pdfGenerating}
-              className="px-6 py-3 bg-green-700 text-white rounded hover:bg-green-600 disabled:bg-slate-400 font-bold"
+          
+          <h2 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-6 text-balance">
+            <span className="text-green-800">データを、</span>
+            <span className="gold-text">直感に。</span>
+          </h2>
+          
+          <p className="text-lg md:text-xl text-gray-700 mb-10 max-w-2xl mx-auto leading-relaxed text-pretty">
+            複雑な競馬データをビジュアル化。<br className="hidden md:block" />
+            AI分析と独自スコアで、あなたの予想をサポートします。
+          </p>
+          
+          {/* CTA */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Link 
+              href="/card"
+              className="w-full sm:w-auto px-8 py-4 btn-gold rounded-xl text-lg shadow-xl hover-lift"
             >
-              {pdfGenerating ? 'PDF生成中...' : '全レースをPDFでダウンロード'}
-            </button>
+              🏇 今日のレースを見る
+            </Link>
+            <Link 
+              href="/about"
+              className="w-full sm:w-auto px-8 py-4 btn-turf rounded-xl text-lg hover-lift"
+            >
+              使い方を見る
+            </Link>
           </div>
-        )}
-
-        {venues.length > 0 && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-slate-800 mb-2">競馬場</label>
-            <div className="flex gap-2 flex-wrap">
-              {venues.map((venue) => (
-                <div key={venue.place} className="flex items-center gap-1">
-                  <button
-                    onClick={() => {
-                      setSelectedVenue(venue.place);
-                      setSelectedRace('');
-                      setRaceCard(null);
-                    }}
-                    className={`px-4 py-2 rounded-l ${
-                      selectedVenue === venue.place
-                        ? 'bg-green-700 text-white'
-                        : 'bg-white border border-slate-200 text-slate-800 hover:bg-slate-50'
-                    }`}
-                  >
-                    {venue.place}
-                  </button>
-                  <button
-                    onClick={() => generateVenuePDF(venue)}
-                    disabled={venuePdfGenerating === venue.place}
-                    className={`px-2 py-2 rounded-r ${
-                      selectedVenue === venue.place
-                        ? 'bg-green-600 text-white hover:bg-green-500'
-                        : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    } disabled:opacity-50`}
-                    title={`${venue.place}のPDFをダウンロード`}
-                  >
-                    {venuePdfGenerating === venue.place ? (
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          
+          {/* 統計 */}
+          <div className="mt-10 grid grid-cols-3 gap-4 max-w-xl mx-auto">
+            <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">7年+</div>
+              <div className="text-xs text-gray-600 font-medium">データ蓄積</div>
+            </div>
+            <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">AI</div>
+              <div className="text-xs text-gray-600 font-medium">展開予想</div>
+            </div>
+            <div className="bg-white/80 rounded-xl p-4 shadow-md border border-gray-200">
+              <div className="text-2xl md:text-3xl font-bold text-green-700 tabular-nums">6指数</div>
+              <div className="text-xs text-gray-600 font-medium">独自分析</div>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      {/* 今日の注目レース */}
+      <section className="py-10 md:py-12">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
+              {todayDate ? `${todayDate}` : '今日'} の注目レース
+            </h3>
+            <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
+          </div>
+          
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="inline-block size-12 border-4 border-green-700 border-t-gold-500 rounded-full animate-spin"></div>
+              <p className="mt-4 text-gray-500">レース情報を取得中...</p>
+            </div>
+          ) : todayRaces.length > 0 ? (
+            <div className="max-w-4xl mx-auto grid gap-4">
+              {todayRaces.map((race, idx) => (
+                <Link 
+                  key={`${race.place}-${race.raceNumber}`}
+                  href="/card"
+                  className={`bg-white rounded-xl p-5 block shadow-md border hover:shadow-lg transition-shadow ${
+                    race.isGrade ? 'border-yellow-500' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className={`size-12 rounded-lg flex items-center justify-center ${
+                        race.isGrade 
+                          ? 'gold-gradient' 
+                          : 'bg-green-100 border border-green-200'
+                      }`}>
+                        <span className="text-xl">{race.isGrade ? '👑' : '🏇'}</span>
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-lg text-gray-800">
+                          {race.place} {race.raceNumber}R
+                          {race.className && (
+                            <span className="ml-2 text-gray-600">{race.className}</span>
+                          )}
+                        </h4>
+                        <p className="text-sm text-gray-500">
+                          {race.trackType}{race.distance}m
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {race.isGrade && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold gold-gradient text-green-900">
+                          重賞
+                        </span>
+                      )}
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-700 text-white">
+                        AI分析
+                      </span>
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
-                    ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </button>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+              
+              <Link 
+                href="/card"
+                className="text-center py-4 text-green-700 hover:text-green-800 font-bold transition flex items-center justify-center gap-2"
+              >
+                全レースを見る
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+              </Link>
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-white rounded-xl max-w-md mx-auto shadow-md border border-gray-200">
+              <div className="text-4xl mb-4">🌙</div>
+              <p className="text-gray-600 mb-4">本日のレースデータはありません</p>
+              <Link 
+                href="/card"
+                className="inline-block px-6 py-2 btn-turf rounded-lg text-sm"
+              >
+                過去のレースを見る
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
+      
+      {/* 特徴セクション */}
+      <section className="py-10 md:py-14 bg-gray-50">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
+              ストライドの特徴
+            </h3>
+            <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
+          </div>
+          
+          <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
+            {/* 特徴1 */}
+            <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+                <span className="text-2xl">📊</span>
+              </div>
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">独自スコアで一目で分かる</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
+                複雑な数字を「競うスコア」「ポテンシャル」「巻き返し指数」で視覚化。初心者でも直感的に理解できます。
+              </p>
+            </div>
+            
+            {/* 特徴2 */}
+            <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+                <span className="text-2xl">🧠</span>
+              </div>
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">AI分析で多角的に評価</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
+                過去のレースデータから学習したAIが、コース適性・ローテーション・展開を総合的に分析します。
+              </p>
+            </div>
+            
+            {/* 特徴3 */}
+            <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100 hover:shadow-lg transition-shadow">
+              <div className="size-14 rounded-xl gold-gradient flex items-center justify-center mb-5 shadow-lg">
+                <span className="text-2xl">🎯</span>
+              </div>
+              <h4 className="font-bold text-lg text-gray-800 mb-3 text-balance">展開予想を可視化</h4>
+              <p className="text-gray-600 text-sm leading-relaxed text-pretty">
+                スタート後とゴール前の隊列を予測。レース展開が視覚的に分かり、戦略が立てやすくなります。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      {/* 使い方セクション */}
+      <section className="py-10 md:py-14 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 text-balance">
+              かんたん3ステップ
+            </h3>
+            <div className="w-24 h-1 gold-gradient mx-auto rounded-full"></div>
+          </div>
+          
+          <div className="max-w-4xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-8">
+              {[
+                { num: '01', title: 'レースを選ぶ', desc: '日付と競馬場を選択して、見たいレースを選びます', icon: '📅' },
+                { num: '02', title: 'スコアを確認', desc: '競うスコアや各種指数で馬の実力を把握します', icon: '📈' },
+                { num: '03', title: '展開を予想', desc: 'AI展開予想で隊列をチェック、予想に活かします', icon: '🎯' },
+              ].map((step, idx) => (
+                <div key={idx} className="text-center relative">
+                  {idx < 2 && (
+                    <div className="hidden md:block absolute top-8 left-[60%] w-[80%] h-0.5 bg-gradient-to-r from-green-300 to-transparent"></div>
+                  )}
+                  <div className="relative z-10">
+                    <div className="size-16 rounded-full gold-gradient flex items-center justify-center mx-auto mb-4 shadow-xl">
+                      <span className="text-2xl">{step.icon}</span>
+                    </div>
+                    <div className="text-xs text-yellow-600 font-bold mb-2 tabular-nums">STEP {step.num}</div>
+                    <h4 className="font-bold text-lg text-gray-800 mb-2 text-balance">{step.title}</h4>
+                    <p className="text-gray-600 text-sm text-pretty">{step.desc}</p>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {currentRaces.length > 0 && (
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-slate-800 mb-2">レース</label>
-            <div className="grid grid-cols-6 gap-2">
-              {currentRaces.map((race) => (
-                <button
-                  key={race.race_number}
-                  onClick={() => setSelectedRace(race.race_number)}
-                  className={`px-3 py-2 rounded text-sm ${
-                    selectedRace === race.race_number
-                      ? 'bg-green-700 text-white'
-                      : 'bg-white border border-slate-200 text-slate-800 hover:bg-slate-50'
-                  }`}
-                >
-                  {race.race_number}R<br />
-                  <span className="text-xs">{race.track_type}{race.distance}m</span>
-                </button>
-              ))}
+            
+            <div className="text-center mt-8">
+              <Link 
+                href="/card"
+                className="inline-block px-10 py-4 btn-gold rounded-xl text-lg shadow-xl hover-lift"
+              >
+                🏇 さっそく使ってみる
+              </Link>
             </div>
           </div>
-        )}
-
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-700"></div>
-            <p className="mt-2 text-slate-500">読み込み中...</p>
-          </div>
-        )}
-
-        {raceCard && !loading && (
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-2xl font-bold mb-4 text-slate-800">
-              {raceCard.raceInfo.place} {raceCard.raceInfo.raceNumber}R {raceCard.raceInfo.className}
-            </h2>
-            <p className="text-slate-500 mb-4">
-              {raceCard.raceInfo.trackType}{raceCard.raceInfo.distance}m / {raceCard.raceInfo.fieldSize}頭立
-            </p>
-            <p className="text-sm text-slate-500 mb-4">
-              ※馬名をクリックすると過去走詳細が表示されます
-            </p>
-
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-green-800 text-white">
-                  <th className="border border-slate-800 px-2 py-3">枠</th>
-                  <th className="border border-slate-800 px-2 py-3">馬番</th>
-                  <th className="border border-slate-800 px-4 py-3">馬名</th>
-                  <th className="border border-slate-800 px-4 py-3">騎手</th>
-                  <th className="border border-slate-800 px-2 py-3">斤量</th>
-                  <th className="border border-slate-800 px-4 py-3">競うスコア</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...raceCard.horses].sort((a, b) => {
-                  // データなしの馬を一番下に配置
-                  if (a.hasData && !b.hasData) return -1;
-                  if (!a.hasData && b.hasData) return 1;
-                  // 両方データありの場合はスコア降順
-                  if (a.hasData && b.hasData) return b.score - a.score;
-                  // 両方データなしの場合は馬番順
-                  return parseInt(a.umaban) - parseInt(b.umaban);
-                }).map((horse, index) => (
-                  <React.Fragment key={horse.umaban}>
-                    <tr className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                      <td className={`border border-slate-800 px-2 py-2 text-center ${getWakuColor(horse.waku)}`}>
-                        {horse.waku}
-                      </td>
-                      <td className="border border-slate-800 px-2 py-2 text-center font-bold text-slate-800">
-                        {horse.umaban}
-                      </td>
-                      <td 
-                        className="border border-slate-800 px-4 py-2 font-medium cursor-pointer hover:bg-green-50 text-slate-800"
-                        onClick={() => toggleHorseExpand(horse.umaban)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span>{normalizeHorseName(horse.umamei)}</span>
-                          <span className="text-green-600 text-sm">
-                            {expandedHorse === horse.umaban ? '▲' : '▼'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="border border-slate-800 px-4 py-2 text-slate-800">
-                        {horse.kishu.trim()}
-                      </td>
-                      <td className="border border-slate-800 px-2 py-2 text-center text-slate-800">
-                        {horse.kinryo.trim()}
-                      </td>
-                      <td className={`border border-slate-800 px-4 py-2 text-center text-lg ${getScoreTextColor(horse.score, horse.hasData)}`}>
-                        {horse.hasData && horse.score != null ? Math.round(horse.score) : 'データなし'}
-                      </td>
-                    </tr>
-                    {expandedHorse === horse.umaban && (
-                      <tr key={`${horse.umaban}-detail`}>
-                        <td colSpan={6} className="border border-slate-800 p-4 bg-slate-50">
-                          <div className="text-sm font-bold mb-2 text-green-800">
-                            {normalizeHorseName(horse.umamei)} の過去走詳細
-                          </div>
-                          <PastRaceDetail pastRaces={horse.past} />
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

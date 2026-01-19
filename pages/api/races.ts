@@ -1,20 +1,66 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db-new';
 
+// ========================================
+// サーバーサイドメモリキャッシュ（レース一覧）
+// ========================================
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+
+declare global {
+  var _racesCache: Map<string, CacheEntry> | undefined;
+}
+
+if (!globalThis._racesCache) {
+  globalThis._racesCache = new Map();
+}
+
+const CACHE_TTL = 10 * 60 * 1000; // 10分間キャッシュ有効
+
+function getCachedRaces(key: string): any | null {
+  const entry = globalThis._racesCache?.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    globalThis._racesCache?.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedRaces(key: string, data: any): void {
+  if (globalThis._racesCache && globalThis._racesCache.size >= 100) {
+    const firstKey = globalThis._racesCache.keys().next().value;
+    if (firstKey) globalThis._racesCache.delete(firstKey);
+  }
+  globalThis._racesCache?.set(key, { data, timestamp: Date.now() });
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { date, place } = req.query;
+  const { date, place, year } = req.query;
+  
+  // キャッシュキー生成
+  const cacheKey = `races_${date || 'null'}_${place || 'null'}_${year || 'null'}`;
+  const cached = getCachedRaces(cacheKey);
+  if (cached) {
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.setHeader('X-Cache', 'HIT');
+    return res.status(200).json(cached);
+  }
 
   try {
     const db = getRawDb();
 
     if (date && place) {
       // 特定の日付・場所のレース一覧を取得
-      const races = db.prepare(`
-        SELECT DISTINCT 
+      const yearFilter = year ? String(year) : null;  // yearは文字列として渡す
+      const races = await db.prepare(`
+        SELECT 
           date, 
           place, 
           race_number, 
@@ -23,24 +69,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           distance,
           COUNT(*) as field_size
         FROM wakujun
-        WHERE date = ? AND place = ?
-        GROUP BY date, place, race_number
-        ORDER BY CAST(race_number AS INTEGER)
-      `).all(date, place);
+        WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
+        GROUP BY date, place, race_number, class_name_1, track_type, distance
+        ORDER BY race_number::INTEGER
+      `).all(...(yearFilter ? [date, place, yearFilter] : [date, place]));
 
-      return res.status(200).json({ races });
+      const response = { races };
+      setCachedRaces(cacheKey, response);
+      res.setHeader('Cache-Control', 'public, max-age=600');
+      res.setHeader('X-Cache', 'MISS');
+      return res.status(200).json(response);
     } else if (date) {
       // 特定の日付の全場所・全レースを取得
-      const places = db.prepare(`
+      const dateStr = String(date).trim();
+      const yearFilter = year ? String(year) : null;  // yearは文字列として渡す
+      console.log(`[api/races] date parameter: "${dateStr}", year: ${yearFilter}`);
+      
+      const places = await db.prepare(`
         SELECT DISTINCT place
         FROM wakujun
-        WHERE date = ?
+        WHERE date = $1 ${yearFilter ? 'AND year = $2' : ''}
         ORDER BY place
-      `).all(date);
+      `).all(...(yearFilter ? [dateStr, yearFilter] : [dateStr]));
 
-      const result = places.map((p: any) => {
-        const races = db.prepare(`
-          SELECT DISTINCT 
+      console.log(`[api/races] found places: ${places.length}`, places.map((p: any) => p.place));
+
+      const result = await Promise.all(places.map(async (p: any) => {
+        const races = await db.prepare(`
+          SELECT 
             date, 
             place, 
             race_number, 
@@ -49,27 +105,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             distance,
             COUNT(*) as field_size
           FROM wakujun
-          WHERE date = ? AND place = ?
-          GROUP BY date, place, race_number
-          ORDER BY CAST(race_number AS INTEGER)
-        `).all(date, p.place);
+          WHERE date = $1 AND place = $2 ${yearFilter ? 'AND year = $3' : ''}
+          GROUP BY date, place, race_number, class_name_1, track_type, distance
+          ORDER BY race_number::INTEGER
+        `).all(...(yearFilter ? [dateStr, p.place, yearFilter] : [dateStr, p.place]));
 
         return {
           place: p.place,
           races
         };
-      });
+      }));
 
-      return res.status(200).json({ date, venues: result });
-    } else {
-      // 全日付を取得
-      const dates = db.prepare(`
+      console.log(`[api/races] returning venues: ${result.length}`);
+      const response = { date: dateStr, venues: result };
+      setCachedRaces(cacheKey, response);
+      res.setHeader('Cache-Control', 'public, max-age=600');
+      res.setHeader('X-Cache', 'MISS');
+      return res.status(200).json(response);
+    } else if (year) {
+      // 特定の年の全日付を取得
+      const yearFilter = String(year);  // yearは文字列として渡す
+      const datesForYear = await db.prepare(`
         SELECT DISTINCT date
         FROM wakujun
+        WHERE year = $1 AND date ~ '^[0-9]{4}$'
         ORDER BY date DESC
+      `).all(yearFilter);
+
+      const response = { dates: datesForYear };
+      setCachedRaces(cacheKey, response);
+      res.setHeader('Cache-Control', 'public, max-age=600');
+      res.setHeader('X-Cache', 'MISS');
+      return res.status(200).json(response);
+    } else {
+      // 利用可能な年を取得
+      const years = await db.prepare(`
+        SELECT DISTINCT year
+        FROM wakujun
+        WHERE year IS NOT NULL
+        ORDER BY year DESC
       `).all();
 
-      return res.status(200).json({ dates });
+      const response = { years };
+      setCachedRaces(cacheKey, response);
+      res.setHeader('Cache-Control', 'public, max-age=600');
+      res.setHeader('X-Cache', 'MISS');
+      return res.status(200).json(response);
     }
   } catch (error: any) {
     console.error('Database error:', error);

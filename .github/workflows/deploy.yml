@@ -1,0 +1,185 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # ========================================
+      # 1. リポジトリをチェックアウト
+      # ========================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # ========================================
+      # 2. Node.jsセットアップ
+      # ========================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      # ========================================
+      # 3. 依存関係のインストール
+      # ========================================
+      - name: Install dependencies
+        run: npm ci
+      
+      # ========================================
+      # 4. Next.jsビルド（GitHub Actionsの豊富なメモリで実行）
+      # ========================================
+      - name: Build Next.js application
+        run: npm run build
+        env:
+          NODE_ENV: production
+      
+      # ========================================
+      # 5. standaloneディレクトリの確認
+      # ========================================
+      - name: Verify standalone build
+        run: |
+          echo "=== Checking standalone directory ==="
+          ls -la .next/standalone || echo "standalone not found"
+          echo "=== Checking standalone .next ==="
+          ls -la .next/standalone/.next || echo "standalone .next not found"
+          echo "=== Checking BUILD_ID ==="
+          cat .next/standalone/.next/BUILD_ID || cat .next/BUILD_ID || echo "BUILD_ID not found"
+          echo "=== Checking static files ==="
+          ls -la .next/static || echo "static not found"
+          echo "=== Checking public ==="
+          ls -la public || echo "public not found"
+      
+      # ========================================
+      # 6. デプロイパッケージを作成
+      # ========================================
+      - name: Create deployment package
+        run: |
+          mkdir -p deploy
+          
+          # standalone本体をコピー（隠しファイル含む）
+          cp -r .next/standalone/. deploy/
+          
+          # staticファイルを追加コピー
+          mkdir -p deploy/.next/static
+          cp -r .next/static/* deploy/.next/static/
+          
+          # publicファイルをコピー
+          if [ -d "public" ]; then
+            mkdir -p deploy/public
+            cp -r public/* deploy/public/
+          fi
+          
+          echo "=== Deployment package created ==="
+          du -sh deploy
+          ls -la deploy
+          echo "=== Deploy .next contents ==="
+          ls -la deploy/.next/
+          echo "=== Deploy BUILD_ID ==="
+          cat deploy/.next/BUILD_ID || echo "No BUILD_ID in deploy"
+          echo "=== Deploy .next/server check ==="
+          ls -la deploy/.next/server/ 2>/dev/null | head -10 || echo "No server dir"
+      
+      # ========================================
+      # 7. SSH秘密鍵をセットアップ
+      # ========================================
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p 10022 -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+      
+      # ========================================
+      # 8. サーバー側の古いビルドを削除
+      # ========================================
+      - name: Clean old build on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 10022
+          script: |
+            # 古い.nextディレクトリを削除（データベースは保持）
+            rm -rf /var/www/racescore-web/.next
+            rm -rf /var/www/racescore-web/node_modules
+            rm -f /var/www/racescore-web/server.js
+            mkdir -p /var/www/racescore-web
+            echo "Old build cleaned"
+      
+      # ========================================
+      # 9. サーバーにrsyncで転送
+      # ========================================
+      - name: Deploy to VPS
+        run: |
+          rsync -avz \
+            -e "ssh -p 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            --exclude='*.db' \
+            --exclude='*.db-shm' \
+            --exclude='*.db-wal' \
+            --exclude='.env.local' \
+            --exclude='logs' \
+            deploy/ ${{ secrets.SSH_USERNAME }}@${{ secrets.SSH_HOST }}:/var/www/racescore-web/
+      
+      # ========================================
+      # 10. サーバー上で環境設定とpm2再起動
+      # ========================================
+      - name: Setup and restart application
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 10022
+          script: |
+            cd /var/www/racescore-web
+            
+            # 転送されたファイルを確認
+            echo "=== Server: .next contents ==="
+            ls -la .next/
+            echo "=== Server: BUILD_ID ==="
+            cat .next/BUILD_ID || echo "No BUILD_ID"
+            
+            # .env.localが無ければ作成
+            if [ ! -f .env.local ]; then
+              echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env.local
+            fi
+            
+            # ログディレクトリ作成
+            mkdir -p /var/log/pm2
+            
+            # pm2でアプリケーションを再起動
+            pm2 delete racescore 2>/dev/null || true
+            pm2 start server.js --name racescore --max-memory-restart 400M
+            pm2 save
+            
+            # ステータス確認
+            echo "=== PM2 Status ==="
+            pm2 status
+            
+            echo "=== Health Check ==="
+            sleep 3
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 || echo "App starting..."
+            
+            echo ""
+            echo "✅ Deploy completed at $(date)"
+      
+      # ========================================
+      # 11. デプロイ結果サマリー
+      # ========================================
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "================================"
+          echo "Deployment Summary"
+          echo "================================"
+          echo "Build size: $(du -sh deploy 2>/dev/null | cut -f1 || echo 'N/A')"
+          echo "Deployment time: $(date)"
+          echo "================================"

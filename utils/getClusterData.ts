@@ -293,15 +293,45 @@ function getIndexValue(race: any, key: string): number {
 }
 
 /**
+ * 着順が有効かどうかをチェック（競走除外、失格、中止などは無効）
+ */
+function isValidFinish(finishStr: string): boolean {
+  if (!finishStr) return false;
+  const normalized = toHalfWidth(finishStr.trim());
+  // 止、除、外、取、中、失、降、競、落、再 などの異常終了は無効
+  if (/[止除外取中失降競落再]/.test(normalized)) return false;
+  // 数字がない場合は無効
+  const num = parseInt(normalized.replace(/[^0-9]/g, ''), 10);
+  return !isNaN(num) && num > 0 && num < 30;  // 30着以上も異常値として扱う
+}
+
+/**
+ * 有効な過去走のみをフィルタリング（競走除外等を除く）
+ */
+function filterValidRaces(races: RecordRow[]): RecordRow[] {
+  return races.filter(race => {
+    const finish = GET(race, 'finish', '着順').trim();
+    return isValidFinish(finish);
+  });
+}
+
+/**
  * 馬 1 頭の "競うスコア" を返す（最大100点）
  * @param horse 過去走配列と現在出走情報（過去走にはindicesオブジェクトが含まれる）
  * @returns 0〜100 のスコア（高いほど期待）
  */
 export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow }): number {
-  const recent = horse.past.slice(0, 5);  // 直近5走
+  // 有効なレースのみをフィルタリング（競走除外、失格、中止等を除く）
+  const validPastRaces = filterValidRaces(horse.past);
+  const recent = validPastRaces.slice(0, 5);  // 直近5走（有効なもののみ）
+  
+  // 有効な過去走がない場合は0を返す
+  if (recent.length === 0) {
+    return 0;
+  }
 
   // ============================================================
-  // 巻き返し指数スコア（50点満点）
+  // 巻き返し指数スコア（40点満点）
   // indicesテーブルのmakikaeshiを使用
   // ============================================================
   const comeback1 = getIndexValue(recent[0], 'makikaeshi');
@@ -309,31 +339,37 @@ export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow })
   const comeback3 = getIndexValue(recent[2], 'makikaeshi');
 
   const comebackScore = 
-    (comeback1 / 10) * 35 +  // 前走: 35点
-    (comeback2 / 10) * 10 +  // 2走前: 10点
-    (comeback3 / 10) * 5;    // 3走前: 5点
+    (comeback1 / 10) * 28 +  // 前走: 28点
+    (comeback2 / 10) * 8 +   // 2走前: 8点
+    (comeback3 / 10) * 4;    // 3走前: 4点
 
   // ============================================================
-  // ポテンシャル指数スコア（15点満点）
-  // 直近3走の平均 + ボーナス
+  // ポテンシャル指数スコア（25点満点）
+  // 直近3走の平均(80%) + 最高値(20%)で爆発力も加味
   // ============================================================
   const potential1 = getIndexValue(recent[0], 'potential');
   const potential2 = getIndexValue(recent[1], 'potential');
   const potential3 = getIndexValue(recent[2], 'potential');
   
-  // 有効なデータのみで平均を計算
+  // 有効なデータのみで平均と最高値を計算
   const potentialValues = [potential1, potential2, potential3].filter(v => v > 0);
   const potentialAvg = potentialValues.length > 0 
     ? potentialValues.reduce((a, b) => a + b, 0) / potentialValues.length 
     : 0;
+  const potentialMax = potentialValues.length > 0 
+    ? Math.max(...potentialValues)
+    : 0;
   
-  // 基本点（12点満点）
-  const potentialBaseScore = (potentialAvg / 10) * 12;
+  // 平均80% + 最高値20%で総合評価値を算出
+  const potentialCombined = potentialAvg * 0.8 + potentialMax * 0.2;
   
-  // ボーナス（平均3.0以上から加点、1上がるごとに+0.5、最大3点）
+  // 基本点（20点満点）
+  const potentialBaseScore = (potentialCombined / 10) * 20;
+  
+  // ボーナス（総合評価3.0以上から加点、1上がるごとに+0.8、最大5点）
   let potentialBonus = 0;
-  if (potentialAvg >= 3.0) {
-    potentialBonus = Math.min(3, (potentialAvg - 3.0) * 0.5 + 0.5);
+  if (potentialCombined >= 3.0) {
+    potentialBonus = Math.min(5, (potentialCombined - 3.0) * 0.8 + 0.8);
   }
   
   const potentialScore = potentialBaseScore + potentialBonus;
@@ -381,7 +417,7 @@ export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow })
 
   // ============================================================
   // 合計スコア（最大100点）
-  // 巻き返し50点 + ポテンシャル15点 + 着順10点 + 着差10点 + クラスタ8点 + 通過7点
+  // 巻き返し40点 + ポテンシャル25点 + 着順10点 + 着差10点 + クラスタ8点 + 通過7点
   // ============================================================
   const totalScore = comebackScore + potentialScore + finishScore + marginScoreVal + clusterScore + passScore;
   
@@ -591,11 +627,13 @@ function computeLocalRaceScore(race: RecordRow, targetClass: string): number {
  * @returns { score: number, hasData: boolean } - score: 0〜100のスコア、hasData: 前走データの有無
  */
 export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: RecordRow }): { score: number; hasData: boolean } {
-  const recent = horse.past.slice(0, 5);  // 直近5走
+  // 有効なレースのみをフィルタリング（競走除外、失格、中止等を除く）
+  const validPastRaces = filterValidRaces(horse.past);
+  const recent = validPastRaces.slice(0, 5);  // 直近5走（有効なもののみ）
   const targetClass = GET(horse.entry, 'クラス名', 'classname').trim();
   
-  // 前走データがない場合
-  if (!recent[0]) {
+  // 有効な過去走データがない場合
+  if (recent.length === 0) {
     return { score: -1, hasData: false };
   }
   

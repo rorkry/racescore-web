@@ -1,10 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRawDb } from '../../../lib/db-new';
+import { Pool } from 'pg';
 import Papa from 'papaparse';
 import iconv from 'iconv-lite';
+import { auth } from '@/lib/auth';
+import { checkRateLimit, getRateLimitIdentifier, strictRateLimit } from '@/lib/rate-limit';
+
+// Vercel/Railway向けのタイムアウト設定
+export const maxDuration = 300; // 5分
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    // 管理者認証チェック
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: '未認証' }, { status: 401 });
+    }
+    
+    const userRole = (session.user as { role?: string }).role;
+    if (userRole !== 'admin') {
+      return NextResponse.json({ error: '管理者権限が必要です' }, { status: 403 });
+    }
+
+    // Rate Limiting
+    const identifier = getRateLimitIdentifier(request);
+    const rateLimit = checkRateLimit(`upload-csv:${identifier}`, strictRateLimit);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'リクエストが多すぎます。しばらく待ってから再試行してください。' },
+        { status: 429 }
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -12,22 +39,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'ファイルが選択されていません' }, { status: 400 });
     }
 
-    // ファイルをArrayBufferとして読み込み
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     
-    // Shift_JIS (CP932) からUTF-8に変換
-    // 日本語CSVファイルは通常Shift_JISでエンコードされている
     let text: string;
     try {
-      // まずShift_JISとしてデコードを試みる
       text = iconv.decode(buffer, 'Shift_JIS');
     } catch {
-      // 失敗した場合はUTF-8として読み込む
       text = buffer.toString('utf-8');
     }
     
-    // CSVをパース（ヘッダーなし）
     const { data } = Papa.parse(text, {
       header: false,
       skipEmptyLines: true,
@@ -37,191 +58,294 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'CSVデータが空です' }, { status: 400 });
     }
 
-    const db = getRawDb();
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      connectionTimeoutMillis: 30000, // 30秒
+      idleTimeoutMillis: 60000, // 60秒
+      max: 5, // 最大接続数
+    });
 
-    // ファイル名でテーブルを判定
-    if (file.name.includes('wakujun')) {
-      // wakujunテーブルにインポート（日付ごとに保持）
-      const result = importWakujun(db, data.slice(1)); // ヘッダー行をスキップ
-      return NextResponse.json({ 
-        success: true, 
-        count: result.count, 
-        table: 'wakujun',
-        date: result.date,
-        message: `${result.date}のデータを${result.isUpdate ? '更新' : '追加'}しました`
-      });
-    } else if (file.name.includes('umadata')) {
-      // umadataテーブルにインポート（馬名ごとに更新）
-      const result = importUmadata(db, data.slice(1)); // ヘッダー行をスキップ
-      return NextResponse.json({ 
-        success: true, 
-        count: result.count, 
-        table: 'umadata',
-        updated: result.updated,
-        inserted: result.inserted
-      });
-    } else {
-      return NextResponse.json({ error: 'ファイル名がwakujunまたはumadataを含む必要があります' }, { status: 400 });
+    const client = await pool.connect();
+
+    try {
+      if (file.name.includes('wakujun')) {
+        const result = await importWakujun(client, data);
+        client.release();
+        await pool.end();
+        return NextResponse.json({ 
+          success: true, 
+          count: result.count, 
+          table: 'wakujun',
+          date: result.date,
+          message: `${result.date}のデータを${result.isUpdate ? '更新' : '追加'}しました`
+        });
+      } else if (file.name.includes('umadata')) {
+        const result = await importUmadata(client, data.slice(1)); // ヘッダー行をスキップ
+        client.release();
+        await pool.end();
+        return NextResponse.json({ 
+          success: true, 
+          count: result.count, 
+          table: 'umadata',
+          inserted: result.inserted,
+          message: `${result.inserted}件のデータを保存しました`
+        });
+      } else {
+        client.release();
+        await pool.end();
+        return NextResponse.json({ error: 'ファイル名がwakujunまたはumadataを含む必要があります' }, { status: 400 });
+      }
+    } catch (error) {
+      client.release();
+      await pool.end();
+      throw error;
     }
   } catch (error: any) {
     console.error('CSV upload error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: error?.message || 'Unknown error',
+      stack: error?.stack,
+      name: error?.name
+    }, { status: 500 });
   }
 }
 
-function importWakujun(db: any, data: any[]): { count: number; date: string; isUpdate: boolean } {
-  // CSVから日付を取得（最初の行の日付を使用）
+async function importWakujun(client: any, data: any[]): Promise<{ count: number; date: string; isUpdate: boolean }> {
   const firstRow = data[0];
-  if (!Array.isArray(firstRow) || firstRow.length < 1) {
+  if (!Array.isArray(firstRow) || firstRow.length < 3) {
     throw new Error('CSVデータが不正です');
   }
-  const date = firstRow[0]; // 日付は最初のカラム
-
-  // 同じ日付のデータが既に存在するか確認
-  const existingData = db.prepare('SELECT COUNT(*) as count FROM wakujun WHERE date = ?').get(date);
-  const isUpdate = existingData && existingData.count > 0;
-
-  // 同じ日付のデータのみ削除（他の日付のデータは保持）
-  if (isUpdate) {
-    db.prepare('DELETE FROM wakujun WHERE date = ?').run(date);
+  
+  const date = (firstRow[0] || '').trim();
+  const fullDateStr = (firstRow[2] || '').trim();
+  
+  let year: string | null = null;
+  const yearMatch = fullDateStr.match(/^(\d{4})/);
+  if (yearMatch) {
+    year = yearMatch[1];
   }
 
-  // wakujunテーブルのカラム（idとcreated_at以外）
-  const insertStmt = db.prepare(`
-    INSERT INTO wakujun (
-      date, place, race_number, class_name_1, class_name_2,
-      waku, umaban, kinryo, umamei, seibetsu, nenrei, nenrei_display,
-      kishu, blank_field, track_type, distance, tosu,
-      shozoku, chokyoshi, shozoku_chi, umajirushi
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  const existingResult = await client.query(
+    'SELECT COUNT(*) as count FROM wakujun WHERE date = $1 AND year = $2',
+    [date, year]
+  );
+  const isUpdate = existingResult.rows[0].count > 0;
 
-  let count = 0;
-  for (const row of data) {
-    if (Array.isArray(row) && row.length >= 21) {
-      try {
-        insertStmt.run(
-          row[0],  // date
-          row[1],  // place
-          row[2],  // race_number
-          row[3],  // class_name_1
-          row[4],  // class_name_2
-          row[5],  // waku
-          row[6],  // umaban
-          row[7],  // kinryo
-          row[8],  // umamei
-          row[9],  // seibetsu
-          row[10], // nenrei
-          row[11], // nenrei_display
-          row[12], // kishu
-          row[13], // blank_field
-          row[14], // track_type
-          row[15], // distance
-          row[16], // tosu
-          row[17], // shozoku
-          row[18], // chokyoshi
-          row[19], // shozoku_chi
-          row[20]  // umajirushi
-        );
-        count++;
-      } catch {
-        console.error('Error inserting wakujun row');
+  await client.query('BEGIN');
+
+  try {
+    if (isUpdate) {
+      await client.query('DELETE FROM wakujun WHERE date = $1 AND year = $2', [date, year]);
+    }
+
+    let count = 0;
+    for (const row of data) {
+      if (Array.isArray(row) && row.length >= 23) {
+        try {
+          const rowFullDate = (row[2] || '').trim();
+          const rowYearMatch = rowFullDate.match(/^(\d{4})/);
+          const rowYear = rowYearMatch ? rowYearMatch[1] : year;
+          
+          await client.query(`
+            INSERT INTO wakujun (
+              year, date, place, race_number, class_name_1, class_name_2,
+              waku, umaban, kinryo, umamei, seibetsu, nenrei, nenrei_display,
+              kishu, track_type, distance, tosu,
+              shozoku, chokyoshi, shozoku_chi, umajirushi
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+          `, [
+            rowYear,
+            (row[0] || '').trim(),
+            (row[3] || '').trim(),
+            (row[4] || '').trim(),
+            (row[5] || '').trim(),
+            (row[6] || '').trim(),
+            (row[7] || '').trim(),
+            (row[8] || '').trim(),
+            (row[9] || '').trim(),
+            (row[10] || '').trim(),
+            (row[11] || '').trim(),
+            (row[12] || '').trim(),
+            (row[13] || '').trim(),
+            (row[14] || '').trim(),
+            (row[16] || '').trim(),
+            (row[17] || '').trim(),
+            (row[18] || '').trim(),
+            (row[19] || '').trim(),
+            (row[20] || '').trim(),
+            (row[21] || '').trim(),
+            (row[22] || '').trim()
+          ]);
+          count++;
+        } catch (err: any) {
+          console.error('Error inserting wakujun row:', err.message);
+        }
       }
     }
+
+    await client.query('COMMIT');
+    return { count, date, isUpdate };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
   }
-  return { count, date, isUpdate };
 }
 
-function importUmadata(db: any, data: any[]): { count: number; updated: number; inserted: number } {
-  // 既存データを削除せず、馬名ごとに更新または挿入
-  // umadataは過去走データなので、全削除して入れ替える方式を維持
-  // （毎回最新の過去走データを取得するため）
-  db.prepare('DELETE FROM umadata').run();
-
-  // umadataテーブルのカラム（idとcreated_at以外）
-  const insertStmt = db.prepare(`
-    INSERT INTO umadata (
-      race_id_new_no_horse_num, date, distance, horse_number, horse_name, index_value,
-      class_name, track_condition, finish_position, last_3f, finish_time, standard_time,
-      rpci, pci, good_run, pci3, horse_mark, corner_2, corner_3, corner_4, gender, age,
-      horse_weight, weight_change, jockey_weight, jockey, multiple_entries, affiliation,
-      trainer, place, number_of_horses, popularity, sire, dam, track_condition_2, place_2,
-      margin, corner_1, corner_2_2, corner_3_2, corner_4_2, work_1s, horse_mark_2,
-      horse_mark_3, horse_mark_4, horse_mark_5, horse_mark_6, horse_mark_7, horse_mark_7_2, horse_mark_8
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-    )
-  `);
+/**
+ * 新umadataフォーマット（39列）
+ * 0: race_id - レースID(馬番号あり)
+ * 1: date - 日付
+ * 2: place - 場所
+ * 3: course_type - 内/外回り
+ * 4: distance - 距離(芝2200等)
+ * 5: class_name - クラス
+ * 6: race_name - レース名
+ * 7: gender_limit - 牝馬限定フラグ
+ * 8: age_limit - 2歳/3歳限定
+ * 9: waku - 枠
+ * 10: umaban - 馬番
+ * 11: horse_name - 馬名
+ * 12: corner_4_position - 4角位置
+ * 13: track_condition - 馬場状態
+ * 14: field_size - 頭数
+ * 15: popularity - 人気
+ * 16: finish_position - 着順
+ * 17: last_3f - 上がり3F
+ * 18: weight_carried - 斤量
+ * 19: horse_weight - 馬体重
+ * 20: weight_change - 馬体重増減
+ * 21: finish_time - 走破タイム
+ * 22: race_count - 休み明けから何戦目
+ * 23: margin - 着差
+ * 24: win_odds - 単勝オッズ
+ * 25: place_odds - 複勝オッズ
+ * 26: win_payout - 単勝配当
+ * 27: place_payout - 複勝配当
+ * 28: rpci - RPCI
+ * 29: pci - PCI
+ * 30: pci3 - PCI3
+ * 31: horse_mark - 印
+ * 32: passing_order - 通過順
+ * 33: gender_age - 性齢(牡3等)
+ * 34: jockey - 騎手
+ * 35: trainer - 調教師
+ * 36: sire - 種牡馬
+ * 37: dam - 母馬名
+ * 38: lap_time - ラップタイム
+ */
+async function importUmadata(client: any, data: any[]): Promise<{ count: number; inserted: number }> {
+  console.log(`[importUmadata] 開始: ${data.length}行`);
+  const startTime = Date.now();
 
   let count = 0;
-  const updated = 0;
   let inserted = 0;
   
-  for (const row of data) {
-    if (Array.isArray(row) && row.length >= 50) {
-      try {
-        insertStmt.run(
-          row[0],  // race_id_new_no_horse_num
-          row[1],  // date
-          row[2],  // distance
-          row[3],  // horse_number
-          row[4],  // horse_name
-          row[5],  // index_value
-          row[6],  // class_name
-          row[7],  // track_condition
-          row[8],  // finish_position
-          row[9],  // last_3f
-          row[10], // finish_time
-          row[11], // standard_time
-          row[12], // rpci
-          row[13], // pci
-          row[14], // good_run
-          row[15], // pci3
-          row[16], // horse_mark
-          row[17], // corner_2
-          row[18], // corner_3
-          row[19], // corner_4
-          row[20], // gender
-          row[21], // age
-          row[22], // horse_weight
-          row[23], // weight_change
-          row[24], // jockey_weight
-          row[25], // jockey
-          row[26], // multiple_entries
-          row[27], // affiliation
-          row[28], // trainer
-          row[29], // place
-          row[30], // number_of_horses
-          row[31], // popularity
-          row[32], // sire
-          row[33], // dam
-          row[34], // track_condition_2
-          row[35], // place_2
-          row[36], // margin
-          row[37], // corner_1
-          row[38], // corner_2_2
-          row[39], // corner_3_2
-          row[40], // corner_4_2
-          row[41], // work_1s
-          row[42], // horse_mark_2
-          row[43], // horse_mark_3
-          row[44], // horse_mark_4
-          row[45], // horse_mark_5
-          row[46], // horse_mark_6
-          row[47], // horse_mark_7
-          row[48], // horse_mark_7_2
-          row[49]  // horse_mark_8
-        );
-        count++;
-        inserted++;
-      } catch {
-        console.error('Error inserting umadata row');
+  // 大きなファイル対応: バッチごとにコミット
+  const batchSize = 500;
+  const commitEvery = 2000; // 2000件ごとにコミット
+
+  try {
+    await client.query('BEGIN');
+    
+    for (let i = 0; i < data.length; i += batchSize) {
+      const batch = data.slice(i, i + batchSize);
+      
+      for (const row of batch) {
+        if (Array.isArray(row) && row.length >= 39) {
+          try {
+            const horseName = (row[11] || '').trim();
+            
+            await client.query(`
+              INSERT INTO umadata (
+                race_id, date, place, course_type, distance, class_name, race_name,
+                gender_limit, age_limit, waku, umaban, horse_name,
+                corner_4_position, track_condition, field_size, popularity,
+                finish_position, last_3f, weight_carried, horse_weight, weight_change,
+                finish_time, race_count, margin, win_odds, place_odds,
+                win_payout, place_payout, rpci, pci, pci3, horse_mark,
+                passing_order, gender_age, jockey, trainer, sire, dam, lap_time
+              ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37, $38, $39
+              )
+            `, [
+              (row[0] || '').trim(),
+              (row[1] || '').trim(),
+              (row[2] || '').trim(),
+              (row[3] || '').trim(),
+              (row[4] || '').trim(),
+              (row[5] || '').trim(),
+              (row[6] || '').trim(),
+              (row[7] || '').trim(),
+              (row[8] || '').trim(),
+              (row[9] || '').trim(),
+              (row[10] || '').trim(),
+              horseName,
+              (row[12] || '').trim(),
+              (row[13] || '').trim(),
+              (row[14] || '').trim(),
+              (row[15] || '').trim(),
+              (row[16] || '').trim(),
+              (row[17] || '').trim(),
+              (row[18] || '').trim(),
+              (row[19] || '').trim(),
+              (row[20] || '').trim(),
+              (row[21] || '').trim(),
+              (row[22] || '').trim(),
+              (row[23] || '').trim(),
+              (row[24] || '').trim(),
+              (row[25] || '').trim(),
+              (row[26] || '').trim(),
+              (row[27] || '').trim(),
+              (row[28] || '').trim(),
+              (row[29] || '').trim(),
+              (row[30] || '').trim(),
+              (row[31] || '').trim(),
+              (row[32] || '').trim(),
+              (row[33] || '').trim(),
+              (row[34] || '').trim(),
+              (row[35] || '').trim(),
+              (row[36] || '').trim(),
+              (row[37] || '').trim(),
+              (row[38] || '').trim()
+            ]);
+            inserted++;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              console.error('Error processing umadata row:', e.message);
+            }
+          }
+          count++;
+        }
+      }
+      
+      // 定期的にコミット（大きなファイル対応）
+      if (count > 0 && count % commitEvery === 0) {
+        await client.query('COMMIT');
+        await client.query('BEGIN');
+        console.log(`[importUmadata] 中間コミット: ${count}/${data.length}行`);
+      }
+      
+      if ((i + batchSize) % 5000 === 0 || i + batchSize >= data.length) {
+        console.log(`[importUmadata] 進捗: ${Math.min(i + batchSize, data.length)}/${data.length}行`);
       }
     }
+
+    await client.query('COMMIT');
+    
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[importUmadata] 完了: ${inserted}件処理 (${elapsed}秒)`);
+
+    return { count, inserted };
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Rollback error:', rollbackError);
+    }
+    throw error;
   }
-  return { count, updated, inserted };
 }
