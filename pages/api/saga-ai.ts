@@ -1293,7 +1293,8 @@ export default async function handler(
               level: cached.level as any,
               levelLabel: cached.level_label || cached.level,
               totalHorsesRun: cached.total_horses_run,
-              goodRunCount: cached.good_run_count,
+              goodRunCount: cached.first_run_good_count || cached.good_run_count, // 次1走目の好走数を優先
+              firstRunGoodCount: cached.first_run_good_count || 0,
               winCount: cached.win_count,
               plusCount: plusCount,
               aiComment: cached.ai_comment || '',

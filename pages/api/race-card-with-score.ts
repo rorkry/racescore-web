@@ -411,13 +411,59 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ========================================
+    // STEP 3.5: レースレベルを一括取得
+    // ========================================
+    const raceLevelMap = new Map<string, any>();
+    
+    // 過去走のrace_id（馬番なしの16桁）を収集
+    const allPastRaceIds: string[] = [];
+    for (const [, races] of processedPastRacesByHorse) {
+      for (const race of races) {
+        const raceId = race.race_id;
+        if (raceId && raceId.length >= 16) {
+          allPastRaceIds.push(raceId);
+        }
+      }
+    }
+    
+    // 重複排除
+    const uniqueRaceIds = [...new Set(allPastRaceIds)];
+    
+    if (uniqueRaceIds.length > 0) {
+      try {
+        const levelPlaceholders = uniqueRaceIds.map((_, i) => `$${i + 1}`).join(',');
+        const allLevels = await db.prepare(`
+          SELECT race_id, level, level_label, total_horses_run, first_run_good_count, win_count, ai_comment
+          FROM race_levels
+          WHERE race_id IN (${levelPlaceholders})
+        `).all(...uniqueRaceIds) as any[];
+        
+        for (const lv of allLevels) {
+          const plusCount = (lv.level_label?.match(/\+/g) || []).length;
+          raceLevelMap.set(lv.race_id, {
+            level: lv.level,
+            levelLabel: lv.level_label || lv.level,
+            totalHorsesRun: lv.total_horses_run || 0,
+            firstRunGoodCount: lv.first_run_good_count || 0,
+            winCount: lv.win_count || 0,
+            plusCount: plusCount,
+            aiComment: lv.ai_comment || '',
+          });
+        }
+        console.log(`[race-card-with-score] レースレベル取得: ${allLevels.length}件`);
+      } catch (err) {
+        console.log('[race-card-with-score] レースレベル取得スキップ:', err);
+      }
+    }
+
+    // ========================================
     // STEP 4: メモリ上でデータを組み立て（ループ内DBアクセスなし）
     // ========================================
     const horsesWithScore = horses.map((horse: any, horseIndex: number) => {
       const horseName = normalizeHorseName(GET(horse, 'umamei'));
       const uniquePastRaces = processedPastRacesByHorse.get(horseName) || [];
 
-      // 過去走データに指数を紐づけ（メモリ上のMapから取得）
+      // 過去走データに指数とレースレベルを紐づけ（メモリ上のMapから取得）
       const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
         const raceIdBase = race.race_id || '';
         // umadataテーブルではカラム名は 'umaban'
@@ -425,11 +471,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const fullRaceId = `${raceIdBase}${horseNum}`;
         
         const raceIndices = indicesMap.get(fullRaceId) || null;
+        const raceLevel = raceLevelMap.get(raceIdBase) || null;
         
         return {
           ...race,
           indices: raceIndices,
-          indexRaceId: fullRaceId
+          indexRaceId: fullRaceId,
+          raceLevel: raceLevel,
         };
       });
 
