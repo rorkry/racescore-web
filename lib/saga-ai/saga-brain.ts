@@ -629,7 +629,7 @@ export class SagaBrain {
         }
 
         // Cレベル（標準）での分析
-        if (level === 'C') {
+        if (baseLevel === 'C') {
           if (lastRace.finishPosition <= 2) {
             analysis.comments.push('前走は標準レベル戦での好走。相手強化時は注意');
           }
