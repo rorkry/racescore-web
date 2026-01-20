@@ -82,26 +82,25 @@ export async function GET(request: NextRequest) {
       ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 999 END
     `, [targetRaceId]);
 
-    // Step 3: 上位3頭を取得（全角数字を半角に変換してフィルタ）
-    // PostgreSQLで全角数字を半角に変換: TRANSLATE関数を使用
-    const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
+    // Step 3: 全出走馬を取得（全角数字を半角に変換してフィルタ）
+    // 重要: 上位3頭だけでなく全出走馬の次走成績を取得する
+    const targetHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
         AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
       GROUP BY horse_name, finish_position
       ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [targetRaceId]);
 
-    // Step 4: 上位馬の次走データを取得
+    // Step 4: 全出走馬の次走データを取得
     let nextRacesData: any[] = [];
     let nextRaceResults: NextRaceResult[] = [];
     
-    if (topHorses.length > 0) {
-      const horseNames = topHorses.map(h => h.horse_name);
+    if (targetHorses.length > 0) {
+      const horseNames = targetHorses.map(h => h.horse_name);
       const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
       const raceDate = raceInfo?.date || targetRaceDate;
       
@@ -155,10 +154,10 @@ export async function GET(request: NextRequest) {
     // Step 5: レースレベルを判定
     const levelResult = analyzeRaceLevel(nextRaceResults);
 
-    // 追加デバッグ: 上位馬の全レース履歴を取得
+    // 追加デバッグ: 1着馬の全レース履歴を取得
     let horseRaceHistory: any[] = [];
-    if (topHorses.length > 0) {
-      const firstHorse = topHorses[0].horse_name;
+    if (targetHorses.length > 0) {
+      const firstHorse = targetHorses[0].horse_name;
       horseRaceHistory = await db.query<{ race_id: string; date: string; finish_position: string; place: string }>(`
         SELECT race_id, date, finish_position, place
         FROM umadata
@@ -184,35 +183,36 @@ export async function GET(request: NextRequest) {
       step1_allHorses: {
         count: allHorses.length,
         sample: allHorses.slice(0, 5),
+        note: 'レース全出走馬（umadataから取得）',
       },
-      step2_topHorses: {
-        count: topHorses.length,
-        horses: topHorses,
-        note: '上位3着の馬（数値着順のみ）',
+      step2_targetHorses: {
+        count: targetHorses.length,
+        horses: targetHorses.slice(0, 5),
+        note: '全出走馬（着順が数値の馬のみ）- 次走成績取得対象',
       },
       step3_nextRacesRaw: {
         count: nextRacesData.length,
         sample: nextRacesData.slice(0, 10),
-        note: '上位馬の次走以降のレース',
+        note: '全出走馬の次走以降のレース',
       },
       step4_nextRaceResults: {
         count: nextRaceResults.length,
         sample: nextRaceResults.slice(0, 10),
-        note: 'NextRaceResult形式に変換後',
+        note: 'NextRaceResult形式に変換後（次走のみ、isFirstRun=trueの馬が好走率計算対象）',
       },
       step5_levelResult: levelResult,
       horseRaceHistoryDebug: {
-        horseName: topHorses[0]?.horse_name || 'N/A',
+        horseName: targetHorses[0]?.horse_name || 'N/A',
         races: horseRaceHistory,
         note: '1着馬の全レース履歴（race_id日付降順）',
       },
       diagnosis: {
         hasRaceInfo: !!raceInfo,
-        hasTopHorses: topHorses.length > 0,
+        hasTargetHorses: targetHorses.length > 0,
         hasNextRaces: nextRacesData.length > 0,
         levelCalculated: levelResult.level !== 'UNKNOWN' || nextRaceResults.length > 0,
         problemArea: !raceInfo ? 'レース情報なし' :
-                     topHorses.length === 0 ? '上位3着の馬が取得できない（着順が数値でない可能性）' :
+                     targetHorses.length === 0 ? '出走馬が取得できない（着順が数値でない可能性）' :
                      nextRacesData.length === 0 ? '次走データがない（日付比較の問題か、次走がまだない）' :
                      nextRaceResults.length === 0 ? '次走の着順が数値でない' :
                      levelResult.level === 'UNKNOWN' ? 'データ不足でUNKNOWN判定' :

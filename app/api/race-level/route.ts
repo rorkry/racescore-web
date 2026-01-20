@@ -175,20 +175,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'レースが見つかりません' }, { status: 404 });
     }
     
-    // 3. 対象レースの出走馬（3着以内）を取得（全角数字対応）
-    const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
+    // 3. 対象レースの全出走馬を取得（全角数字対応）
+    // 重要: 上位3頭だけでなく全出走馬の次走成績を取得する
+    const allHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
         AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
       GROUP BY horse_name, finish_position
       ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [raceId]);
     
-    if (topHorses.length === 0) {
+    if (allHorses.length === 0) {
       const unknownResult: RaceLevelResult = {
         level: 'UNKNOWN',
         levelLabel: '判定不能',
@@ -214,7 +214,7 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    const horseNames = topHorses.map(h => h.horse_name);
+    const horseNames = allHorses.map(h => h.horse_name);
     
     // race_idの最初の8桁が日付（YYYYMMDD）
     const raceDateNum = parseInt(raceId.substring(0, 8), 10);
@@ -275,7 +275,7 @@ export async function GET(request: NextRequest) {
         distance: raceInfo.distance,
         className: raceInfo.class_name,
       },
-      targetHorses: topHorses,
+      targetHorses: allHorses,
       nextRaceResults: nextRaceResults.slice(0, 20),
       level: levelResult,
       fromCache: false,
@@ -357,7 +357,7 @@ export async function POST(request: NextRequest) {
         }
         
         // 3着以内の馬を取得（全角数字対応）
-        const topHorses = await db.query<{ horse_name: string }>(`
+        const allHorses = await db.query<{ horse_name: string }>(`
           SELECT horse_name
           FROM umadata 
           WHERE race_id = $1
@@ -368,7 +368,7 @@ export async function POST(request: NextRequest) {
           GROUP BY horse_name
         `, [raceId]);
         
-        if (topHorses.length === 0) {
+        if (allHorses.length === 0) {
           results[raceId] = {
             level: 'PENDING',
             levelLabel: '判定保留',
@@ -389,7 +389,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
         
-        const horseNames = topHorses.map(h => h.horse_name);
+        const horseNames = allHorses.map(h => h.horse_name);
         const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
         
         // race_idの最初の8桁が日付（YYYYMMDD）

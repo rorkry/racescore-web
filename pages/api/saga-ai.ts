@@ -281,25 +281,27 @@ async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceL
 
 /**
  * 単一レースのレベルを計算（オンデマンド）
+ * 
+ * 重要: 全出走馬の次走成績を取得して判定する
+ * （上位3頭だけでなく、レース全体の出走馬を対象）
  */
 async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDate: string): Promise<RaceLevelResult | null> {
   try {
-    // 対象レースの上位3頭を取得（着順が数値の場合のみ）
+    // 対象レースの全出走馬を取得（着順が数値の場合のみ）
     // 全角数字を半角に変換してフィルタ
-    const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
+    const allHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
         AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
       GROUP BY horse_name, finish_position
       ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [raceId]);
 
-    if (topHorses.length === 0) {
-      // 上位馬がいない場合はUNKNOWNを返す
+    if (allHorses.length === 0) {
+      // 出走馬がいない場合はUNKNOWNを返す
       return {
         level: 'UNKNOWN',
         levelLabel: 'UNKNOWN',
@@ -320,7 +322,8 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
       };
     }
 
-    const horseNames = topHorses.map(h => h.horse_name);
+    // 全出走馬の馬名を取得
+    const horseNames = allHorses.map(h => h.horse_name);
     const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
 
     // race_idの最初の8桁が日付（YYYYMMDD）

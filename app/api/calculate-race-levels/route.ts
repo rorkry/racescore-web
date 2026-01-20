@@ -89,27 +89,27 @@ async function saveRaceLevel(db: ReturnType<typeof getDb>, raceId: string, resul
 
 /**
  * 単一レースのレベルを計算
+ * 重要: 上位3頭だけでなく全出走馬の次走成績を取得する
  */
 async function calculateSingleRaceLevel(db: ReturnType<typeof getDb>, race: RaceRow): Promise<RaceLevelResult | null> {
   try {
-    // 対象レースの上位3頭を取得（全角数字を半角に変換してフィルタ）
-    const topHorses = await db.query<{ horse_name: string; finish_position: string }>(`
+    // 対象レースの全出走馬を取得（全角数字を半角に変換してフィルタ）
+    const allHorses = await db.query<{ horse_name: string; finish_position: string }>(`
       SELECT horse_name, finish_position
       FROM umadata 
       WHERE race_id = $1
         AND finish_position IS NOT NULL
         AND finish_position != ''
         AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-        AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3
       GROUP BY horse_name, finish_position
       ORDER BY MIN(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER)
     `, [race.race_id]);
 
-    if (topHorses.length === 0) {
+    if (allHorses.length === 0) {
       return null; // 対象馬がいない場合はスキップ
     }
 
-    const horseNames = topHorses.map(h => h.horse_name);
+    const horseNames = allHorses.map(h => h.horse_name);
     const placeholders = horseNames.map((_, i) => `$${i + 1}`).join(',');
 
     // race_idの最初の8桁が日付（YYYYMMDD）
