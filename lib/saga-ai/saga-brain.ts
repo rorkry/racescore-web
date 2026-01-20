@@ -461,187 +461,167 @@ export class SagaBrain {
   }
 
   /**
-   * レースレベル分析
-   * 過去走のレースレベルを評価し、コメントを生成
+   * レースレベル分析（改訂版）
    * 
-   * レベル: S, A, B, C, D, LOW, UNKNOWN
-   * +: 勝ち上がり2頭以上、++: 3頭以上、+++: 4頭以上
+   * ## ロジック
+   * - 前走: 必ずレースレベルに言及（A/B/C/D/LOW形式）
+   * - 2-5走前: 包括的に評価（個別ではなく全体傾向）
+   * 
+   * ## スコア調整（馬自身の好走/凡走を考慮）
+   * - B以上 × 好走 → +3〜5点（高評価）
+   * - B以上 × 凡走 → ±0点（見直し余地）
+   * - C以下 × 好走 → ±0点（評価フラット）
+   * - C以下 × 凡走 → -2〜3点（マイナス）
+   * - 凡走続き（3戦以上）→ 大幅マイナス（-5〜10点）
+   * 
+   * ## 好走/凡走の定義
+   * - 好走 = 3着以内
+   * - 凡走 = 4着以下
    */
   private analyzeRaceLevel(input: HorseAnalysisInput, analysis: SagaAnalysis): void {
     const pastRaces = input.pastRaces || [];
     if (pastRaces.length === 0) return;
 
     const levelComments: string[] = [];
-    let highLevelCount = 0;
-    let lowLevelCount = 0;
-
-    // 過去5走までを分析
-    for (let i = 0; i < Math.min(5, pastRaces.length); i++) {
-      const race = pastRaces[i];
-      const raceLevel = race.raceLevel;
+    
+    // ========================================
+    // 【前走】必ず言及（A/B/C/D/LOW形式）
+    // ========================================
+    const lastRace = pastRaces[0];
+    if (lastRace?.raceLevel) {
+      const level = lastRace.raceLevel;
+      const baseLevel = level.level;
+      const levelLabel = level.levelLabel; // "S+++", "A+", "B" など
+      const plusCount = level.plusCount || 0;
+      const finishPos = lastRace.finishPosition;
+      const isGoodRun = finishPos <= 3;
+      const marginNum = parseFloat(lastRace.margin || '0');
+      const marginWithin1sec = !isNaN(marginNum) && marginNum <= 1.0;
+      const marginWithin05sec = !isNaN(marginNum) && marginNum <= 0.5;
       
-      if (!raceLevel) continue;
-
-      const raceLabel = i === 0 ? '前走' : `${i + 1}走前`;
-      const placeInfo = `${race.place}${race.surface}${race.distance}m`;
-      const levelLabel = raceLevel.levelLabel;  // "S+++", "A+", "C" など
-      const baseLevel = raceLevel.level;        // "S", "A", "B", "C", "D", "LOW", "UNKNOWN"
-      const plusCount = raceLevel.plusCount || 0;
-
-      // レベル別にコメント生成
-      switch (baseLevel) {
-        case 'S':
-          highLevelCount++;
-          if (raceLevel.totalHorsesRun > 0) {
-            const plusText = plusCount >= 3 ? '（勝ち上がり多数）' : plusCount >= 2 ? '（勝ち上がり複数）' : '';
-            const goodCount = raceLevel.firstRunGoodCount || raceLevel.goodRunCount;
-            levelComments.push(
-              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${goodCount}頭好走・${raceLevel.winCount}頭勝ち上がりの超ハイレベル戦${plusText}`
-            );
+      // 基本情報コメント
+      const totalInfo = level.totalHorsesRun > 0 
+        ? `（${level.totalHorsesRun}頭中${level.firstRunGoodCount || level.goodRunCount}頭好走）` 
+        : '';
+      
+      // B以上 = ハイレベル
+      const isHighLevel = baseLevel === 'S' || baseLevel === 'A' || baseLevel === 'B';
+      // C以下 = 低レベル側
+      const isLowLevel = baseLevel === 'C' || baseLevel === 'D' || baseLevel === 'LOW';
+      
+      if (baseLevel !== 'UNKNOWN') {
+        // 前走コメント生成（レベル形式で統一）
+        if (isHighLevel) {
+          if (isGoodRun) {
+            // B以上 × 好走 → 高評価
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着好走。ハイレベル戦での好走は高評価`);
+            analysis.score += 4 + plusCount; // +3〜5点
+            analysis.tags.push('ハイレベル戦好走');
+          } else if (marginWithin05sec) {
+            // B以上 × 凡走（僅差）→ 見直し
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着も${marginNum}秒差。ハイレベル戦での凡走だが見直し余地あり`);
+            analysis.score += 1; // フラットに近いがやや加点
+          } else if (marginWithin1sec) {
+            // B以上 × 凡走（1秒以内）→ フラット
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着（${marginNum}秒差）。ハイレベル戦での凡走のため見直し`);
+            // スコア±0（フラット）
           } else {
-            levelComments.push(`${raceLabel}（${placeInfo}）は超ハイレベル戦`);
+            // B以上 × 凡走（1秒超）→ ややマイナス
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着（${marginNum}秒差）。ハイレベル戦での凡走`);
+            analysis.score -= 1;
           }
-          // スコア加点（直近ほど影響大、+の数に応じてボーナス）
-          const sBonus = (i === 0 ? 5 : i <= 2 ? 3 : 2) + plusCount;
-          analysis.score += sBonus;
-          break;
-
-        case 'A':
-          highLevelCount++;
-          if (raceLevel.totalHorsesRun > 0) {
-            const goodCount = raceLevel.firstRunGoodCount || raceLevel.goodRunCount;
-            levelComments.push(
-              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${goodCount}頭好走のハイレベル戦`
-            );
+        } else if (isLowLevel) {
+          if (isGoodRun) {
+            // C以下 × 好走 → 評価フラット
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着好走も、メンバーレベルは特筆するものなく評価フラット`);
+            // スコア±0
           } else {
-            levelComments.push(`${raceLabel}（${placeInfo}）はハイレベル戦`);
+            // C以下 × 凡走 → マイナス
+            levelComments.push(`前走はレースレベル${levelLabel}${totalInfo}で${finishPos}着。メンバーレベル高くないところでの凡走はマイナス`);
+            analysis.score -= 3; // -2〜3点
           }
-          const aBonus = (i === 0 ? 3 : i <= 2 ? 2 : 1) + plusCount;
-          analysis.score += aBonus;
-          break;
-
-        case 'B':
-          if (raceLevel.totalHorsesRun > 0) {
-            const goodCount = raceLevel.firstRunGoodCount || raceLevel.goodRunCount;
-            if (goodCount > 0) {
-              levelComments.push(
-                `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${goodCount}頭好走でやや高いレベル`
-              );
-            }
-          }
-          // +があればややプラス評価
-          if (plusCount >= 1) {
-            analysis.score += plusCount;
-          }
-          break;
-
-        case 'C':
-        case 'D':
-          // C, Dでも+があれば言及
-          if (plusCount >= 2 && raceLevel.winCount >= 2) {
-            levelComments.push(
-              `${raceLabel}（${placeInfo}）は好走率は標準だが${raceLevel.winCount}頭勝ち上がりで評価上昇`
-            );
-            analysis.score += plusCount;
-          }
-          break;
-
-        case 'LOW':
-          lowLevelCount++;
-          if (raceLevel.totalHorsesRun > 0) {
-            const goodCount = raceLevel.firstRunGoodCount || raceLevel.goodRunCount;
-            levelComments.push(
-              `${raceLabel}（${placeInfo}）は${raceLevel.totalHorsesRun}頭中${goodCount}頭好走と低レベル戦`
-            );
-          } else {
-            levelComments.push(`${raceLabel}（${placeInfo}）は低レベル戦`);
-          }
-          // スコア減点
-          const lowPenalty = i === 0 ? -3 : i <= 2 ? -2 : -1;
-          analysis.score += lowPenalty;
-          break;
-
-        case 'UNKNOWN':
-          // UNKNOWN+（1頭のみ出走で好走）の特殊処理
-          if (levelLabel.includes('+')) {
-            levelComments.push(
-              `${raceLabel}（${placeInfo}）は出走1頭のみだが好走。ハイレベルの可能性あり`
-            );
-            analysis.score += 1;  // ややプラス評価
-          }
-          break;
+        }
+      } else if (levelLabel.includes('+')) {
+        // UNKNOWN+の特殊処理
+        levelComments.push('前走はまだ次走データ1頭のみだがその馬が好走。ハイレベルの可能性あり');
+        analysis.score += 1;
       }
     }
 
+    // ========================================
+    // 【2-5走前】包括的評価
+    // ========================================
+    const olderRaces = pastRaces.slice(1, 5).filter(r => r.raceLevel && r.raceLevel.level !== 'UNKNOWN');
+    
+    if (olderRaces.length >= 2) {
+      // 集計
+      let highLevelGoodRuns = 0;   // B以上 × 好走
+      let highLevelBadRuns = 0;    // B以上 × 凡走
+      let lowLevelGoodRuns = 0;    // C以下 × 好走
+      let lowLevelBadRuns = 0;     // C以下 × 凡走
+      let marginWithin1secCount = 0; // 1秒以内の凡走
+      
+      for (const race of olderRaces) {
+        const baseLevel = race.raceLevel!.level;
+        const isHighLevel = baseLevel === 'S' || baseLevel === 'A' || baseLevel === 'B';
+        const isGoodRun = race.finishPosition <= 3;
+        const marginNum = parseFloat(race.margin || '0');
+        const marginWithin1sec = !isNaN(marginNum) && marginNum <= 1.0;
+        
+        if (isHighLevel) {
+          if (isGoodRun) highLevelGoodRuns++;
+          else {
+            highLevelBadRuns++;
+            if (marginWithin1sec) marginWithin1secCount++;
+          }
+        } else {
+          if (isGoodRun) lowLevelGoodRuns++;
+          else lowLevelBadRuns++;
+        }
+      }
+      
+      const totalOlder = olderRaces.length;
+      const totalGoodRuns = highLevelGoodRuns + lowLevelGoodRuns;
+      const totalBadRuns = highLevelBadRuns + lowLevelBadRuns;
+      
+      // 包括コメント生成
+      if (highLevelGoodRuns >= 2) {
+        // 近走ハイレベル戦で好走続き
+        levelComments.push(`近走（2-${Math.min(5, pastRaces.length)}走前）はハイレベル戦（B以上）で好走${highLevelGoodRuns}回。安定した実力の証`);
+        analysis.score += highLevelGoodRuns * 2; // +4〜8点
+        analysis.tags.push('近走ハイレベル好走');
+      } else if (lowLevelGoodRuns >= 2 && highLevelGoodRuns === 0) {
+        // 好走多いがレベルC以下で過信禁物
+        levelComments.push(`近走（2-${Math.min(5, pastRaces.length)}走前）は好走${lowLevelGoodRuns}回もレースレベルC以下中心。過信禁物`);
+        // スコア±0（フラット）
+      } else if (highLevelBadRuns >= 2 && marginWithin1secCount >= 2) {
+        // 近走負けが続くもハイレベル戦で1秒以内
+        levelComments.push(`近走（2-${Math.min(5, pastRaces.length)}走前）は負けが続くもレースレベルB以上で着差1秒以内が${marginWithin1secCount}回。見直し候補`);
+        analysis.score += 2; // ややプラス
+        analysis.tags.push('ハイレベル戦僅差負け');
+      } else if (lowLevelBadRuns >= 2) {
+        // 低レベル戦での凡走続き
+        levelComments.push(`近走（2-${Math.min(5, pastRaces.length)}走前）はレースレベルC以下で凡走${lowLevelBadRuns}回。厳しい状況`);
+        analysis.score -= lowLevelBadRuns * 2; // -4〜8点
+        analysis.warnings.push('低レベル戦での凡走続きで大幅マイナス');
+      }
+      
+      // 凡走続き判定（レースレベル問わず3戦以上凡走）
+      // 前走も含めて判定
+      const allRecent = pastRaces.slice(0, 5);
+      const consecutiveBadRuns = allRecent.filter(r => r.finishPosition > 3).length;
+      if (consecutiveBadRuns >= 3) {
+        levelComments.push(`近5走中${consecutiveBadRuns}回凡走（4着以下）。低調期の可能性`);
+        analysis.score -= Math.min(10, consecutiveBadRuns * 2); // 最大-10点
+        analysis.warnings.push('凡走続きで大幅評価ダウン');
+      }
+    }
+
+    // ========================================
     // raceLevelNote を設定
+    // ========================================
     if (levelComments.length > 0) {
       analysis.raceLevelNote = levelComments.join('。');
-
-      // タグ追加
-      if (highLevelCount >= 2) {
-        analysis.tags.push('高レベル戦経験');
-      } else if (lowLevelCount >= 2) {
-        analysis.tags.push('低レベル戦中心');
-        analysis.warnings.push('低レベル戦での好走が多く、相手強化で割引が必要');
-      }
-
-      // 前走のレースレベルと着差を組み合わせた詳細分析
-      const lastRace = pastRaces[0];
-      if (lastRace?.raceLevel) {
-        const baseLevel = lastRace.raceLevel.level;
-        const levelLabel = lastRace.raceLevel.levelLabel;
-        const marginNum = parseFloat(lastRace.margin || '0');
-        const levelDesc = this.getRaceLevelLabel(baseLevel);
-        const plusCount = lastRace.raceLevel.plusCount || 0;
-        
-        // ハイレベル戦での詳細分析
-        if (baseLevel === 'S' || baseLevel === 'A') {
-          if (lastRace.finishPosition <= 3) {
-            // 好走
-            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${lastRace.finishPosition}着好走。力は確か`);
-            analysis.tags.push('ハイレベル戦好走');
-            analysis.score += 4 + plusCount;
-          } else if (lastRace.finishPosition <= 5) {
-            // 掲示板確保
-            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で掲示板確保。相手弱化で巻き返し候補`);
-            analysis.tags.push('ハイレベル戦健闘');
-            analysis.score += 2 + plusCount;
-          } else if (!isNaN(marginNum) && marginNum <= 0.5) {
-            // 着差小さい
-            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${marginNum}秒差。この程度の差なら巻き返しの期待十分`);
-            analysis.tags.push('ハイレベル戦僅差');
-            analysis.score += 3 + plusCount;
-          } else if (!isNaN(marginNum) && marginNum <= 1.0) {
-            // 1秒以内
-            analysis.comments.push(`前走は${levelLabel}の${levelDesc}戦で${marginNum}秒差。相手次第で浮上余地あり`);
-            analysis.score += 1;
-          }
-        }
-
-        // 低レベル戦での警告
-        if (baseLevel === 'LOW') {
-          if (lastRace.finishPosition <= 2) {
-            analysis.warnings.push(`前走は低レベル戦での${lastRace.finishPosition}着。相手強化で割引必要`);
-            analysis.score -= 3;
-          } else if (lastRace.finishPosition <= 5) {
-            analysis.warnings.push('前走は低レベル戦でも掲示板止まり。今回も厳しいか');
-            analysis.score -= 4;
-          }
-        }
-
-        // UNKNOWN+の特殊処理
-        if (baseLevel === 'UNKNOWN' && levelLabel.includes('+')) {
-          analysis.comments.push('前走はまだ1頭のみ出走だがその馬が好走。ハイレベルだった可能性あり');
-          analysis.score += 1;
-        }
-
-        // Cレベル（標準）での分析
-        if (baseLevel === 'C') {
-          if (lastRace.finishPosition <= 2) {
-            analysis.comments.push('前走は標準レベル戦での好走。相手強化時は注意');
-          }
-        }
-      }
     }
   }
 
