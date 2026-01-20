@@ -1040,14 +1040,20 @@ export default async function handler(
     const isAIEnabled = openAISagaChecker.isOpenAIEnabled();
     const openAISaga = useAI && isAIEnabled ? openAISagaChecker : null;
 
+    // デバッグログ: 受け取ったパラメータ
+    console.log(`[saga-ai] Query params: date="${date}", place="${rawPlace}", raceNumber="${raceNumber}", year="${year}"`);
+    
     const horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = $1 AND place = $2 AND race_number = $3 AND year = $4
       ORDER BY umaban::INTEGER
     `).all(date, rawPlace, raceNumber, year) as any[];  // yearは文字列のまま渡す
 
+    console.log(`[saga-ai] Found ${horses?.length || 0} horses`);
+
     if (!horses || horses.length === 0) {
-      return res.status(404).json({ error: 'No horses found' });
+      console.log(`[saga-ai] No horses found for: date="${date}", place="${rawPlace}", raceNumber="${raceNumber}", year="${year}"`);
+      return res.status(404).json({ error: 'No horses found', params: { date, place: rawPlace, raceNumber, year } });
     }
 
     const raceInfo = horses[0];

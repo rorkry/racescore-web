@@ -32,9 +32,10 @@ export async function GET() {
 
     // 2. saga-aiと同じ条件でwakujunを取得
     results.step2_sagaAiQuery = 'checking...';
-    // saga-aiは date, place, race_number, year で検索
-    // dateの形式を確認（例: "2026. 1.18" vs "0118"）
-    const testDate = '2026. 1.18';
+    // wakujunテーブルのdateは"0118"形式（MMDD）
+    // step1で取得した実際の日付形式を使用
+    const actualDate = sampleRows.length > 0 ? (sampleRows[0] as any).date : '0118';
+    const testDate = actualDate;  // 実際のDB形式を使用
     const testPlace = '中山';
     const testRaceNumber = '9';
     const testYear = '2026';
@@ -55,18 +56,37 @@ export async function GET() {
     results.step3_getUmadata = 'checking...';
     if (sagaRows.length > 0) {
       const firstHorse = sagaRows[0] as any;
+<<<<<<< HEAD
       const horseNameForUmadata = (firstHorse.umamei || '').trim();
       
       // saga-aiと同じクエリ: horse_nameカラムを使用
       const umadataRows = await db.query(`
         SELECT race_id, horse_name, finish_position, date, lap_time, passing_order
+=======
+      // saga-aiと同じnormalizeHorseName処理: $, *, スペースを除去
+      const rawHorseName = (firstHorse.umamei || '').trim();
+      const horseNameForUmadata = rawHorseName
+        .replace(/^[\$\*＄＊\s　]+/, '')
+        .replace(/[\s　]+$/, '')
+        .trim();
+      
+      // saga-aiと同じクエリ: horse_nameカラムを使用
+      // passing_orderカラムは存在しない可能性があるので除外
+      const umadataRows = await db.query(`
+        SELECT race_id, horse_name, finish_position, date, lap_time
+>>>>>>> 3bd8377a8bcd6272d86bc95cd2cebf49c4f6b01c
         FROM umadata
         WHERE TRIM(horse_name) = $1
         ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
         LIMIT 3
       `, [horseNameForUmadata]);
       results.step3_getUmadata = {
+<<<<<<< HEAD
         horseName: horseNameForUmadata,
+=======
+        rawHorseName: rawHorseName,
+        normalizedHorseName: horseNameForUmadata,
+>>>>>>> 3bd8377a8bcd6272d86bc95cd2cebf49c4f6b01c
         count: umadataRows.length,
         sample: umadataRows
       };
