@@ -300,10 +300,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ========================================
     // プレースホルダーを動的に生成
     const placeholders = uniqueHorseNames.map((_, i) => `$${i + 1}`).join(',');
+    // race_idの最初の8桁がYYYYMMDD形式なので、それでソート（確実な日付順）
     const allPastRacesRaw = await db.prepare(`
       SELECT * FROM umadata
       WHERE TRIM(horse_name) IN (${placeholders})
-      ORDER BY horse_name, date DESC
+      ORDER BY horse_name, SUBSTRING(race_id, 1, 8)::INTEGER DESC
     `).all(...uniqueHorseNames) as any[];
 
     // ========================================
