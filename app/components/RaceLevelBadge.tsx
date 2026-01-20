@@ -147,9 +147,9 @@ export function getLevelScore(level: string): number {
 }
 
 /**
- * レベルのラベルを取得
+ * レベルのラベルを取得（レベル文字をそのまま返す）
  */
 export function getLevelLabel(level: string): string {
-  const baseLevel = extractBaseLevel(level);
-  return LEVEL_STYLES[baseLevel]?.label || '';
+  // levelをそのまま返す（"S+++", "A+", "C", "UNKNOWN"など）
+  return level || '';
 }

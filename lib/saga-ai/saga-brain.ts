@@ -639,19 +639,11 @@ export class SagaBrain {
   }
 
   /**
-   * レースレベルのラベルを取得
+   * レースレベルのラベルを取得（レベル文字をそのまま返す）
    */
   private getRaceLevelLabel(level: string): string {
-    switch (level) {
-      case 'S': return '超ハイレベル';
-      case 'A': return 'ハイレベル';
-      case 'B': return 'やや高い';
-      case 'C': return '標準';
-      case 'D': return 'やや低い';
-      case 'LOW': return '低レベル';
-      case 'UNKNOWN': return '判定中';
-      default: return '';
-    }
+    // levelLabelをそのまま使用（"S+++", "A+", "C"など）
+    return level || '';
   }
 
   /**
