@@ -56,13 +56,6 @@ export async function GET() {
     results.step3_getUmadata = 'checking...';
     if (sagaRows.length > 0) {
       const firstHorse = sagaRows[0] as any;
-<<<<<<< HEAD
-      const horseNameForUmadata = (firstHorse.umamei || '').trim();
-      
-      // saga-aiと同じクエリ: horse_nameカラムを使用
-      const umadataRows = await db.query(`
-        SELECT race_id, horse_name, finish_position, date, lap_time, passing_order
-=======
       // saga-aiと同じnormalizeHorseName処理: $, *, スペースを除去
       const rawHorseName = (firstHorse.umamei || '').trim();
       const horseNameForUmadata = rawHorseName
@@ -74,19 +67,14 @@ export async function GET() {
       // passing_orderカラムは存在しない可能性があるので除外
       const umadataRows = await db.query(`
         SELECT race_id, horse_name, finish_position, date, lap_time
->>>>>>> 3bd8377a8bcd6272d86bc95cd2cebf49c4f6b01c
         FROM umadata
         WHERE TRIM(horse_name) = $1
         ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
         LIMIT 3
       `, [horseNameForUmadata]);
       results.step3_getUmadata = {
-<<<<<<< HEAD
-        horseName: horseNameForUmadata,
-=======
         rawHorseName: rawHorseName,
         normalizedHorseName: horseNameForUmadata,
->>>>>>> 3bd8377a8bcd6272d86bc95cd2cebf49c4f6b01c
         count: umadataRows.length,
         sample: umadataRows
       };
