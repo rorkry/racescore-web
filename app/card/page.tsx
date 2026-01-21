@@ -1447,6 +1447,10 @@ export default function RaceCardPage() {
                     setHorseActionTarget({ name: horseName, number: horseNumber });
                   }}
                   favoriteHorses={favoriteHorses}
+                  onDataLoaded={(data) => {
+                    // SagaAICardがデータを取得したらstateに反映
+                    setCurrentSagaAIData(data);
+                  }}
                 />
               </div>
             )}
