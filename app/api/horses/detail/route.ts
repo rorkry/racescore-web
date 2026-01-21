@@ -150,6 +150,8 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const horseName = searchParams.get('name');
   const enableSagaAI = searchParams.get('enableSagaAI') === 'true';
+  
+  console.log('[horses/detail] Request params:', { horseName, enableSagaAI });
 
   if (!horseName) {
     return NextResponse.json({ error: 'Horse name is required' }, { status: 400 });
@@ -308,6 +310,7 @@ export async function GET(request: NextRequest) {
     
     // プレミアム会員、またはおれAI機能が有効化されている場合にSagaBrain分析を実行
     const shouldRunSagaAI = (isPremium || (enableSagaAI && userId)) && pastRacesRaw.length > 0;
+    console.log('[horses/detail] SagaAI check:', { isPremium, enableSagaAI, userId: !!userId, pastRacesCount: pastRacesRaw.length, shouldRunSagaAI });
     if (shouldRunSagaAI) {
       try {
         // 過去走を SagaBrain用の形式に変換

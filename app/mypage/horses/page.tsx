@@ -169,12 +169,20 @@ export default function HorseAnalysisPage() {
     setLoadingHorseDetail(true);
     setShowSuggestions(false);
     
+    console.log('[horses] openHorseDetail:', { horseName, showSagaAI });
+    
     try {
       // おれAIがオンの場合はenableSagaAI=trueを付与
       const url = `/api/horses/detail?name=${encodeURIComponent(horseName)}${showSagaAI ? '&enableSagaAI=true' : ''}`
+      console.log('[horses] Fetching:', url);
       const res = await fetch(url);
       if (res.ok) {
         const data: HorseDetail = await res.json();
+        console.log('[horses] API response:', { 
+          isPremium: data.isPremium, 
+          hasTimeEval: !!data.timeEvaluation, 
+          hasLapEval: !!data.lapEvaluation 
+        });
         
         // HorseDetailModal用の形式に変換
         const modalHorse: ModalHorse = {
