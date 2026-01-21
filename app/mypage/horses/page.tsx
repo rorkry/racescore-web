@@ -63,7 +63,9 @@ export default function HorseAnalysisPage() {
   const [favorites, setFavorites] = useState<FavoriteHorse[]>([]);
   const [favoriteNames, setFavoriteNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(10);
+  const [limit, setLimit] = useState(20);
+  const [notifyLimit, setNotifyLimit] = useState(10);
+  const [notifyCount, setNotifyCount] = useState(0);
   
   // 検索関連
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,7 +141,9 @@ export default function HorseAnalysisPage() {
         const favs = data.favorites || [];
         setFavorites(favs);
         setFavoriteNames(new Set(favs.map((f: FavoriteHorse) => normalizeHorseName(f.horse_name))));
-        setLimit(data.limit || 10);
+        setLimit(data.limit || 20);
+        setNotifyLimit(data.notifyLimit || 10);
+        setNotifyCount(data.notifyCount || 0);
       }
     } catch (err) {
       console.error('Failed to fetch favorites:', err);
@@ -352,7 +356,10 @@ export default function HorseAnalysisPage() {
             <span className="text-xl">⭐</span>
             <span className="font-bold text-gray-800">お気に入り馬</span>
             <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-sm rounded-full">
-              {favorites.length}/{limit}
+              {favorites.length}/{limit}頭
+            </span>
+            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-sm rounded-full">
+              🔔 {notifyCount}/{notifyLimit}
             </span>
           </div>
           <svg 
