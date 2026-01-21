@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: 馬分析ページにコーナー位置・出走頭数を追加してレースカードと統一"
+git commit -m "feat: トップページは公開、レースカード・マイページはログイン必須に変更"
 
 echo.
 echo === Pushing to origin ===
