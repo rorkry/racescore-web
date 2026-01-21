@@ -4,7 +4,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getRawDb } from '../../lib/db-new';
+import { getRawDb } from '../../lib/db';
 
 interface RequestBody {
   year: string;

@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getRawDb } from '../../lib/db-new';
+import { getRawDb } from '../../lib/db';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';

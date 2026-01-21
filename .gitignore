@@ -44,4 +44,3 @@ node_modules/
 *.db
 *.db-*
 
-prisma/schema.backup.prisma

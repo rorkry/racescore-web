@@ -447,3 +447,11 @@ export async function closeDb(): Promise<void> {
   db = null;
   initialized = false;
 }
+
+/** 
+ * getRawDb - db-new.tsとの互換性のためのエイリアス
+ * getDb()と同じ動作
+ */
+export function getRawDb(): DatabaseWrapper {
+  return getDb();
+}

@@ -1,14 +1,20 @@
 /**
  * 指数取得デバッグAPI
  * 指数が正しく取得できるかを確認
+ * 管理者のみアクセス可能
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getRawDb } from '@/lib/db-new';
+import { getRawDb } from '@/lib/db';
+import { isAdminRequest } from '@/lib/auth-check';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(req))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { searchParams } = new URL(req.url);
   const horseName = searchParams.get('horse') || 'ステアハート';
   

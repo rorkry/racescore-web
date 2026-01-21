@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server';
 import { auth } from '../../../lib/auth';
 import { getToken } from 'next-auth/jwt';
 import { headers, cookies } from 'next/headers';
+import { isAdminRequest } from '@/lib/auth-check';
 
-// デバッグ用 - 本番運用後は削除すること
+// デバッグ用 - 管理者のみアクセス可能
 
 export async function GET(request: Request) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     // 方法1: auth()でセッション取得
     const session = await auth();

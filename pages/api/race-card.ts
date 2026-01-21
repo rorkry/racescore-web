@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getRawDb } from '../../lib/db-new';
+import { getRawDb } from '../../lib/db';
 
 /**
  * 日付文字列をYYYYMMDD形式の数値に変換（比較用）

@@ -5,7 +5,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getRawDb } from '../../lib/db-new';
+import { getRawDb } from '../../lib/db';
 import { toHalfWidth } from '../../utils/parse-helpers';
 
 interface TimeHighlight {

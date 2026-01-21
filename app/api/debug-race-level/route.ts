@@ -1,13 +1,19 @@
 /**
  * レースレベルのデバッグAPI
+ * 管理者のみアクセス可能
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { isAdminRequest } from '@/lib/auth-check';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const db = getDb();
     const { searchParams } = new URL(request.url);

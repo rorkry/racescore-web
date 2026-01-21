@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getRawDb } from '../../lib/db-new';
+import { getRawDb } from '../../lib/db';
 
 export default async function handler(
   req: NextApiRequest,

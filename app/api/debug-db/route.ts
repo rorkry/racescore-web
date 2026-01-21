@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { isAdminRequest } from '@/lib/auth-check';
 
-// デバッグ用 - 本番運用後は削除すること
+// デバッグ用 - 管理者のみアクセス可能
 
 export async function GET(request: Request) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { searchParams } = new URL(request.url);
   const table = searchParams.get('table') || 'wakujun';
   const limit = parseInt(searchParams.get('limit') || '5');

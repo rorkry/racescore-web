@@ -1,10 +1,12 @@
 /**
  * レースレベル計算の詳細デバッグAPI
+ * 管理者のみアクセス可能
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { analyzeRaceLevel, type NextRaceResult } from '@/lib/saga-ai/level-analyzer';
+import { isAdminRequest } from '@/lib/auth-check';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +30,11 @@ function convertDateToNumber(dateStr: string): number {
 }
 
 export async function GET(request: NextRequest) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const raceId = searchParams.get('raceId');
