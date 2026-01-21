@@ -5,6 +5,7 @@ import { useSession } from '../../components/Providers';
 import Link from 'next/link';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
 import HorseDetailModal from '../../components/HorseDetailModal';
+import { useFeatureAccess } from '../../components/FloatingActionButton';
 
 interface FavoriteHorse {
   id: string;
@@ -92,6 +93,9 @@ export default function HorseAnalysisPage() {
   
   // 操作中フラグ
   const [togglingFavorite, setTogglingFavorite] = useState<string | null>(null);
+  
+  // おれAIトグル状態（FloatingActionButtonと連動）
+  const showSagaAI = useFeatureAccess('saga-ai');
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -455,9 +459,9 @@ export default function HorseAnalysisPage() {
             setSelectedHorse(null);
             setSelectedHorseAIData(null);
           }}
-          timeEvaluation={selectedHorseAIData?.timeEvaluation}
-          lapEvaluation={selectedHorseAIData?.lapEvaluation}
-          isPremium={selectedHorseAIData?.isPremium ?? false}
+          timeEvaluation={showSagaAI ? selectedHorseAIData?.timeEvaluation : undefined}
+          lapEvaluation={showSagaAI ? selectedHorseAIData?.lapEvaluation : undefined}
+          isPremium={showSagaAI && (selectedHorseAIData?.isPremium ?? false)}
         />
       )}
     </div>
