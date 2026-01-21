@@ -988,9 +988,45 @@ export default async function handler(
   }
 
   // プレミアム会員チェック（JWTトークンから取得）
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET || 'stride-secret-key-change-in-production' });
+  // Next-Auth v5ではcookie名が異なる場合があるため、複数のcookie名を試行
+  const secret = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || 'stride-secret-key-change-in-production';
+  let token = await getToken({ req, secret });
+  
+  // トークンが取得できない場合、Next-Auth v5のデフォルトcookie名を試行
+  if (!token) {
+    token = await getToken({ 
+      req, 
+      secret,
+      cookieName: 'authjs.session-token' // Next-Auth v5 default (non-secure)
+    });
+  }
+  if (!token) {
+    token = await getToken({ 
+      req, 
+      secret,
+      cookieName: '__Secure-authjs.session-token' // Next-Auth v5 default (secure)
+    });
+  }
+  
+  // デバッグログ（認証問題の調査用）
+  const cookieNames = Object.keys(req.cookies || {});
+  console.log('[saga-ai] Auth debug:', { 
+    hasToken: !!token, 
+    tokenEmail: token?.email || null,
+    cookieCount: cookieNames.length,
+    authCookies: cookieNames.filter(c => c.includes('auth') || c.includes('session')),
+  });
+  
   if (!token?.email) {
-    return res.status(401).json({ error: '認証が必要です', requiresAuth: true });
+    // より詳細なエラー情報を含める
+    return res.status(401).json({ 
+      error: '認証が必要です', 
+      requiresAuth: true,
+      debug: {
+        hasCookies: cookieNames.length > 0,
+        authCookiesFound: cookieNames.filter(c => c.includes('auth') || c.includes('session')),
+      }
+    });
   }
 
   const isPremium = await isPremiumUserByEmail(token.email as string);
