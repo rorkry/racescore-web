@@ -24,6 +24,7 @@ interface PastRace {
   margin: string;
   track_condition: string;
   place: string;
+  popularity?: string;
   indices?: {
     makikaeshi?: number;
     potential?: number;
@@ -45,6 +46,11 @@ interface HorseDetail {
   pastRaces: PastRace[];
   score: number | null;
   hasData: boolean;
+  memo?: string | null;
+  isFavorite?: boolean;
+  isPremium?: boolean;
+  timeEvaluation?: string;
+  lapEvaluation?: string;
 }
 
 // HorseDetailModal用の型変換
@@ -56,6 +62,7 @@ interface ModalHorse {
   score: number | null;
   hasData: boolean;
   past: PastRace[];
+  memo?: string;
 }
 
 export default function HorseAnalysisPage() {
@@ -78,6 +85,7 @@ export default function HorseAnalysisPage() {
   // 馬詳細モーダル
   const [selectedHorse, setSelectedHorse] = useState<ModalHorse | null>(null);
   const [loadingHorseDetail, setLoadingHorseDetail] = useState(false);
+  const [selectedHorseAIData, setSelectedHorseAIData] = useState<{ timeEvaluation?: string; lapEvaluation?: string; isPremium?: boolean } | null>(null);
   
   // お気に入りリスト表示
   const [showFavorites, setShowFavorites] = useState(false);
@@ -170,10 +178,18 @@ export default function HorseAnalysisPage() {
           kishu: data.kishu || '',
           score: data.score,
           hasData: data.hasData,
-          past: data.pastRaces
+          past: data.pastRaces,
+          memo: data.memo || undefined
         };
         
         setSelectedHorse(modalHorse);
+        
+        // おれAI分析データを設定（プレミアム会員のみ）
+        setSelectedHorseAIData({
+          timeEvaluation: data.timeEvaluation,
+          lapEvaluation: data.lapEvaluation,
+          isPremium: data.isPremium,
+        });
       }
     } catch (err) {
       console.error('Failed to fetch horse detail:', err);
@@ -435,7 +451,13 @@ export default function HorseAnalysisPage() {
       {selectedHorse && (
         <HorseDetailModal
           horse={selectedHorse}
-          onClose={() => setSelectedHorse(null)}
+          onClose={() => {
+            setSelectedHorse(null);
+            setSelectedHorseAIData(null);
+          }}
+          timeEvaluation={selectedHorseAIData?.timeEvaluation}
+          lapEvaluation={selectedHorseAIData?.lapEvaluation}
+          isPremium={selectedHorseAIData?.isPremium ?? false}
         />
       )}
     </div>

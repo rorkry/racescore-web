@@ -8,6 +8,7 @@ interface MenuItem {
   icon: string;
   description?: string;
   isActive?: boolean;
+  locked?: boolean;  // プレミアム限定でロック中
 }
 
 // グローバル状態管理用のカスタムイベント
@@ -45,11 +46,35 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(new Set());
+  const [isPremium, setIsPremium] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
+  // プレミアム状態を取得
+  useEffect(() => {
+    const checkPremium = async () => {
+      try {
+        const res = await fetch('/api/user/favorites');
+        if (res.ok) {
+          const data = await res.json();
+          setIsPremium(!!data.isPremium);
+        }
+        // 401（未ログイン）やその他エラーはisPremium=falseのまま
+      } catch {
+        // ネットワークエラー時もプレミアムでないとみなす
+      }
+    };
+    checkPremium();
+  }, []);
+
   // 機能のトグル
-  const toggleFeature = useCallback((featureId: string) => {
+  const toggleFeature = useCallback((featureId: string, isLocked: boolean) => {
+    // ロック中（プレミアム限定）の場合はトグルしない
+    if (isLocked) {
+      // ロック中のアイテムをクリックした場合、メニューは閉じない
+      return;
+    }
+
     // 現在の状態を取得して、次の状態を計算
     const willBeActive = !activeFeatures.has(featureId);
     
@@ -88,15 +113,17 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
       id: 'race-pace',
       label: '展開予想カード',
       icon: '🏇',
-      description: 'レース展開を予想',
+      description: isPremium ? 'レース展開を予想' : 'プレミアム限定',
       isActive: activeFeatures.has('race-pace'),
+      locked: !isPremium,
     },
     {
       id: 'saga-ai',
       label: 'おれAI',
       icon: '🧠',
-      description: 'AI分析を表示',
+      description: isPremium ? 'AI分析を表示' : 'プレミアム限定',
       isActive: activeFeatures.has('saga-ai'),
+      locked: !isPremium,
     },
     ...menuItems.map(item => ({
       ...item,
@@ -253,6 +280,15 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
           border-left: 3px solid #10b981;
         }
 
+        .fab-menu-item.locked {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .fab-menu-item.locked:hover {
+          background-color: transparent;
+        }
+
         .fab-menu-item-icon {
           font-size: 20px;
           width: 24px;
@@ -316,10 +352,10 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
           {defaultMenuItems.map((item) => (
             <div
               key={item.id}
-              className={`fab-menu-item ${item.isActive ? 'active' : ''}`}
-              onClick={() => toggleFeature(item.id)}
+              className={`fab-menu-item ${item.isActive ? 'active' : ''} ${item.locked ? 'locked' : ''}`}
+              onClick={() => toggleFeature(item.id, !!item.locked)}
             >
-              <span className="fab-menu-item-icon">{item.icon}</span>
+              <span className="fab-menu-item-icon">{item.locked ? '🔒' : item.icon}</span>
               <div className="fab-menu-item-content">
                 <span className="fab-menu-item-label">{item.label}</span>
                 {item.description && (
@@ -327,7 +363,7 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
                 )}
               </div>
               <span className={`fab-menu-item-status ${item.isActive ? 'active' : 'inactive'}`}>
-                {item.isActive ? 'ON' : 'OFF'}
+                {item.locked ? '🔒' : (item.isActive ? 'ON' : 'OFF')}
               </span>
             </div>
           ))}

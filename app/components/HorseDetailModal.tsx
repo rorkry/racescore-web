@@ -25,6 +25,7 @@ interface PastRace {
   margin: string;
   track_condition: string;
   place: string;
+  popularity?: string;
   indices?: {
     makikaeshi?: number;
     potential?: number;
@@ -40,6 +41,7 @@ interface Horse {
   score: number | null;
   hasData: boolean;
   past: PastRace[];
+  memo?: string;  // ユーザーが設定した馬のメモ
 }
 
 interface Props {
@@ -50,6 +52,9 @@ interface Props {
     surface: string;
     distance: number;
   };
+  timeEvaluation?: string;  // おれAIのタイム評価
+  lapEvaluation?: string;   // おれAIのラップ評価
+  isPremium?: boolean;      // プレミアム会員かどうか
 }
 
 // 競馬場と回り方向のマッピング
@@ -227,7 +232,7 @@ const modalVariants = {
   exit: { opacity: 0, scale: 0.95, y: 30 }
 };
 
-export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
+export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluation, lapEvaluation, isPremium = false }: Props) {
   // === ヘルパー関数（メモ化の外で定義） ===
   
   // 全角数字を半角に変換
@@ -660,13 +665,14 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
   // === メモ化: レーダーチャートデータ ===
   const radarData = useMemo(() => {
     try {
-      const { courseRadarValue = 0, courseRate = 0, levelRadarValue = 40, avgLevelScore = 40, comebackRadarValue = 0, avgComebackIndex = 0, scoreRadarValue = 25, scoreValue = 0 } = radarMetrics || {};
+      const { courseRadarValue = 0, courseRate = 0, levelRadarValue = 40, avgLevelScore = 40, comebackRadarValue = 0, avgComebackIndex = 0, potentialRadarValue = 0 } = radarMetrics || {};
+      const maxPotential = analysisData?.maxPotential || 0;
       
       return [
         { subject: 'コース適性', value: courseRadarValue, rawValue: courseRate, unit: '%' },
         { subject: 'レースレベル', value: levelRadarValue, rawValue: avgLevelScore, unit: '' },
         { subject: '巻き返し', value: comebackRadarValue, rawValue: avgComebackIndex, unit: '' },
-        { subject: '競うスコア', value: scoreRadarValue, rawValue: scoreValue, unit: '' },
+        { subject: 'ポテンシャル', value: potentialRadarValue, rawValue: maxPotential, unit: '' },
       ];
     } catch (error) {
       console.error('HorseDetailModal radarData error:', error);
@@ -674,10 +680,10 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
         { subject: 'コース適性', value: 0, rawValue: 0, unit: '%' },
         { subject: 'レースレベル', value: 40, rawValue: 40, unit: '' },
         { subject: '巻き返し', value: 0, rawValue: 0, unit: '' },
-        { subject: '競うスコア', value: 25, rawValue: 0, unit: '' },
+        { subject: 'ポテンシャル', value: 0, rawValue: 0, unit: '' },
       ];
     }
-  }, [radarMetrics]);
+  }, [radarMetrics, analysisData]);
 
   // === メモ化: 特性バッジ用の分析結果 ===
   const characteristicData = useMemo(() => {
@@ -778,7 +784,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
 
   // 描画用に変数を展開
   const { pastRaces } = analysisData;
-  const { avgComebackIndex, isComebackExcellent, isHighLevelRaces, scoreValue } = radarMetrics;
+  const { avgComebackIndex, isComebackExcellent, isHighLevelRaces } = radarMetrics;
   const { favoriteCourse, excellentCourse, flatMaster, steepMaster, rightTurnMaster, leftTurnMaster, restMaster, restNegative, isCurrentlyDifficult, hasMegaIndex, megaIndexValue } = characteristicData;
   const hasAnyData = pastRaces.length > 0;
 
@@ -902,6 +908,52 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                       </div>
                     </div>
                   )}
+                  
+                  {/* おれAI分析 */}
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-bold text-orange-300" style={{ textShadow: '0 0 8px rgba(249,115,22,0.6)' }}>
+                        🤖 おれAI分析
+                      </span>
+                      {!isPremium && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-600/50 border border-slate-500/50 rounded text-slate-400">
+                          🔒 プレミアム限定
+                        </span>
+                      )}
+                    </div>
+                    
+                    {isPremium ? (
+                      (timeEvaluation || lapEvaluation) ? (
+                        <div className="space-y-2">
+                          {timeEvaluation && (
+                            <div className="p-2 rounded-lg border bg-emerald-500/10 border-emerald-500/30">
+                              <div className="flex items-start gap-2">
+                                <span className="text-emerald-400 shrink-0">⏱️</span>
+                                <span className="text-xs text-emerald-200 leading-relaxed">{timeEvaluation}</span>
+                              </div>
+                            </div>
+                          )}
+                          {lapEvaluation && (
+                            <div className="p-2 rounded-lg border bg-purple-500/10 border-purple-500/30">
+                              <div className="flex items-start gap-2">
+                                <span className="text-purple-400 shrink-0">📊</span>
+                                <span className="text-xs text-purple-200 leading-relaxed">{lapEvaluation}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-2 rounded-lg border bg-slate-700/30 border-slate-600/30">
+                          <p className="text-xs text-slate-400 italic">分析データがありません</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="p-3 rounded-lg border bg-slate-800/50 border-slate-600/30 text-center">
+                        <p className="text-xs text-slate-400 mb-2">タイム評価・ラップ評価はプレミアム機能です</p>
+                        <p className="text-[10px] text-slate-500">マイページからプレミアムにアップグレードしてください</p>
+                      </div>
+                    )}
+                  </div>
                 </CyberCard>
 
                 {/* 右カラム: 近5走レースレベル + 特性 */}
@@ -921,33 +973,50 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                       <div className="space-y-1.5">
                         {pastRaces.slice(0, 5).map((race, index) => {
                           const levelLabel = race.raceLevel?.levelLabel || 'UNKNOWN';
-                          const levelDesc = getLevelLabel(levelLabel);
                           const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
-                          const dateStr = race.date ? race.date.replace(/\./g, '/').slice(5) : ''; // MM/DD形式
+                          // 日付をYYYY/MM/DD形式に変換
+                          const dateStr = race.date 
+                            ? race.date.replace(/\./g, '/').replace(/\s/g, '') 
+                            : '';
                           const marginFloat = parseFloat(race.margin);
                           const marginText = !isNaN(marginFloat) 
-                            ? marginFloat > 0 ? `+${marginFloat.toFixed(1)}秒差` : `${marginFloat.toFixed(1)}秒差`
+                            ? marginFloat > 0 ? `+${marginFloat.toFixed(1)}` : `${marginFloat.toFixed(1)}`
                             : '';
+                          const position = toHalfWidth(race.finish_position || '');
+                          const popularity = race.popularity ? toHalfWidth(race.popularity) : '';
                           
                           return (
                             <div 
                               key={index}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/30 border border-slate-700/50"
+                              className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-black/30 border border-slate-700/50"
                             >
                               {/* 走順ラベル */}
-                              <span className="text-[10px] text-slate-500 w-10 shrink-0">{raceLabel}</span>
+                              <span className="text-[10px] text-slate-500 w-8 shrink-0">{raceLabel}</span>
                               
-                              {/* 日付 */}
-                              <span className="text-[10px] text-slate-400 w-12 shrink-0">{dateStr}</span>
+                              {/* 日付 YYYY/MM/DD */}
+                              <span className="text-[10px] text-slate-400 w-20 shrink-0 tabular-nums">{dateStr}</span>
                               
-                              {/* レースレベルバッジ */}
-                              <RaceLevelBadge level={levelLabel} size="sm" />
+                              {/* レースレベルバッジ（固定幅で統一） */}
+                              <div className="w-16 shrink-0">
+                                <RaceLevelBadge level={levelLabel} size="sm" className="w-full justify-center" />
+                              </div>
                               
-                              {/* レベル説明 */}
-                              <span className="text-[10px] text-slate-400 flex-1 truncate">{levelDesc}</span>
+                              {/* 人気 */}
+                              <span className="text-[10px] text-slate-400 w-8 shrink-0 text-center tabular-nums">
+                                {popularity ? `${popularity}人` : '-'}
+                              </span>
+                              
+                              {/* 着順 */}
+                              <span className={`text-[10px] w-8 shrink-0 text-center font-bold tabular-nums ${
+                                parseInt(position) <= 3 ? 'text-amber-400' : 'text-slate-300'
+                              }`}>
+                                {position ? `${position}着` : '-'}
+                              </span>
                               
                               {/* 着差 */}
-                              <span className={`text-[10px] font-mono ${marginFloat <= 0.3 ? 'text-green-400' : marginFloat >= 1.0 ? 'text-red-400' : 'text-slate-400'}`}>
+                              <span className={`text-[10px] font-mono w-10 shrink-0 text-right tabular-nums ${
+                                marginFloat <= 0.3 ? 'text-green-400' : marginFloat >= 1.0 ? 'text-red-400' : 'text-slate-400'
+                              }`}>
                                 {marginText}
                               </span>
                             </div>
@@ -969,7 +1038,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                     <div className="flex flex-wrap gap-1.5">
                       {excellentCourse && (
                         <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 shadow-[0_0_8px_rgba(234,179,8,0.3)]">
-                          👑 {excellentCourse.courseName}王者 ({excellentCourse.recordStr})
+                          👑 {excellentCourse.courseName}パーフェクト ({excellentCourse.recordStr})
                         </span>
                       )}
                       {favoriteCourse && !excellentCourse && (
@@ -1025,77 +1094,20 @@ export default function HorseDetailModal({ horse, onClose, raceInfo }: Props) {
                     </div>
                   </CyberCard>
 
-                  {/* 競うスコア */}
-                  <CyberCard glowColor={scoreValue >= 60 ? "orange" : "cyan"}>
-                    <div className="flex items-center justify-between mb-2">
-                      <GlowingTitleRight color={scoreValue >= 60 ? "orange" : "cyan"}>
-                        競うスコア
-                      </GlowingTitleRight>
-                      <span 
-                        className={`text-2xl font-black ${
-                          scoreValue >= 70 ? 'text-yellow-300' :
-                          scoreValue >= 60 ? 'text-orange-300' :
-                          scoreValue >= 50 ? 'text-cyan-300' :
-                          scoreValue >= 40 ? 'text-slate-300' : 'text-slate-500'
-                        }`} 
-                        style={{ 
-                          textShadow: scoreValue >= 60 
-                            ? '0 0 15px currentColor, 0 0 30px currentColor' 
-                            : scoreValue >= 50 
-                            ? '0 0 10px currentColor' 
-                            : 'none' 
-                        }}
-                      >
-                        {Math.round(scoreValue)}
-                      </span>
-                    </div>
-                    
-                    {/* スコアバー with パーティクルエフェクト */}
-                    <div className="relative h-3 bg-slate-800 rounded-full overflow-hidden">
-                      <motion.div 
-                        className={`absolute inset-y-0 left-0 rounded-full ${
-                          scoreValue >= 70 ? 'bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500' :
-                          scoreValue >= 60 ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
-                          scoreValue >= 50 ? 'bg-gradient-to-r from-cyan-500 to-blue-500' :
-                          'bg-gradient-to-r from-slate-500 to-slate-600'
-                        }`}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.min(scoreValue, 100)}%` }}
-                        transition={{ duration: 1, delay: 0.3 }}
-                        style={{ 
-                          boxShadow: scoreValue >= 60 
-                            ? '0 0 15px rgba(249, 115, 22, 0.8), 0 0 30px rgba(249, 115, 22, 0.4)' 
-                            : scoreValue >= 50 
-                            ? '0 0 10px rgba(6, 182, 212, 0.6)' 
-                            : 'none' 
-                        }}
-                      />
-                      {/* パーティクルエフェクト */}
-                      {scoreValue >= 50 && (
-                        <>
-                          <motion.div 
-                            className="absolute w-1 h-1 rounded-full bg-white"
-                            style={{ top: '25%', left: `${Math.min(scoreValue - 2, 98)}%` }}
-                            animate={{ 
-                              opacity: [0, 1, 0],
-                              scale: [0.5, 1, 0.5],
-                              x: [0, 10, 20]
-                            }}
-                            transition={{ duration: 1.5, repeat: Infinity, delay: 0.5 }}
-                          />
-                          <motion.div 
-                            className="absolute w-0.5 h-0.5 rounded-full bg-white"
-                            style={{ top: '60%', left: `${Math.min(scoreValue - 1, 99)}%` }}
-                            animate={{ 
-                              opacity: [0, 1, 0],
-                              scale: [0.5, 1.2, 0.5],
-                              x: [0, 15, 30]
-                            }}
-                            transition={{ duration: 2, repeat: Infinity, delay: 1 }}
-                          />
-                        </>
-                      )}
-                    </div>
+                  {/* マイメモ */}
+                  <CyberCard glowColor="cyan">
+                    <GlowingTitleRight color="cyan">
+                      📝 マイメモ
+                    </GlowingTitleRight>
+                    {horse.memo ? (
+                      <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        {horse.memo}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic">
+                        メモが設定されていません
+                      </p>
+                    )}
                   </CyberCard>
                 </div>
               </div>

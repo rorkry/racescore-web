@@ -179,14 +179,18 @@ export default function RaceCardPage() {
   const [pastRaceMemoPopup, setPastRaceMemoPopup] = useState<{ raceKey: string; raceTitle: string; memo: string } | null>(null);
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
+  const [favoriteHorseMemos, setFavoriteHorseMemos] = useState<Map<string, string>>(new Map()); // 馬名 -> メモ
+  const [isPremium, setIsPremium] = useState(false); // プレミアム会員かどうか
 
   // セッション状態
   const { status: sessionStatus } = useSession();
 
-  // お気に入り馬リストを取得
+  // お気に入り馬リストを取得（メモ含む）
   const fetchFavoriteHorses = async () => {
     if (sessionStatus !== 'authenticated') {
       setFavoriteHorses([]);
+      setFavoriteHorseMemos(new Map());
+      setIsPremium(false);
       return;
     }
     try {
@@ -196,6 +200,18 @@ export default function RaceCardPage() {
         // favorite_horsesから馬名を抽出
         const names = (data.favorites || []).map((f: { horse_name: string }) => f.horse_name);
         setFavoriteHorses(names);
+        
+        // メモをMapに保存
+        const memoMap = new Map<string, string>();
+        (data.favorites || []).forEach((f: { horse_name: string; note?: string }) => {
+          if (f.note) {
+            memoMap.set(f.horse_name, f.note);
+          }
+        });
+        setFavoriteHorseMemos(memoMap);
+        
+        // プレミアム状態を保存
+        setIsPremium(!!data.isPremium);
       }
     } catch (err) {
       console.warn('[FavoriteHorses] 取得エラー:', err);
@@ -1643,17 +1659,32 @@ export default function RaceCardPage() {
           </AnimatePresence>
         )}
         
-        {selectedHorseDetail && (
-          <HorseDetailModal
-            horse={selectedHorseDetail}
-            onClose={() => setSelectedHorseDetail(null)}
-            raceInfo={raceCard ? {
-              place: raceCard.raceInfo.place,
-              surface: raceCard.raceInfo.trackType.includes('芝') ? '芝' : 'ダ',
-              distance: parseInt(raceCard.raceInfo.distance) || 0
-            } : undefined}
-          />
-        )}
+        {selectedHorseDetail && (() => {
+          // SagaAI分析結果からタイム評価・ラップ評価を取得
+          const sagaAnalysis = currentSagaAIData?.analyses?.find(
+            a => a.horseNumber === parseInt(selectedHorseDetail.umaban)
+          );
+          // お気に入り馬のメモを取得
+          const horseName = selectedHorseDetail.umamei?.replace(/^[\$\*＄＊\s　]+/, '').trim() || '';
+          const horseMemo = favoriteHorseMemos.get(horseName);
+          // メモをhorseオブジェクトに追加
+          const horseWithMemo = horseMemo ? { ...selectedHorseDetail, memo: horseMemo } : selectedHorseDetail;
+          
+          return (
+            <HorseDetailModal
+              horse={horseWithMemo}
+              onClose={() => setSelectedHorseDetail(null)}
+              raceInfo={raceCard ? {
+                place: raceCard.raceInfo.place,
+                surface: raceCard.raceInfo.trackType.includes('芝') ? '芝' : 'ダ',
+                distance: parseInt(raceCard.raceInfo.distance) || 0
+              } : undefined}
+              timeEvaluation={sagaAnalysis?.timeEvaluation}
+              lapEvaluation={sagaAnalysis?.lapEvaluation}
+              isPremium={isPremium}
+            />
+          );
+        })()}
 
         {/* お気に入り・メモポップアップ */}
         {horseActionTarget && raceCard && (

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { getRawDb } from '@/lib/db';
 import { predictRacePace } from '@/lib/race-pace-predictor';
+import { isPremiumUserByEmail } from '@/lib/premium';
 
 // DBキャッシュから展開予想を取得
 async function getPaceFromDBCache(
@@ -50,6 +52,23 @@ async function savePaceToDBCache(
 
 export async function GET(request: NextRequest) {
   try {
+    // プレミアム会員チェック
+    const session = await auth();
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { error: '認証が必要です', requiresAuth: true },
+        { status: 401 }
+      );
+    }
+
+    const isPremium = await isPremiumUserByEmail(session.user.email);
+    if (!isPremium) {
+      return NextResponse.json(
+        { error: 'プレミアム会員限定機能です', requiresPremium: true },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const year = searchParams.get('year');
     const date = searchParams.get('date');

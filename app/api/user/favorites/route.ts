@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { randomUUID } from 'crypto';
+import { isPremiumUser, getUserLimits, PLAN_LIMITS } from '@/lib/premium';
 
 interface DbUser { id: string; }
-interface DbSubscription { plan: string; status: string; }
 interface DbFavorite {
   id: string;
   horse_name: string;
@@ -12,43 +12,6 @@ interface DbFavorite {
   note: string | null;
   notify_on_race: number;
   created_at: string;
-}
-
-// プラン別の制限
-const LIMITS = {
-  free: {
-    favorites: 20,      // お気に入り上限
-    notifications: 10,  // 通知ON上限
-  },
-  premium: {
-    favorites: 500,
-    notifications: 100,
-  }
-};
-
-// ユーザーがプレミアムかどうか判定
-async function isPremiumUser(db: ReturnType<typeof getDb>, userId: string): Promise<boolean> {
-  // 管理者は自動的にプレミアム扱い
-  const user = await db.prepare(
-    'SELECT role FROM users WHERE id = $1'
-  ).get<{ role: string }>(userId);
-  
-  if (user?.role === 'admin') {
-    return true;
-  }
-
-  // サブスクリプション確認
-  const subscription = await db.prepare(
-    'SELECT plan, status FROM subscriptions WHERE user_id = $1'
-  ).get<DbSubscription>(userId);
-  
-  return subscription?.plan === 'premium' && subscription?.status === 'active';
-}
-
-// ユーザーの制限を取得
-async function getUserLimits(db: ReturnType<typeof getDb>, userId: string) {
-  const isPremium = await isPremiumUser(db, userId);
-  return isPremium ? LIMITS.premium : LIMITS.free;
 }
 
 // お気に入り馬一覧取得
@@ -63,7 +26,8 @@ export async function GET() {
     const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    const limits = await getUserLimits(db, user.id);
+    const isPremium = await isPremiumUser(user.id);
+    const limits = isPremium ? PLAN_LIMITS.premium : PLAN_LIMITS.free;
 
     const favorites = await db.prepare(
       'SELECT id, horse_name, horse_id, note, notify_on_race, created_at FROM favorite_horses WHERE user_id = $1 ORDER BY created_at DESC'
@@ -77,7 +41,8 @@ export async function GET() {
       limit: limits.favorites, 
       notifyLimit: limits.notifications,
       count: favorites.length,
-      notifyCount
+      notifyCount,
+      isPremium  // プレミアム状態を返す
     });
   } catch (error) {
     console.error('Favorites fetch error:', error);
@@ -102,7 +67,7 @@ export async function POST(request: NextRequest) {
     const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    const limits = await getUserLimits(db, user.id);
+    const limits = await getUserLimits(user.id);
 
     // お気に入り上限チェック
     const favoriteCount = await db.prepare(
@@ -111,8 +76,8 @@ export async function POST(request: NextRequest) {
     
     if (favoriteCount && favoriteCount.cnt >= limits.favorites) {
       return NextResponse.json({ 
-        error: `お気に入りは${limits.favorites}頭までです${limits.favorites === LIMITS.free.favorites ? '（プレミアムで500頭まで解除）' : ''}`,
-        needsUpgrade: limits.favorites === LIMITS.free.favorites
+        error: `お気に入りは${limits.favorites}頭までです${limits.favorites === PLAN_LIMITS.free.favorites ? '（プレミアムで500頭まで解除）' : ''}`,
+        needsUpgrade: limits.favorites === PLAN_LIMITS.free.favorites
       }, { status: 400 });
     }
 
@@ -124,8 +89,8 @@ export async function POST(request: NextRequest) {
       
       if (notifyCount && notifyCount.cnt >= limits.notifications) {
         return NextResponse.json({ 
-          error: `通知ONは${limits.notifications}頭までです${limits.notifications === LIMITS.free.notifications ? '（プレミアムで100頭まで解除）' : ''}`,
-          needsUpgrade: limits.notifications === LIMITS.free.notifications
+          error: `通知ONは${limits.notifications}頭までです${limits.notifications === PLAN_LIMITS.free.notifications ? '（プレミアムで100頭まで解除）' : ''}`,
+          needsUpgrade: limits.notifications === PLAN_LIMITS.free.notifications
         }, { status: 400 });
       }
     }
@@ -173,15 +138,15 @@ export async function PATCH(request: NextRequest) {
       
       // 既にONでなければ、上限チェック
       if (!current?.notify_on_race) {
-        const limits = await getUserLimits(db, user.id);
+        const limits = await getUserLimits(user.id);
         const notifyCount = await db.prepare(
           'SELECT COUNT(*) as cnt FROM favorite_horses WHERE user_id = $1 AND notify_on_race = 1'
         ).get<{ cnt: number }>(user.id);
         
         if (notifyCount && notifyCount.cnt >= limits.notifications) {
           return NextResponse.json({ 
-            error: `通知ONは${limits.notifications}頭までです${limits.notifications === LIMITS.free.notifications ? '（プレミアムで100頭まで解除）' : ''}`,
-            needsUpgrade: limits.notifications === LIMITS.free.notifications
+            error: `通知ONは${limits.notifications}頭までです${limits.notifications === PLAN_LIMITS.free.notifications ? '（プレミアムで100頭まで解除）' : ''}`,
+            needsUpgrade: limits.notifications === PLAN_LIMITS.free.notifications
           }, { status: 400 });
         }
       }

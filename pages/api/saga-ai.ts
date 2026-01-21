@@ -3,6 +3,8 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { getServerSession } from 'next-auth';
+import { authOptions } from './auth/[...nextauth]';
 import { getRawDb } from '../../lib/db';
 import { SagaBrain, HorseAnalysisInput, SagaAnalysis, TimeComparisonRace, PastRaceTimeComparison } from '../../lib/saga-ai/saga-brain';
 import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
@@ -11,6 +13,7 @@ import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../util
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { checkRateLimit, normalRateLimit } from '../../lib/rate-limit';
+import { isPremiumUserByEmail } from '../../lib/premium';
 
 // PostgreSQL用のDB型（lib/db-new.tsのRawDatabaseWrapper互換）
 type DbWrapper = ReturnType<typeof getRawDb>;
@@ -982,6 +985,20 @@ export default async function handler(
     return res.status(429).json({ 
       error: 'Too many requests. Please try again later.',
       resetTime: rateLimitResult.resetTime 
+    });
+  }
+
+  // プレミアム会員チェック
+  const session = await getServerSession(req, res, authOptions);
+  if (!session?.user?.email) {
+    return res.status(401).json({ error: '認証が必要です', requiresAuth: true });
+  }
+
+  const isPremium = await isPremiumUserByEmail(session.user.email);
+  if (!isPremium) {
+    return res.status(403).json({ 
+      error: 'プレミアム会員限定機能です', 
+      requiresPremium: true 
     });
   }
 
