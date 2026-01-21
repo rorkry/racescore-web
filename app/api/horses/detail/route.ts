@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     const normalizedName = normalizeHorseName(horseName);
 
-    // umadataから過去走データを取得（umaban追加：indices取得に必要）
+    // umadataから過去走データを取得（umaban追加：indices取得に必要、lap_time追加：ラップ分析に必要）
     const pastRacesRaw = await db.prepare(`
       SELECT 
         race_id,
@@ -178,7 +178,8 @@ export async function GET(request: NextRequest) {
         last_3f,
         horse_weight,
         jockey,
-        popularity
+        popularity,
+        lap_time
       FROM umadata
       WHERE TRIM(horse_name) = $1
          OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
@@ -352,6 +353,7 @@ export async function GET(request: NextRequest) {
             L4F: indices.l4f,
             potential: indices.potential,
             makikaeshi: indices.makikaeshi,
+            lapString: race.lap_time || '',  // ラップ分析に必要
           });
           
           // 時計比較データを取得（直近3走のみ）

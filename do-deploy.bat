@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: horses/detail APIのindices取得をsaga-aiと同じ18桁ID方式に修正"
+git commit -m "fix: horses/detail APIにlapStringを追加してラップ評価を有効化"
 
 echo.
 echo === Pushing to origin ===
