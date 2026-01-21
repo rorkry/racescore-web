@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: 馬分析APIを新旧カラムフォーマット両対応に修正(COLUMN_MAPPING.md準拠)"
+git commit -m "fix: useSearchParamsをSuspenseでラップしてビルドエラー修正"
 
 echo.
 echo === Pushing to origin ===
