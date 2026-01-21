@@ -317,12 +317,10 @@ export async function GET(request: NextRequest) {
     let timeEvaluation: string | undefined;
     let lapEvaluation: string | undefined;
     
-    // プレミアム会員、またはおれAI機能が有効化されている場合にSagaBrain分析を実行
     const shouldRunSagaAI = (isPremium || (enableSagaAI && userId)) && pastRacesRaw.length > 0;
-    console.log('[horses/detail] SagaAI check:', { isPremium, enableSagaAI, userId: !!userId, pastRacesCount: pastRacesRaw.length, shouldRunSagaAI });
     if (shouldRunSagaAI) {
       try {
-        // 過去走を SagaBrain用の形式に変換
+        // 過去走を SagaBrain用の形式に変換（/api/saga-aiと同じ形式）
         const sagaPastRaces: PastRaceInfo[] = [];
         const timeComparisonData: PastRaceTimeComparison[] = [];
         
@@ -330,25 +328,17 @@ export async function GET(request: NextRequest) {
           const race = pastRacesRaw[i];
           const raceId = race.race_id || '';
           const indices = indicesMap[raceId] || {};
-          console.log(`[horses/detail] Race ${i}:`, { 
-            raceId, 
-            hasIndices: Object.keys(indices).length > 0, 
-            t2f: indices.t2f, 
-            l4f: indices.l4f, 
-            lapTime: race.lap_time ? race.lap_time.substring(0, 30) : 'null/empty',
-            last3f: race.last_3f
-          });
           
-          // 距離を数値に変換
           const distanceNum = parseDistance(race.distance || '');
           const surface = race.course_type?.includes('芝') ? '芝' : 'ダ';
+          const finishPosition = parseInt(toHalfWidth(race.finish_position || '99'), 10);
           
           sagaPastRaces.push({
             date: race.date || '',
             place: race.place || '',
             surface: surface as '芝' | 'ダ',
             distance: distanceNum,
-            finishPosition: parseInt(toHalfWidth(race.finish_position || '99'), 10),
+            finishPosition,
             popularity: parseInt(toHalfWidth(race.popularity || '0'), 10),
             margin: race.margin || '',
             trackCondition: race.track_condition || '良',
@@ -358,8 +348,8 @@ export async function GET(request: NextRequest) {
             L4F: indices.l4f,
             potential: indices.potential,
             makikaeshi: indices.makikaeshi,
-            lapString: race.lap_time || '',  // ラップ分析に必要
-            ownLast3F: parseFloat(race.last_3f || '0') || 0,  // 自身の上がり3F
+            lapString: race.lap_time || '',
+            ownLast3F: parseFloat(race.last_3f || '0') || 0,
           });
           
           // 時計比較データを取得（直近3走のみ）
@@ -384,15 +374,15 @@ export async function GET(request: NextRequest) {
           }
         }
         
-        // SagaBrain分析を実行（最新の過去走を「今回のレース」として使用）
+        // SagaBrain分析を実行
         const latestRace = pastRacesRaw[0];
         const latestDistance = parseDistance(latestRace.distance || '');
         const latestSurface = latestRace.course_type?.includes('芝') ? '芝' : 'ダ';
         
         const input: HorseAnalysisInput = {
           horseName: normalizedName,
-          horseNumber: 1, // ダミー
-          waku: 1, // ダミー
+          horseNumber: 1,
+          waku: 1,
           raceDate: latestRace.date || '',
           place: latestRace.place || '',
           surface: latestSurface as '芝' | 'ダ',
@@ -408,18 +398,20 @@ export async function GET(request: NextRequest) {
         console.log('[horses/detail] SagaBrain result:', { 
           hasTimeEval: !!analysis.timeEvaluation,
           hasLapEval: !!analysis.lapEvaluation,
-          timeEval: analysis.timeEvaluation?.substring(0, 50),
-          lapEval: analysis.lapEvaluation?.substring(0, 50),
-          pastRacesCount: sagaPastRaces.length,
-          timeCompCount: timeComparisonData.length,
-          hasIndices: sagaPastRaces.some(r => r.T2F || r.L4F || r.potential)
+          timeEval: analysis.timeEvaluation,
+          lapEval: analysis.lapEvaluation,
+          commentsCount: analysis.comments.length,
+          comments: analysis.comments.slice(0, 3),
+          tagsCount: analysis.tags.length,
+          tags: analysis.tags,
+          pastRacesWithLap: sagaPastRaces.filter(r => r.lapString).length,
+          firstLapString: sagaPastRaces[0]?.lapString?.substring(0, 30),
         });
         
         timeEvaluation = analysis.timeEvaluation;
         lapEvaluation = analysis.lapEvaluation;
       } catch (sagaError) {
         console.error('[horses/detail] SagaBrain analysis error:', sagaError);
-        // 分析エラーは無視して続行
       }
     }
 
