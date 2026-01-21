@@ -10,7 +10,7 @@ import { analyzeRaceLevel, type NextRaceResult, type RaceLevelResult } from '../
 import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
-import { checkRateLimit, getRateLimitIdentifier, normalRateLimit } from '../../lib/rate-limit';
+import { checkRateLimit, normalRateLimit } from '../../lib/rate-limit';
 
 // PostgreSQL用のDB型（lib/db-new.tsのRawDatabaseWrapper互換）
 type DbWrapper = ReturnType<typeof getRawDb>;

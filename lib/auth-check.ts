@@ -1,40 +1,30 @@
 /**
  * 管理者認証チェック用ユーティリティ
+ * Next-AuthのCookieセッションベース認証を使用
  */
 
-import { getDb } from './db';
+import { auth } from './auth';
 
 /**
  * リクエストが管理者からのものかチェック
- * Authorization: Bearer <session_token> 形式
+ * Next-AuthのCookieセッションを使用
  */
-export async function isAdminRequest(request: Request): Promise<boolean> {
+export async function isAdminRequest(request?: Request): Promise<boolean> {
   // 開発環境では常に許可（オプション）
   if (process.env.NODE_ENV === 'development' && process.env.SKIP_AUTH === 'true') {
     return true;
   }
 
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
-    return false;
-  }
-
-  const token = authHeader.slice(7);
-  if (!token) return false;
-
   try {
-    const db = getDb();
+    // Next-Authのセッションを取得
+    const session = await auth();
     
-    // セッショントークンからユーザーを取得
-    const session = await db.prepare(`
-      SELECT s.user_id, u.role 
-      FROM sessions s
-      JOIN users u ON s.user_id = u.id
-      WHERE s.session_token = $1 
-        AND (s.expires IS NULL OR s.expires > NOW())
-    `).get<{ user_id: string; role: string }>(token);
+    if (!session?.user) {
+      return false;
+    }
 
-    return session?.role === 'admin';
+    // ユーザーのroleがadminかチェック
+    return (session.user as any).role === 'admin';
   } catch (error) {
     console.error('Admin check error:', error);
     return false;
