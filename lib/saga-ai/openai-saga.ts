@@ -235,14 +235,22 @@ export class OpenAISaga {
     
     // 環境変数からAPIキーを取得
     const apiKey = process.env.OPENAI_API_KEY;
-    console.log('[OpenAISaga] OPENAI_API_KEY exists:', !!apiKey, 'starts with sk-:', apiKey?.startsWith('sk-'));
+    
+    // 本番環境ではAPIキー情報をログに出力しない
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[OpenAISaga] OPENAI_API_KEY exists:', !!apiKey, 'starts with sk-:', apiKey?.startsWith('sk-'));
+    }
     
     if (apiKey && apiKey.startsWith('sk-') && apiKey.length > 10) {
       this.client = new OpenAI({ apiKey });
       this.isEnabled = true;
-      console.log('[OpenAISaga] OpenAI API enabled');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[OpenAISaga] OpenAI API enabled');
+      }
     } else {
-      console.log('[OpenAISaga] OpenAI API disabled - invalid or missing API key');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[OpenAISaga] OpenAI API disabled - invalid or missing API key');
+      }
     }
   }
   

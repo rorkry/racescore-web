@@ -10,6 +10,7 @@ import { analyzeRaceLevel, type NextRaceResult, type RaceLevelResult } from '../
 import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
+import { checkRateLimit, getRateLimitIdentifier, normalRateLimit } from '../../lib/rate-limit';
 
 // PostgreSQL用のDB型（lib/db-new.tsのRawDatabaseWrapper互換）
 type DbWrapper = ReturnType<typeof getRawDb>;
@@ -969,6 +970,19 @@ export default async function handler(
 ) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // レートリミットチェック
+  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const rateLimitResult = checkRateLimit(`saga-ai:${ip}`, normalRateLimit);
+  
+  if (!rateLimitResult.allowed) {
+    res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining);
+    res.setHeader('X-RateLimit-Reset', rateLimitResult.resetTime);
+    return res.status(429).json({ 
+      error: 'Too many requests. Please try again later.',
+      resetTime: rateLimitResult.resetTime 
+    });
   }
 
   try {

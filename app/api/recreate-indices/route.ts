@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { isAdminRequest } from '@/lib/auth-check';
 
 export async function GET(request: NextRequest) {
-  // シークレットキーチェック
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get('secret');
-  
-  if (secret !== 'recreate-indices-2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // 管理者認証チェック
+  if (!(await isAdminRequest(request))) {
+    const { searchParams } = new URL(request.url);
+    const secret = searchParams.get('secret');
+    const recreateSecret = process.env.RECREATE_SECRET || 'recreate-indices-2026';
+    
+    if (secret !== recreateSecret) {
+      return NextResponse.json({ error: 'Unauthorized - Admin access required' }, { status: 401 });
+    }
   }
 
   try {

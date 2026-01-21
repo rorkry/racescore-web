@@ -1,16 +1,20 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { isAdminRequest } from '@/lib/auth-check';
 
 // このAPIは一度だけ実行する初期化用
-// 本番では削除するか、認証を追加すること
+// 管理者のみアクセス可能
 
 export async function GET(request: Request) {
-  // シークレットキーでアクセス制限
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get('secret');
-  
-  if (secret !== 'init-stride-2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // 管理者認証チェック（初期状態では秘密鍵も許可）
+  if (!(await isAdminRequest(request))) {
+    const { searchParams } = new URL(request.url);
+    const secret = searchParams.get('secret');
+    const initSecret = process.env.INIT_DB_SECRET || 'init-stride-2026';
+    
+    if (secret !== initSecret) {
+      return NextResponse.json({ error: 'Unauthorized - Admin access required' }, { status: 401 });
+    }
   }
 
   const pool = new Pool({

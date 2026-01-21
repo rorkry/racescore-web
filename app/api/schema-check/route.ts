@@ -2,10 +2,12 @@
  * データベーススキーマ確認API
  * 
  * テーブルのカラム一覧を取得して、カラム名の不一致を特定しやすくする
+ * 管理者のみアクセス可能
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { isAdminRequest } from '@/lib/auth-check';
 
 interface ColumnInfo {
   column_name: string;
@@ -19,22 +21,40 @@ interface TableSchema {
   sampleData?: Record<string, unknown>;
 }
 
-// 主要テーブル一覧
-const MAIN_TABLES = [
+// 許可されたテーブル一覧（ホワイトリスト）
+const ALLOWED_TABLES = [
   'umadata',
   'wakujun',
   'indices',
   'users',
   'predictions',
-  'horse_marks',
+  'user_horse_marks',
   'race_memos',
   'baba_memos',
   'saga_analysis_cache',
   'race_pace_cache',
   'race_levels',
+  'accounts',
+  'sessions',
+  'subscriptions',
+  'user_points',
+  'point_history',
+  'user_badges',
+  'login_history',
+  'favorite_horses',
+  'prediction_likes',
+  'notifications',
+  'races',
+  'umaren',
+  'wide',
 ];
 
 export async function GET(req: NextRequest) {
+  // 管理者認証チェック
+  if (!(await isAdminRequest(req))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const db = getDb();
     const { searchParams } = new URL(req.url);
@@ -42,6 +62,13 @@ export async function GET(req: NextRequest) {
 
     // 特定のテーブルのみ取得
     if (tableName) {
+      // ホワイトリスト検証（SQLインジェクション対策）
+      if (!ALLOWED_TABLES.includes(tableName)) {
+        return NextResponse.json({ 
+          error: 'Invalid table name',
+          allowed: ALLOWED_TABLES 
+        }, { status: 400 });
+      }
       const schema = await getTableSchema(db, tableName);
       return NextResponse.json({
         success: true,
@@ -52,7 +79,7 @@ export async function GET(req: NextRequest) {
     // 全テーブルのスキーマを取得
     const schemas: TableSchema[] = [];
     
-    for (const table of MAIN_TABLES) {
+    for (const table of ALLOWED_TABLES) {
       try {
         const schema = await getTableSchema(db, table);
         schemas.push(schema);
@@ -110,6 +137,8 @@ export async function GET(req: NextRequest) {
 }
 
 async function getTableSchema(db: ReturnType<typeof getDb>, tableName: string): Promise<TableSchema> {
+  // 注意: tableNameは呼び出し元でALLOWED_TABLESに対して検証済み
+  
   // PostgreSQLのinformation_schemaからカラム情報を取得
   const columns = await db.prepare(`
     SELECT column_name, data_type, is_nullable
@@ -118,10 +147,11 @@ async function getTableSchema(db: ReturnType<typeof getDb>, tableName: string): 
     ORDER BY ordinal_position
   `).all(tableName) as ColumnInfo[];
 
-  // サンプルデータを1件取得
+  // サンプルデータを1件取得（テーブル名は検証済み）
   let sampleData: Record<string, unknown> | undefined;
   try {
-    const sample = await db.prepare(`SELECT * FROM ${tableName} LIMIT 1`).get();
+    // テーブル名をダブルクォートでエスケープ（PostgreSQL識別子）
+    const sample = await db.prepare(`SELECT * FROM "${tableName}" LIMIT 1`).get();
     sampleData = sample as Record<string, unknown>;
   } catch {
     // サンプル取得失敗は無視

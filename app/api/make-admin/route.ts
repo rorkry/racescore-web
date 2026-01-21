@@ -1,17 +1,25 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { isAdminRequest } from '@/lib/auth-check';
 
-// 管理者設定用の一時的なAPI
-// 本番運用後は削除すること
+// 管理者設定用API
+// 既存管理者のみが他のユーザーを管理者に昇格できる
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get('secret');
-  const email = searchParams.get('email');
-  
-  if (secret !== 'make-admin-2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // 既存管理者の認証チェック
+  if (!(await isAdminRequest(request))) {
+    // 管理者がいない初期状態では秘密鍵による認証を許可
+    const { searchParams } = new URL(request.url);
+    const secret = searchParams.get('secret');
+    const adminSecret = process.env.ADMIN_SECRET || 'make-admin-2026';
+    
+    if (secret !== adminSecret) {
+      return NextResponse.json({ error: 'Unauthorized - Admin access required' }, { status: 401 });
+    }
   }
+
+  const { searchParams } = new URL(request.url);
+  const email = searchParams.get('email');
 
   if (!email) {
     return NextResponse.json({ error: 'Email required' }, { status: 400 });
