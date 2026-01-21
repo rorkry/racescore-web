@@ -330,9 +330,14 @@ export async function GET(request: NextRequest) {
           const race = pastRacesRaw[i];
           const raceId = race.race_id || '';
           const indices = indicesMap[raceId] || {};
-          if (i === 0) {
-            console.log('[horses/detail] Indices check:', { raceId, hasIndices: Object.keys(indices).length > 0, t2f: indices.t2f, l4f: indices.l4f, lapTime: race.lap_time });
-          }
+          console.log(`[horses/detail] Race ${i}:`, { 
+            raceId, 
+            hasIndices: Object.keys(indices).length > 0, 
+            t2f: indices.t2f, 
+            l4f: indices.l4f, 
+            lapTime: race.lap_time ? race.lap_time.substring(0, 30) : 'null/empty',
+            last3f: race.last_3f
+          });
           
           // 距離を数値に変換
           const distanceNum = parseDistance(race.distance || '');
@@ -354,6 +359,7 @@ export async function GET(request: NextRequest) {
             potential: indices.potential,
             makikaeshi: indices.makikaeshi,
             lapString: race.lap_time || '',  // ラップ分析に必要
+            ownLast3F: parseFloat(race.last_3f || '0') || 0,  // 自身の上がり3F
           });
           
           // 時計比較データを取得（直近3走のみ）
