@@ -331,7 +331,7 @@ export async function GET(request: NextRequest) {
           const raceId = race.race_id || '';
           const indices = indicesMap[raceId] || {};
           if (i === 0) {
-            console.log('[horses/detail] Indices check:', { raceId, hasIndices: Object.keys(indices).length > 0, t2f: indices.t2f, l4f: indices.l4f });
+            console.log('[horses/detail] Indices check:', { raceId, hasIndices: Object.keys(indices).length > 0, t2f: indices.t2f, l4f: indices.l4f, lapTime: race.lap_time });
           }
           
           // 距離を数値に変換
