@@ -3,8 +3,7 @@
  */
 
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getServerSession } from 'next-auth';
-import { authOptions } from './auth/[...nextauth]';
+import { getToken } from 'next-auth/jwt';
 import { getRawDb } from '../../lib/db';
 import { SagaBrain, HorseAnalysisInput, SagaAnalysis, TimeComparisonRace, PastRaceTimeComparison } from '../../lib/saga-ai/saga-brain';
 import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
@@ -988,13 +987,13 @@ export default async function handler(
     });
   }
 
-  // プレミアム会員チェック
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) {
+  // プレミアム会員チェック（JWTトークンから取得）
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET || 'stride-secret-key-change-in-production' });
+  if (!token?.email) {
     return res.status(401).json({ error: '認証が必要です', requiresAuth: true });
   }
 
-  const isPremium = await isPremiumUserByEmail(session.user.email);
+  const isPremium = await isPremiumUserByEmail(token.email as string);
   if (!isPremium) {
     return res.status(403).json({ 
       error: 'プレミアム会員限定機能です', 
