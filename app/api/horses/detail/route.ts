@@ -149,6 +149,7 @@ interface PastRace {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const horseName = searchParams.get('name');
+  const enableSagaAI = searchParams.get('enableSagaAI') === 'true';
 
   if (!horseName) {
     return NextResponse.json({ error: 'Horse name is required' }, { status: 400 });
@@ -301,12 +302,13 @@ export async function GET(request: NextRequest) {
       console.log('Auth check skipped:', authError);
     }
 
-    // おれAI分析を実行（プレミアム会員のみ）
+    // おれAI分析を実行（プレミアム会員 または enableSagaAIフラグがオンのログインユーザー）
     let timeEvaluation: string | undefined;
     let lapEvaluation: string | undefined;
     
-    // プレミアム会員の場合のみSagaBrain分析を実行（サーバー負荷軽減）
-    if (isPremium && pastRacesRaw.length > 0) {
+    // プレミアム会員、またはおれAI機能が有効化されている場合にSagaBrain分析を実行
+    const shouldRunSagaAI = (isPremium || (enableSagaAI && userId)) && pastRacesRaw.length > 0;
+    if (shouldRunSagaAI) {
       try {
         // 過去走を SagaBrain用の形式に変換
         const sagaPastRaces: PastRaceInfo[] = [];
@@ -399,9 +401,9 @@ export async function GET(request: NextRequest) {
       hasData: pastRaces.length > 0,
       memo,           // お気に入り馬のメモ
       isFavorite,     // お気に入り登録されているか
-      isPremium,      // プレミアム会員かどうか
-      timeEvaluation, // おれAI タイム評価（プレミアムのみ）
-      lapEvaluation,  // おれAI ラップ評価（プレミアムのみ）
+      isPremium: shouldRunSagaAI,  // おれAI分析が実行されたかどうか
+      timeEvaluation, // おれAI タイム評価
+      lapEvaluation,  // おれAI ラップ評価
     });
   } catch (error) {
     console.error('Horse detail error:', error);

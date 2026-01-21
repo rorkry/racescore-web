@@ -77,6 +77,7 @@ export interface HistoricalLapRecord {
   last4F: number;
   last5F: number;
   winnerName?: string;
+  ageCategory?: '2歳新馬' | '2・3歳' | '古馬';  // 年齢カテゴリ
 }
 
 // 歴代比較結果
@@ -945,6 +946,40 @@ export function analyzePastRaceLap(
 // ========================================
 
 /**
+ * 年齢カテゴリを判定（ラップ歴代比較用）
+ * 
+ * - 2歳新馬戦: class_nameに「2歳」と「新馬」両方を含む
+ * - 2・3歳戦: class_nameに「2歳」「3歳」「新馬」のいずれかを含む（「3歳以上」は除く）
+ * - 古馬戦: 上記に該当しない
+ */
+export function getAgeCategoryForLap(className: string): '2歳新馬' | '2・3歳' | '古馬' {
+  if (!className) return '古馬';
+  
+  // 「3歳以上」「4歳以上」は古馬戦として扱う
+  if (className.includes('3歳以上') || className.includes('4歳以上')) return '古馬';
+  
+  // 2歳新馬戦: 「2歳」と「新馬」両方を含む
+  if (className.includes('2歳') && className.includes('新馬')) return '2歳新馬';
+  
+  // 2・3歳戦: 「2歳」「3歳」「新馬」のいずれかを含む
+  if (className.includes('2歳') || className.includes('3歳') || className.includes('新馬')) return '2・3歳';
+  
+  // それ以外は古馬戦
+  return '古馬';
+}
+
+/**
+ * 年齢カテゴリを表示用ラベルに変換
+ */
+function getAgeCategoryLabel(ageCategory: '2歳新馬' | '2・3歳' | '古馬'): string {
+  switch (ageCategory) {
+    case '2歳新馬': return '2歳新馬戦';
+    case '2・3歳': return '2・3歳戦';
+    case '古馬': return '';  // 古馬戦はラベルなし
+  }
+}
+
+/**
  * 歴代データと比較してランキングを算出
  * 
  * @param currentLapData - 現在のレースのラップデータ
@@ -988,18 +1023,26 @@ export function compareWithHistorical(
   const isHistoricalHighLevel = isTop10Percent4F || isTop10Percent5F;
 
   // コメント生成（2019年以降のデータに基づく）
+  // 年齢カテゴリに応じて表示を変える
+  // - 2歳戦、3歳戦: 「2歳戦」「3歳戦」と表示
+  // - 古馬戦: クラス名なしで表示
   let comment = '';
   const placeDistance = `${condition.place}${condition.surface}${condition.distance}m`;
-  const classLabel = normalizeClassForDisplay(condition.className);
+  const ageCategory = getAgeCategoryForLap(condition.className);
+  const ageCategoryLabel = getAgeCategoryLabel(ageCategory);
+  
+  // 表示形式: 「後半4F 46.5秒は2歳戦/中山芝1200mで'19年以降3位/50レース中」
+  // 古馬戦の場合: 「後半4F 46.5秒は中山芝1200mで'19年以降3位/50レース中」
+  const categoryPrefix = ageCategoryLabel ? `${ageCategoryLabel}/` : '';
 
   if (isTop10Percent4F && last4FTotal >= 10) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last4FRank}位/${last4FTotal}レース中`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last4FRank}位/${last4FTotal}レース中`;
   } else if (isTop10Percent5F && last5FTotal >= 10) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last5FRank}位/${last5FTotal}レース中`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last5FRank}位/${last5FTotal}レース中`;
   } else if (last4FRank <= 3 && last4FTotal >= 5) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last4FRank}位`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last4FRank}位`;
   } else if (last5FRank <= 3 && last5FTotal >= 5) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${classLabel}${placeDistance}で'19年以降${last5FRank}位`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last5FRank}位`;
   }
 
   return {
@@ -1014,33 +1057,6 @@ export function compareWithHistorical(
   };
 }
 
-/**
- * クラス名を表示用に正規化
- */
-function normalizeClassForDisplay(className: string): string {
-  if (!className) return '';
-  
-  const normalized = className.trim();
-  
-  // 新馬・未勝利
-  if (normalized.includes('新馬')) return '新馬戦';
-  if (normalized.includes('未勝利')) return '未勝利';
-  
-  // 〇勝クラス
-  if (normalized.includes('1勝') || normalized.includes('1勝')) return '1勝クラス';
-  if (normalized.includes('2勝') || normalized.includes('2勝')) return '2勝クラス';
-  if (normalized.includes('3勝') || normalized.includes('3勝')) return '3勝クラス';
-  
-  // 重賞
-  if (normalized.includes('G1') || normalized.includes('Ｇ１')) return 'G1';
-  if (normalized.includes('G2') || normalized.includes('Ｇ２')) return 'G2';
-  if (normalized.includes('G3') || normalized.includes('Ｇ３')) return 'G3';
-  
-  // オープン
-  if (normalized.includes('OP') || normalized.includes('オープン') || normalized.includes('ｵｰﾌﾟﾝ')) return 'OP';
-  
-  return normalized;
-}
 
 /**
  * 歴代比較用のラップデータを抽出（勝ち馬のデータ）

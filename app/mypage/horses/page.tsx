@@ -170,7 +170,9 @@ export default function HorseAnalysisPage() {
     setShowSuggestions(false);
     
     try {
-      const res = await fetch(`/api/horses/detail?name=${encodeURIComponent(horseName)}`);
+      // おれAIがオンの場合はenableSagaAI=trueを付与
+      const url = `/api/horses/detail?name=${encodeURIComponent(horseName)}${showSagaAI ? '&enableSagaAI=true' : ''}`
+      const res = await fetch(url);
       if (res.ok) {
         const data: HorseDetail = await res.json();
         

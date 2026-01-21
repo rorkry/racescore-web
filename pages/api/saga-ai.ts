@@ -8,6 +8,7 @@ import { getRawDb } from '../../lib/db';
 import { SagaBrain, HorseAnalysisInput, SagaAnalysis, TimeComparisonRace, PastRaceTimeComparison } from '../../lib/saga-ai/saga-brain';
 import { getOpenAISaga, OpenAISagaResult } from '../../lib/saga-ai/openai-saga';
 import { analyzeRaceLevel, type NextRaceResult, type RaceLevelResult } from '../../lib/saga-ai/level-analyzer';
+import { getAgeCategoryForLap, type HistoricalLapRecord } from '../../lib/saga-ai/lap-analyzer';
 import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
@@ -690,14 +691,14 @@ async function getTimeComparisonRaces(
 }
 
 // 歴代ラップデータ取得（同条件の過去勝ち馬のラップを取得）
-interface HistoricalLapRow {
-  date: string;
-  place: string;
-  className: string;
-  trackCondition: string;
-  last4F: number;
-  last5F: number;
-  winnerName?: string;
+// HistoricalLapRecord は lap-analyzer.ts からインポート
+// getAgeCategoryForLap は lap-analyzer.ts からインポート
+
+/**
+ * 同じ年齢カテゴリかどうか
+ */
+function isSameAgeCategoryForLap(cat1: '2歳新馬' | '2・3歳' | '古馬', cat2: '2歳新馬' | '2・3歳' | '古馬'): boolean {
+  return cat1 === cat2;
 }
 
 async function getHistoricalLapData(
@@ -707,14 +708,15 @@ async function getHistoricalLapData(
   distance: number,
   className: string,
   trackCondition: string
-): Promise<HistoricalLapRow[]> {
+): Promise<HistoricalLapRecord[]> {
   try {
     const normalizedPlace = place.replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
     const distanceStr = `${surface}${distance}`;
 
-    // クラス名を正規化
-    const normalizedClass = normalizeClassForQuery(className);
+    // 年齢カテゴリを判定（2歳新馬、2・3歳、古馬）
+    const ageCategory = getAgeCategoryForLap(className);
 
+    // LIMITなしで全対象レースを取得（2019年以降）
     const query = `
       SELECT 
         date, place, class_name, track_condition, lap_time, horse_name
@@ -726,7 +728,6 @@ async function getHistoricalLapData(
         AND lap_time != ''
         AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-      LIMIT 200
     `;
 
     const rows = await db.query(
@@ -736,12 +737,15 @@ async function getHistoricalLapData(
 
     if (!rows || rows.length === 0) return [];
 
-    const results: HistoricalLapRow[] = [];
+    const results: HistoricalLapRecord[] = [];
 
     for (const row of rows) {
-      // クラスフィルタリング（同じクラスレベルのみ）
-      const rowClassNormalized = normalizeClassForQuery(row.class_name || '');
-      if (!isSameClassLevel(normalizedClass, rowClassNormalized)) continue;
+      // 年齢カテゴリフィルタリング
+      // - 2歳新馬戦は2歳新馬戦同士
+      // - 2・3歳戦は2・3歳戦同士（新馬含む）
+      // - 古馬戦は古馬戦同士
+      const rowAgeCategory = getAgeCategoryForLap(row.class_name || '');
+      if (!isSameAgeCategoryForLap(ageCategory, rowAgeCategory)) continue;
 
       // 馬場状態フィルタリング（比較可能なもののみ）
       if (!isTrackConditionComparableForHistorical(trackCondition, row.track_condition)) continue;
@@ -763,6 +767,7 @@ async function getHistoricalLapData(
         last4F,
         last5F,
         winnerName: row.horse_name || '',
+        ageCategory: rowAgeCategory,
       });
     }
 
@@ -773,13 +778,16 @@ async function getHistoricalLapData(
   }
 }
 
-// クラス名をクエリ用に正規化
-// クラス名から年齢条件を抽出
+/**
+ * クラス名から年齢条件を抽出
+ * おれAI分析の年齢限定戦判定に使用
+ */
 function extractAgeCondition(className: string): string {
   if (!className) return '';
+  // 「3歳以上」「4歳以上」は古馬として先に判定（順序重要）
+  if (className.includes('3歳以上') || className.includes('4歳以上')) return '古馬';
   if (className.includes('2歳') || className.includes('新馬')) return '2歳';
   if (className.includes('3歳')) return '3歳';
-  if (className.includes('4歳以上') || className.includes('3歳以上')) return '古馬';
   return '';
 }
 
@@ -792,28 +800,6 @@ function extractGender(horse: any): '牡' | '牝' | 'セ' | undefined {
   if (seibetsu.includes('牡') || genderAge.includes('牡')) return '牡';
   if (seibetsu.includes('セ') || genderAge.includes('セ')) return 'セ';
   return undefined;
-}
-
-function normalizeClassForQuery(className: string): string {
-  if (!className) return 'unknown';
-  const c = className.trim();
-  
-  if (c.includes('新馬')) return 'newcomer';
-  if (c.includes('未勝利')) return 'maiden';
-  if (c.includes('1勝') || c.includes('1勝') || c.includes('500万')) return '1win';
-  if (c.includes('2勝') || c.includes('2勝') || c.includes('1000万')) return '2win';
-  if (c.includes('3勝') || c.includes('3勝') || c.includes('1600万')) return '3win';
-  if (/G1|Ｇ１|JG1|ＪＧ１/i.test(c)) return 'g1';
-  if (/G2|Ｇ２|JG2|ＪＧ２/i.test(c)) return 'g2';
-  if (/G3|Ｇ３|JG3|ＪＧ３/i.test(c)) return 'g3';
-  if (c.includes('OP') || c.includes('オープン') || c.includes('ｵｰﾌﾟﾝ') || c.includes('重賞')) return 'open';
-  
-  return 'unknown';
-}
-
-// 同じクラスレベルかどうか
-function isSameClassLevel(class1: string, class2: string): boolean {
-  return class1 === class2;
 }
 
 // 馬場状態が歴代比較に適しているか
