@@ -161,10 +161,11 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     const normalizedName = normalizeHorseName(horseName);
 
-    // umadataから過去走データを取得
+    // umadataから過去走データを取得（umaban追加：indices取得に必要）
     const pastRacesRaw = await db.prepare(`
       SELECT 
         race_id,
+        umaban,
         date,
         place,
         course_type,
@@ -196,25 +197,32 @@ export async function GET(request: NextRequest) {
     // indicesとrace_levelsを取得
     const raceIds = pastRacesRaw.map(r => r.race_id).filter(Boolean);
     
-    // indices取得（race_idは馬番付きの18桁形式）
+    // indices取得（race_idは馬番付きの18桁形式: 16桁race_id + 2桁umaban）
     let indicesMap: Record<string, any> = {};
-    if (raceIds.length > 0) {
-      const placeholders = raceIds.map((_, i) => `$${i + 1}`).join(',');
-      const indicesRaw = await db.prepare(`
-        SELECT race_id, potential, makikaeshi
-        FROM indices
-        WHERE SUBSTRING(race_id, 1, 16) IN (${placeholders})
-      `).all<any>(...raceIds);
+    for (const race of pastRacesRaw) {
+      if (!race.race_id || !race.umaban) continue;
       
-      indicesRaw.forEach((idx: any) => {
-        const baseRaceId = idx.race_id?.substring(0, 16);
-        if (baseRaceId) {
-          indicesMap[baseRaceId] = {
-            potential: idx.potential,
-            makikaeshi: idx.makikaeshi
+      // 18桁のフルIDを作成（saga-aiと同じ方式）
+      const umaban = String(race.umaban).replace(/[^\d]/g, '').padStart(2, '0');
+      const fullRaceId = `${race.race_id}${umaban}`;
+      
+      try {
+        const indexData = await db.prepare(`
+          SELECT "L4F", "T2F", potential, makikaeshi
+          FROM indices WHERE race_id = $1
+        `).get<any>(fullRaceId);
+        
+        if (indexData) {
+          indicesMap[race.race_id] = {
+            potential: indexData.potential,
+            makikaeshi: indexData.makikaeshi,
+            t2f: indexData.T2F,
+            l4f: indexData.L4F
           };
         }
-      });
+      } catch (err) {
+        console.error(`[horses/detail] Index lookup error for ${fullRaceId}:`, err);
+      }
     }
 
     // race_levels取得
@@ -321,6 +329,9 @@ export async function GET(request: NextRequest) {
           const race = pastRacesRaw[i];
           const raceId = race.race_id || '';
           const indices = indicesMap[raceId] || {};
+          if (i === 0) {
+            console.log('[horses/detail] Indices check:', { raceId, hasIndices: Object.keys(indices).length > 0, t2f: indices.t2f, l4f: indices.l4f });
+          }
           
           // 距離を数値に変換
           const distanceNum = parseDistance(race.distance || '');
@@ -385,6 +396,16 @@ export async function GET(request: NextRequest) {
         
         const sagaBrain = new SagaBrain();
         const analysis = sagaBrain.analyzeHorse(input);
+        
+        console.log('[horses/detail] SagaBrain result:', { 
+          hasTimeEval: !!analysis.timeEvaluation,
+          hasLapEval: !!analysis.lapEvaluation,
+          timeEval: analysis.timeEvaluation?.substring(0, 50),
+          lapEval: analysis.lapEvaluation?.substring(0, 50),
+          pastRacesCount: sagaPastRaces.length,
+          timeCompCount: timeComparisonData.length,
+          hasIndices: sagaPastRaces.some(r => r.T2F || r.L4F || r.potential)
+        });
         
         timeEvaluation = analysis.timeEvaluation;
         lapEvaluation = analysis.lapEvaluation;

@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "debug: おれAI表示問題のデバッグログを追加"
+git commit -m "fix: horses/detail APIのindices取得をsaga-aiと同じ18桁ID方式に修正"
 
 echo.
 echo === Pushing to origin ===
