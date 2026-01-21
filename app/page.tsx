@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { signIn, useSession } from 'next-auth/react';
+import { signIn, useSession } from './components/Providers';
 
 interface TodayRace {
   place: string;

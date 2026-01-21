@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: useSearchParamsをSuspenseでラップしてビルドエラー修正"
+git commit -m "fix: useSessionを独自Providersからインポートに修正"
 
 echo.
 echo === Pushing to origin ===
