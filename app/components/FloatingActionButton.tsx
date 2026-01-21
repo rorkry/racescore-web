@@ -19,11 +19,29 @@ export interface FeatureToggleEvent {
   isActive: boolean;
 }
 
+// グローバルなアクティブ機能の状態を保持（window経由で共有）
+declare global {
+  interface Window {
+    __activeFeatures?: Set<string>;
+  }
+}
+
 // 機能の表示状態を取得するヘルパー
 export function useFeatureAccess(featureId: string): boolean {
-  const [isActive, setIsActive] = useState(false);
+  // 初期値はグローバル状態から取得（存在すれば）
+  const [isActive, setIsActive] = useState(() => {
+    if (typeof window !== 'undefined' && window.__activeFeatures) {
+      return window.__activeFeatures.has(featureId);
+    }
+    return false;
+  });
 
   useEffect(() => {
+    // マウント時にもグローバル状態を確認
+    if (typeof window !== 'undefined' && window.__activeFeatures) {
+      setIsActive(window.__activeFeatures.has(featureId));
+    }
+
     const handleToggle = (event: CustomEvent<FeatureToggleEvent>) => {
       if (event.detail.featureId === featureId) {
         setIsActive(event.detail.isActive);
@@ -45,7 +63,16 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
   const [isOpen, setIsOpen] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [activeFeatures, setActiveFeatures] = useState<Set<string>>(new Set());
+  const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
+    // 初期状態をグローバル変数からも取得（ページ遷移時の状態保持）
+    if (typeof window !== 'undefined') {
+      if (!window.__activeFeatures) {
+        window.__activeFeatures = new Set();
+      }
+      return window.__activeFeatures;
+    }
+    return new Set();
+  });
   const [isPremium, setIsPremium] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -78,13 +105,17 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
     // 現在の状態を取得して、次の状態を計算
     const willBeActive = !activeFeatures.has(featureId);
     
-    // 状態を更新
+    // 状態を更新（グローバル変数も同期）
     setActiveFeatures(prev => {
       const newSet = new Set(prev);
       if (willBeActive) {
         newSet.add(featureId);
       } else {
         newSet.delete(featureId);
+      }
+      // グローバル変数を更新してuseFeatureAccessと共有
+      if (typeof window !== 'undefined') {
+        window.__activeFeatures = newSet;
       }
       return newSet;
     });
