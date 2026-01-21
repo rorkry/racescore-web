@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { toHalfWidth } from '@/utils/parse-helpers';
 import { auth } from '@/lib/auth';
 import { SagaBrain, HorseAnalysisInput, PastRaceInfo, TimeComparisonRace, PastRaceTimeComparison } from '@/lib/saga-ai/saga-brain';
+import { getAgeCategoryForLap, type HistoricalLapRecord } from '@/lib/saga-ai/lap-analyzer';
 
 // 馬名正規化関数
 function normalizeHorseName(name: string): string {
@@ -11,6 +12,95 @@ function normalizeHorseName(name: string): string {
     .replace(/^[\$\*＄＊\s　]+/, '')
     .replace(/[\s　]+$/, '')
     .trim();
+}
+
+// ラップ文字列をパース
+function parseLapTimesFromWorkString(workStr: string): number[] {
+  if (!workStr) return [];
+  const parts = workStr.split('-').map(s => s.trim());
+  return parts.map(p => parseFloat(p)).filter(n => !isNaN(n) && n > 0);
+}
+
+// 後半NハロンのラップT合計
+function sumLastNLaps(laps: number[], n: number): number {
+  if (laps.length < n) return 0;
+  return laps.slice(-n).reduce((sum, v) => sum + v, 0);
+}
+
+// 馬場状態が比較可能か判定
+function isTrackConditionComparableForHistorical(cond1: string, cond2: string): boolean {
+  const levels: Record<string, number> = { '良': 1, '稍': 2, '稍重': 2, '重': 3, '不': 4, '不良': 4 };
+  const getLevel = (c: string) => {
+    for (const [key, val] of Object.entries(levels)) {
+      if (c.includes(key)) return val;
+    }
+    return 1;
+  };
+  return getLevel(cond1) === getLevel(cond2);
+}
+
+// 年齢カテゴリが同じか判定
+function isSameAgeCategoryForLap(cat1: '2歳新馬' | '2・3歳' | '古馬', cat2: '2歳新馬' | '2・3歳' | '古馬'): boolean {
+  return cat1 === cat2;
+}
+
+// 歴代比較用のラップデータを取得
+async function getHistoricalLapData(
+  db: ReturnType<typeof getDb>,
+  place: string,
+  surface: string,
+  distance: number,
+  className: string,
+  trackCondition: string
+): Promise<HistoricalLapRecord[]> {
+  try {
+    const normalizedPlace = place.replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
+    const distanceStr = `${surface}${distance}`;
+    const ageCategory = getAgeCategoryForLap(className);
+
+    const rows = await db.prepare(`
+      SELECT date, place, class_name, track_condition, lap_time, horse_name
+      FROM umadata
+      WHERE place LIKE $1
+        AND distance = $2
+        AND finish_position = '１'
+        AND lap_time IS NOT NULL
+        AND lap_time != ''
+        AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+    `).all<any>(`%${normalizedPlace}%`, distanceStr);
+
+    if (!rows || rows.length === 0) return [];
+
+    const results: HistoricalLapRecord[] = [];
+    for (const row of rows) {
+      const rowAgeCategory = getAgeCategoryForLap(row.class_name || '');
+      if (!isSameAgeCategoryForLap(ageCategory, rowAgeCategory)) continue;
+      if (!isTrackConditionComparableForHistorical(trackCondition, row.track_condition)) continue;
+
+      const laps = parseLapTimesFromWorkString(row.lap_time);
+      if (laps.length < 4) continue;
+
+      const last4F = sumLastNLaps(laps, 4);
+      const last5F = laps.length >= 5 ? sumLastNLaps(laps, 5) : 0;
+      if (last4F <= 0) continue;
+
+      results.push({
+        date: row.date || '',
+        place: row.place || '',
+        className: row.class_name || '',
+        trackCondition: row.track_condition || '',
+        last4F,
+        last5F,
+        winnerName: row.horse_name || '',
+        ageCategory: rowAgeCategory,
+      });
+    }
+    return results;
+  } catch (e) {
+    console.error('[horses/detail] Error getting historical lap data:', e);
+    return [];
+  }
 }
 
 // 時計比較用のレースを取得
@@ -332,10 +422,24 @@ export async function GET(request: NextRequest) {
           const distanceNum = parseDistance(race.distance || '');
           const surface = race.course_type?.includes('芝') ? '芝' : 'ダ';
           const finishPosition = parseInt(toHalfWidth(race.finish_position || '99'), 10);
+          const normalizedPlace = (race.place || '').replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
+          
+          // 1着レースの場合は歴代比較用データを取得
+          let historicalLapData: HistoricalLapRecord[] | undefined;
+          if (finishPosition === 1 && race.lap_time) {
+            historicalLapData = await getHistoricalLapData(
+              db,
+              normalizedPlace,
+              surface,
+              distanceNum,
+              race.class_name || '',
+              race.track_condition || '良'
+            );
+          }
           
           sagaPastRaces.push({
             date: race.date || '',
-            place: race.place || '',
+            place: normalizedPlace,
             surface: surface as '芝' | 'ダ',
             distance: distanceNum,
             finishPosition,
@@ -350,6 +454,7 @@ export async function GET(request: NextRequest) {
             makikaeshi: indices.makikaeshi,
             lapString: race.lap_time || '',
             ownLast3F: parseFloat(race.last_3f || '0') || 0,
+            historicalLapData,
           });
           
           // 時計比較データを取得（直近3走のみ）
