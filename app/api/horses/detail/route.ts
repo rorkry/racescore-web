@@ -4,7 +4,6 @@ import { toHalfWidth } from '@/utils/parse-helpers';
 import { auth } from '@/lib/auth';
 import { SagaBrain, HorseAnalysisInput, PastRaceInfo, TimeComparisonRace, PastRaceTimeComparison } from '@/lib/saga-ai/saga-brain';
 import { getAgeCategoryForLap, type HistoricalLapRecord } from '@/lib/saga-ai/lap-analyzer';
-import { getCornerPositions } from '@/utils/parse-helpers';
 
 // 馬名正規化関数
 function normalizeHorseName(name: string): string {
@@ -59,14 +58,14 @@ async function getHistoricalLapData(
     const distanceStr = `${surface}${distance}`;
     const ageCategory = getAgeCategoryForLap(className);
 
+    // 新旧フォーマット両対応: lap_time または work_1s
     const rows = await db.prepare(`
-      SELECT date, place, class_name, track_condition, lap_time, horse_name
+      SELECT date, place, class_name, track_condition, lap_time, work_1s, horse_name
       FROM umadata
       WHERE place LIKE $1
         AND distance = $2
         AND finish_position = '１'
-        AND lap_time IS NOT NULL
-        AND lap_time != ''
+        AND (lap_time IS NOT NULL AND lap_time != '' OR work_1s IS NOT NULL AND work_1s != '')
         AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
     `).all<any>(`%${normalizedPlace}%`, distanceStr);
@@ -79,7 +78,9 @@ async function getHistoricalLapData(
       if (!isSameAgeCategoryForLap(ageCategory, rowAgeCategory)) continue;
       if (!isTrackConditionComparableForHistorical(trackCondition, row.track_condition)) continue;
 
-      const laps = parseLapTimesFromWorkString(row.lap_time);
+      // ラップタイム: 新=lap_time, 旧=work_1s
+      const lapTimeStr = row.lap_time || row.work_1s || '';
+      const laps = parseLapTimesFromWorkString(lapTimeStr);
       if (laps.length < 4) continue;
 
       const last4F = sumLastNLaps(laps, 4);
@@ -253,33 +254,9 @@ export async function GET(request: NextRequest) {
     const normalizedName = normalizeHorseName(horseName);
 
     // umadataから過去走データを取得（umaban追加：indices取得に必要、lap_time追加：ラップ分析に必要）
+    // SELECT * で全カラムを取得（新旧フォーマット両対応）
     const pastRacesRaw = await db.prepare(`
-      SELECT 
-        race_id,
-        umaban,
-        date,
-        place,
-        course_type,
-        distance,
-        class_name,
-        finish_position,
-        finish_time,
-        margin,
-        track_condition,
-        last_3f,
-        horse_weight,
-        jockey,
-        popularity,
-        lap_time,
-        corner_2,
-        corner_3,
-        corner_4,
-        passing_order,
-        corner_4_position,
-        field_size,
-        number_of_horses,
-        index_value
-      FROM umadata
+      SELECT * FROM umadata
       WHERE TRIM(horse_name) = $1
          OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
@@ -300,10 +277,12 @@ export async function GET(request: NextRequest) {
     // indices取得（race_idは馬番付きの18桁形式: 16桁race_id + 2桁umaban）
     let indicesMap: Record<string, any> = {};
     for (const race of pastRacesRaw) {
-      if (!race.race_id || !race.umaban) continue;
+      // 馬番は新旧フォーマット両対応
+      const horseNum = race.umaban || race.horse_number || '';
+      if (!race.race_id || !horseNum) continue;
       
       // 18桁のフルIDを作成（saga-aiと同じ方式）
-      const umaban = String(race.umaban).replace(/[^\d]/g, '').padStart(2, '0');
+      const umaban = String(horseNum).replace(/[^\d]/g, '').padStart(2, '0');
       const fullRaceId = `${race.race_id}${umaban}`;
       
       try {
@@ -429,16 +408,26 @@ export async function GET(request: NextRequest) {
           const raceId = race.race_id || '';
           const indices = indicesMap[raceId] || {};
           
-          const distanceNum = parseDistance(race.distance || '');
-          const surface = race.course_type?.includes('芝') ? '芝' : 'ダ';
+          // === 新旧フォーマット両対応のカラム参照（COLUMN_MAPPING.md準拠）===
+          const distanceStr = race.distance || '';
+          const distanceNum = parseDistance(distanceStr);
+          // surface: 新フォーマットはcourse_type、旧はdistanceに含まれる
+          const surface = (race.course_type?.includes('芝') || distanceStr.includes('芝')) ? '芝' : 'ダ';
           const finishPosition = parseInt(toHalfWidth(race.finish_position || '99'), 10);
           const normalizedPlace = (race.place || '').replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
+          // ラップタイム: 新=lap_time, 旧=work_1s
+          const lapString = race.lap_time || race.work_1s || '';
+          // コーナー4位置: 新=corner_4_position, 旧=corner_4
+          const corner4Raw = race.corner_4_position || race.corner_4 || '';
+          const corner4 = corner4Raw ? parseInt(toHalfWidth(String(corner4Raw)), 10) : undefined;
+          // 頭数: 新=field_size, 旧=number_of_horses
+          const totalHorses = parseInt(race.field_size || race.number_of_horses || '16', 10);
           
-          console.log(`[horses/detail] Race ${i+1}: ${race.date} ${normalizedPlace}${surface}${distanceNum}m 着順:${finishPosition} ラップ:${race.lap_time ? 'あり' : 'なし'}`);
+          console.log(`[horses/detail] Race ${i+1}: ${race.date} ${normalizedPlace}${surface}${distanceNum}m 着順:${finishPosition} ラップ:${lapString ? 'あり' : 'なし'}`);
           
           // 1着レースの場合は歴代比較用データを取得
           let historicalLapData: HistoricalLapRecord[] | undefined;
-          if (finishPosition === 1 && race.lap_time) {
+          if (finishPosition === 1 && lapString) {
             console.log(`[horses/detail] Getting historical data for: ${normalizedPlace}${surface}${distanceNum}m`);
             historicalLapData = await getHistoricalLapData(
               db,
@@ -450,10 +439,6 @@ export async function GET(request: NextRequest) {
             );
             console.log(`[horses/detail] Historical data count: ${historicalLapData?.length || 0}`);
           }
-          
-          // コーナー位置を取得（/api/saga-aiと同じ方式）
-          const corners = getCornerPositions(race);
-          const totalHorses = parseInt(race.field_size || race.number_of_horses || '16', 10);
           
           sagaPastRaces.push({
             date: race.date || '',
@@ -470,15 +455,11 @@ export async function GET(request: NextRequest) {
             L4F: indices.l4f,
             potential: indices.potential,
             makikaeshi: indices.makikaeshi,
-            lapString: race.lap_time || '',
+            lapString,
             ownLast3F: parseFloat(race.last_3f || '0') || 0,
             historicalLapData,
-            // コーナー位置と出走頭数（/api/saga-aiと同じ）
-            corner2: corners.corner2,
-            corner3: corners.corner3,
-            corner4: corners.corner4,
+            corner4,
             totalHorses,
-            corner4Wide: parseInt(race.index_value || '2', 10) || 2,
           });
           
           // 時計比較データを取得（直近3走のみ）
