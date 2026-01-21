@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: 馬分析ページに歴代比較データとデバッグログ追加"
+git commit -m "fix: 馬分析ページにコーナー位置・出走頭数を追加してレースカードと統一"
 
 echo.
 echo === Pushing to origin ===

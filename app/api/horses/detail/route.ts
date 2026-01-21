@@ -4,6 +4,7 @@ import { toHalfWidth } from '@/utils/parse-helpers';
 import { auth } from '@/lib/auth';
 import { SagaBrain, HorseAnalysisInput, PastRaceInfo, TimeComparisonRace, PastRaceTimeComparison } from '@/lib/saga-ai/saga-brain';
 import { getAgeCategoryForLap, type HistoricalLapRecord } from '@/lib/saga-ai/lap-analyzer';
+import { getCornerPositions } from '@/utils/parse-helpers';
 
 // 馬名正規化関数
 function normalizeHorseName(name: string): string {
@@ -269,7 +270,15 @@ export async function GET(request: NextRequest) {
         horse_weight,
         jockey,
         popularity,
-        lap_time
+        lap_time,
+        corner_2,
+        corner_3,
+        corner_4,
+        passing_order,
+        corner_4_position,
+        field_size,
+        number_of_horses,
+        index_value
       FROM umadata
       WHERE TRIM(horse_name) = $1
          OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
@@ -442,6 +451,10 @@ export async function GET(request: NextRequest) {
             console.log(`[horses/detail] Historical data count: ${historicalLapData?.length || 0}`);
           }
           
+          // コーナー位置を取得（/api/saga-aiと同じ方式）
+          const corners = getCornerPositions(race);
+          const totalHorses = parseInt(race.field_size || race.number_of_horses || '16', 10);
+          
           sagaPastRaces.push({
             date: race.date || '',
             place: normalizedPlace,
@@ -460,6 +473,12 @@ export async function GET(request: NextRequest) {
             lapString: race.lap_time || '',
             ownLast3F: parseFloat(race.last_3f || '0') || 0,
             historicalLapData,
+            // コーナー位置と出走頭数（/api/saga-aiと同じ）
+            corner2: corners.corner2,
+            corner3: corners.corner3,
+            corner4: corners.corner4,
+            totalHorses,
+            corner4Wide: parseInt(race.index_value || '2', 10) || 2,
           });
           
           // 時計比較データを取得（直近3走のみ）
