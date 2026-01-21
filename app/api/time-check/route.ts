@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getRawDb } from '../../../lib/db-new';
+import { getRawDb } from '../../../lib/db';
 import { toHalfWidth } from '../../../utils/parse-helpers';
 
 interface TimeCheckResult {

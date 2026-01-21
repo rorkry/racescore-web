@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { router, publicProcedure } from './trpc';
-import { getRawDb } from '../lib/db-new';
+import { getRawDb } from '../lib/db';
 
 // CSVの1行分のデータ型（50カラム）
 const UmadataRowSchema = z.object({
