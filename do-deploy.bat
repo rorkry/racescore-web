@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: horses/detail APIにlapStringを追加してラップ評価を有効化"
+git commit -m "fix: 馬分析ページに歴代比較データとデバッグログ追加"
 
 echo.
 echo === Pushing to origin ===

@@ -414,6 +414,7 @@ export async function GET(request: NextRequest) {
         const sagaPastRaces: PastRaceInfo[] = [];
         const timeComparisonData: PastRaceTimeComparison[] = [];
         
+        console.log(`[horses/detail] pastRacesRaw count: ${pastRacesRaw.length}`);
         for (let i = 0; i < Math.min(5, pastRacesRaw.length); i++) {
           const race = pastRacesRaw[i];
           const raceId = race.race_id || '';
@@ -424,9 +425,12 @@ export async function GET(request: NextRequest) {
           const finishPosition = parseInt(toHalfWidth(race.finish_position || '99'), 10);
           const normalizedPlace = (race.place || '').replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
           
+          console.log(`[horses/detail] Race ${i+1}: ${race.date} ${normalizedPlace}${surface}${distanceNum}m 着順:${finishPosition} ラップ:${race.lap_time ? 'あり' : 'なし'}`);
+          
           // 1着レースの場合は歴代比較用データを取得
           let historicalLapData: HistoricalLapRecord[] | undefined;
           if (finishPosition === 1 && race.lap_time) {
+            console.log(`[horses/detail] Getting historical data for: ${normalizedPlace}${surface}${distanceNum}m`);
             historicalLapData = await getHistoricalLapData(
               db,
               normalizedPlace,
@@ -435,6 +439,7 @@ export async function GET(request: NextRequest) {
               race.class_name || '',
               race.track_condition || '良'
             );
+            console.log(`[horses/detail] Historical data count: ${historicalLapData?.length || 0}`);
           }
           
           sagaPastRaces.push({
