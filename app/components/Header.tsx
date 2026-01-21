@@ -136,7 +136,7 @@ export default function Header() {
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                         >
                           <span className="size-5 flex items-center justify-center text-gray-400">🐴</span>
-                          マイ馬
+                          馬分析
                         </Link>
 
                         <Link 
