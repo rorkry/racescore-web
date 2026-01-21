@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: useSessionを独自Providersからインポートに修正"
+git commit -m "fix: getHistoricalLapDataからwork_1sカラム参照を削除(DBに存在しない)"
 
 echo.
 echo === Pushing to origin ===

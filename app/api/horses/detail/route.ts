@@ -58,14 +58,15 @@ async function getHistoricalLapData(
     const distanceStr = `${surface}${distance}`;
     const ageCategory = getAgeCategoryForLap(className);
 
-    // 新旧フォーマット両対応: lap_time または work_1s
+    // /api/saga-ai と同じクエリ（lap_timeのみ）
     const rows = await db.prepare(`
-      SELECT date, place, class_name, track_condition, lap_time, work_1s, horse_name
+      SELECT date, place, class_name, track_condition, lap_time, horse_name
       FROM umadata
       WHERE place LIKE $1
         AND distance = $2
         AND finish_position = '１'
-        AND (lap_time IS NOT NULL AND lap_time != '' OR work_1s IS NOT NULL AND work_1s != '')
+        AND lap_time IS NOT NULL
+        AND lap_time != ''
         AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
     `).all<any>(`%${normalizedPlace}%`, distanceStr);
@@ -78,9 +79,7 @@ async function getHistoricalLapData(
       if (!isSameAgeCategoryForLap(ageCategory, rowAgeCategory)) continue;
       if (!isTrackConditionComparableForHistorical(trackCondition, row.track_condition)) continue;
 
-      // ラップタイム: 新=lap_time, 旧=work_1s
-      const lapTimeStr = row.lap_time || row.work_1s || '';
-      const laps = parseLapTimesFromWorkString(lapTimeStr);
+      const laps = parseLapTimesFromWorkString(row.lap_time);
       if (laps.length < 4) continue;
 
       const last4F = sumLastNLaps(laps, 4);
