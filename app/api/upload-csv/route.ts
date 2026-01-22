@@ -193,46 +193,55 @@ async function importWakujun(client: any, data: any[]): Promise<{ count: number;
 }
 
 /**
- * 新umadataフォーマット（39列）
- * 0: race_id - レースID(馬番号あり)
- * 1: date - 日付
+ * umadataフォーマット（47列） - umadata.csv形式
+ * 0: race_id - レースID(新/馬番無)
+ * 1: date - 日付(yyyy.mm.dd)
  * 2: place - 場所
- * 3: course_type - 内/外回り
- * 4: distance - 距離(芝2200等)
- * 5: class_name - クラス
+ * 3: course_type - 芝(内・外)
+ * 4: distance - 距離
+ * 5: class_name - クラス名
  * 6: race_name - レース名
- * 7: gender_limit - 牝馬限定フラグ
- * 8: age_limit - 2歳/3歳限定
- * 9: waku - 枠
+ * 7: gender_limit - 性別限定
+ * 8: age_limit - 年齢限定
+ * 9: waku - 枠番
  * 10: umaban - 馬番
- * 11: horse_name - 馬名
- * 12: corner_4_position - 4角位置
+ * 11: horse_name - 馬名S
+ * 12: index_value - 指数（4角位置として保存）
  * 13: track_condition - 馬場状態
  * 14: field_size - 頭数
  * 15: popularity - 人気
  * 16: finish_position - 着順
- * 17: last_3f - 上がり3F
+ * 17: last_3f - 上り3F
  * 18: weight_carried - 斤量
  * 19: horse_weight - 馬体重
  * 20: weight_change - 馬体重増減
  * 21: finish_time - 走破タイム
- * 22: race_count - 休み明けから何戦目
+ * 22: race_count - 休み明け～戦目
  * 23: margin - 着差
  * 24: win_odds - 単勝オッズ
- * 25: place_odds - 複勝オッズ
- * 26: win_payout - 単勝配当
- * 27: place_payout - 複勝配当
- * 28: rpci - RPCI
- * 29: pci - PCI
- * 30: pci3 - PCI3
- * 31: horse_mark - 印
- * 32: passing_order - 通過順
- * 33: gender_age - 性齢(牡3等)
- * 34: jockey - 騎手
- * 35: trainer - 調教師
- * 36: sire - 種牡馬
- * 37: dam - 母馬名
- * 38: lap_time - ラップタイム
+ * 25: place_odds_low - 複勝オッズ下限
+ * 26: place_odds_high - 複勝オッズ上限
+ * 27: win_payout - 単勝配当
+ * 28: place_payout - 複勝配当
+ * 29: rpci - RPCI
+ * 30: pci - PCI
+ * 31: good_run - 好走
+ * 32: pci3 - PCI3
+ * 33: horse_mark - 馬印
+ * 34: corner_1 - 1角
+ * 35: corner_2 - 2角
+ * 36: corner_3 - 3角
+ * 37: corner_4 - 4角
+ * 38: gender - 性別
+ * 39: age - 年齢
+ * 40: jockey - 騎手
+ * 41: multi_entry - 多頭出し
+ * 42: affiliation - 所属
+ * 43: trainer - 調教師
+ * 44: sire - 種牡馬
+ * 45: dam - 母馬
+ * 46: lap_time - ワーク1（ラップタイム）
+ * 47: work_2 - ワーク2
  */
 async function importUmadata(client: any, data: any[]): Promise<{ count: number; inserted: number }> {
   console.log(`[importUmadata] 開始: ${data.length}行`);
@@ -254,7 +263,8 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
       const batch = data.slice(i, i + batchSize);
       
       for (const row of batch) {
-        if (Array.isArray(row) && row.length >= 39) {
+        // 47列または48列のCSVに対応
+        if (Array.isArray(row) && row.length >= 47) {
           const rowId = `row_${count}`;
           try {
             // SAVEPOINTを使って、失敗した行だけロールバックできるようにする
@@ -266,57 +276,68 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
               INSERT INTO umadata (
                 race_id, date, place, course_type, distance, class_name, race_name,
                 gender_limit, age_limit, waku, umaban, horse_name,
-                corner_4_position, track_condition, field_size, popularity,
+                index_value, track_condition, field_size, popularity,
                 finish_position, last_3f, weight_carried, horse_weight, weight_change,
-                finish_time, race_count, margin, win_odds, place_odds,
-                win_payout, place_payout, rpci, pci, pci3, horse_mark,
-                passing_order, gender_age, jockey, trainer, sire, dam, lap_time
+                finish_time, race_count, margin, win_odds, place_odds_low,
+                place_odds_high, win_payout, place_payout, rpci, pci, good_run,
+                pci3, horse_mark, corner_1, corner_2, corner_3, corner_4,
+                gender, age, jockey, multi_entry, affiliation, trainer, sire, dam, lap_time, work_2
               ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-                $31, $32, $33, $34, $35, $36, $37, $38, $39
+                $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+                $41, $42, $43, $44, $45, $46, $47, $48
               )
             `, [
-              (row[0] || '').trim(),
-              (row[1] || '').trim(),
-              (row[2] || '').trim(),
-              (row[3] || '').trim(),
-              (row[4] || '').trim(),
-              (row[5] || '').trim(),
-              (row[6] || '').trim(),
-              (row[7] || '').trim(),
-              (row[8] || '').trim(),
-              (row[9] || '').trim(),
-              (row[10] || '').trim(),
-              horseName,
-              (row[12] || '').trim(),
-              (row[13] || '').trim(),
-              (row[14] || '').trim(),
-              (row[15] || '').trim(),
-              (row[16] || '').trim(),
-              (row[17] || '').trim(),
-              (row[18] || '').trim(),
-              (row[19] || '').trim(),
-              (row[20] || '').trim(),
-              (row[21] || '').trim(),
-              (row[22] || '').trim(),
-              (row[23] || '').trim(),
-              (row[24] || '').trim(),
-              (row[25] || '').trim(),
-              (row[26] || '').trim(),
-              (row[27] || '').trim(),
-              (row[28] || '').trim(),
-              (row[29] || '').trim(),
-              (row[30] || '').trim(),
-              (row[31] || '').trim(),
-              (row[32] || '').trim(),
-              (row[33] || '').trim(),
-              (row[34] || '').trim(),
-              (row[35] || '').trim(),
-              (row[36] || '').trim(),
-              (row[37] || '').trim(),
-              (row[38] || '').trim()
+              (row[0] || '').trim(),   // race_id
+              (row[1] || '').trim(),   // date
+              (row[2] || '').trim(),   // place
+              (row[3] || '').trim(),   // course_type
+              (row[4] || '').trim(),   // distance
+              (row[5] || '').trim(),   // class_name
+              (row[6] || '').trim(),   // race_name
+              (row[7] || '').trim(),   // gender_limit
+              (row[8] || '').trim(),   // age_limit
+              (row[9] || '').trim(),   // waku
+              (row[10] || '').trim(),  // umaban
+              horseName,               // horse_name
+              (row[12] || '').trim(),  // index_value
+              (row[13] || '').trim(),  // track_condition
+              (row[14] || '').trim(),  // field_size
+              (row[15] || '').trim(),  // popularity
+              (row[16] || '').trim(),  // finish_position
+              (row[17] || '').trim(),  // last_3f
+              (row[18] || '').trim(),  // weight_carried
+              (row[19] || '').trim(),  // horse_weight
+              (row[20] || '').trim(),  // weight_change
+              (row[21] || '').trim(),  // finish_time
+              (row[22] || '').trim(),  // race_count
+              (row[23] || '').trim(),  // margin
+              (row[24] || '').trim(),  // win_odds
+              (row[25] || '').trim(),  // place_odds_low
+              (row[26] || '').trim(),  // place_odds_high
+              (row[27] || '').trim(),  // win_payout
+              (row[28] || '').trim(),  // place_payout
+              (row[29] || '').trim(),  // rpci
+              (row[30] || '').trim(),  // pci
+              (row[31] || '').trim(),  // good_run
+              (row[32] || '').trim(),  // pci3
+              (row[33] || '').trim(),  // horse_mark
+              (row[34] || '').trim(),  // corner_1
+              (row[35] || '').trim(),  // corner_2
+              (row[36] || '').trim(),  // corner_3
+              (row[37] || '').trim(),  // corner_4
+              (row[38] || '').trim(),  // gender
+              (row[39] || '').trim(),  // age
+              (row[40] || '').trim(),  // jockey
+              (row[41] || '').trim(),  // multi_entry
+              (row[42] || '').trim(),  // affiliation
+              (row[43] || '').trim(),  // trainer
+              (row[44] || '').trim(),  // sire
+              (row[45] || '').trim(),  // dam
+              (row[46] || '').trim(),  // lap_time
+              (row[47] || '').trim()   // work_2
             ]);
             
             await client.query(`RELEASE SAVEPOINT ${rowId}`);

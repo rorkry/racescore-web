@@ -28,58 +28,49 @@ export async function GET(request: Request) {
     // 既存テーブルを削除
     await client.query('DROP TABLE IF EXISTS umadata CASCADE');
     
-    // 新フォーマットでテーブル作成（47列）
+    // 新フォーマットでテーブル作成（39列 - upload-csvと統一）
     await client.query(`
       CREATE TABLE umadata (
         id SERIAL PRIMARY KEY,
-        race_id TEXT,              -- 0: レースID(新/馬番無)
-        date TEXT,                 -- 1: 日付(yyyy.mm.dd)
+        race_id TEXT,              -- 0: レースID
+        date TEXT,                 -- 1: 日付
         place TEXT,                -- 2: 場所
-        course_type TEXT,          -- 3: 芝(内・外)
-        distance TEXT,             -- 4: 距離
-        class_name TEXT,           -- 5: クラス名
+        course_type TEXT,          -- 3: 内/外回り
+        distance TEXT,             -- 4: 距離(芝2200等)
+        class_name TEXT,           -- 5: クラス
         race_name TEXT,            -- 6: レース名
-        gender_limit TEXT,         -- 7: 性別限定
-        age_limit TEXT,            -- 8: 年齢限定
-        waku TEXT,                 -- 9: 枠番
+        gender_limit TEXT,         -- 7: 牝馬限定フラグ
+        age_limit TEXT,            -- 8: 2歳/3歳限定
+        waku TEXT,                 -- 9: 枠
         umaban TEXT,               -- 10: 馬番
-        horse_name TEXT,           -- 11: 馬名S
-        index_value TEXT,          -- 12: 指数（4角位置）
+        horse_name TEXT,           -- 11: 馬名
+        corner_4_position TEXT,    -- 12: 4角位置
         track_condition TEXT,      -- 13: 馬場状態
         field_size TEXT,           -- 14: 頭数
         popularity TEXT,           -- 15: 人気
         finish_position TEXT,      -- 16: 着順
-        last_3f TEXT,              -- 17: 上り3F
+        last_3f TEXT,              -- 17: 上がり3F
         weight_carried TEXT,       -- 18: 斤量
         horse_weight TEXT,         -- 19: 馬体重
         weight_change TEXT,        -- 20: 馬体重増減
         finish_time TEXT,          -- 21: 走破タイム
-        race_count TEXT,           -- 22: 休み明け～戦目
+        race_count TEXT,           -- 22: 休み明けから何戦目
         margin TEXT,               -- 23: 着差
         win_odds TEXT,             -- 24: 単勝オッズ
-        place_odds_low TEXT,       -- 25: 複勝オッズ下限
-        place_odds_high TEXT,      -- 26: 複勝オッズ上限
-        win_payout TEXT,           -- 27: 単勝配当
-        place_payout TEXT,         -- 28: 複勝配当
-        rpci TEXT,                 -- 29: RPCI
-        pci TEXT,                  -- 30: PCI
-        good_run TEXT,             -- 31: 好走
-        pci3 TEXT,                 -- 32: PCI3
-        horse_mark TEXT,           -- 33: 馬印
-        corner_1 TEXT,             -- 34: 1角
-        corner_2 TEXT,             -- 35: 2角
-        corner_3 TEXT,             -- 36: 3角
-        corner_4 TEXT,             -- 37: 4角
-        gender TEXT,               -- 38: 性別
-        age TEXT,                  -- 39: 年齢
-        jockey TEXT,               -- 40: 騎手
-        multi_entry TEXT,          -- 41: 多頭出し
-        affiliation TEXT,          -- 42: 所属
-        trainer TEXT,              -- 43: 調教師
-        sire TEXT,                 -- 44: 種牡馬
-        dam TEXT,                  -- 45: 母馬
-        lap_time TEXT,             -- 46: ワーク1（ラップタイム）
-        work_2 TEXT                -- 47: ワーク2
+        place_odds TEXT,           -- 25: 複勝オッズ
+        win_payout TEXT,           -- 26: 単勝配当
+        place_payout TEXT,         -- 27: 複勝配当
+        rpci TEXT,                 -- 28: RPCI
+        pci TEXT,                  -- 29: PCI
+        pci3 TEXT,                 -- 30: PCI3
+        horse_mark TEXT,           -- 31: 印
+        passing_order TEXT,        -- 32: 通過順
+        gender_age TEXT,           -- 33: 性齢(牡3等)
+        jockey TEXT,               -- 34: 騎手
+        trainer TEXT,              -- 35: 調教師
+        sire TEXT,                 -- 36: 種牡馬
+        dam TEXT,                  -- 37: 母馬名
+        lap_time TEXT              -- 38: ラップタイム
       )
     `);
 
