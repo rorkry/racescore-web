@@ -1531,16 +1531,15 @@ export default function RaceCardPage() {
                   <div className="w-3 h-0.5 bg-slate-300 rounded-full ml-0.5"></div>
                   <div className="w-2 h-0.5 bg-slate-200 rounded-full ml-1"></div>
                 </div>
-                <table className="w-full border-collapse min-w-[500px] sm:min-w-0">
+                <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">馬番</th>
-                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-10 font-semibold">印</th>
-                      <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-10 font-semibold" title="お気に入り">★</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-8 sm:w-10 font-semibold">馬番</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-10 sm:w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-8 sm:w-10 font-semibold">印</th>
+                      <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-6 sm:w-10 font-semibold" title="お気に入り">★</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
-                      <th className="border-2 border-emerald-800 px-2 sm:px-3 py-2 sm:py-3 font-semibold">騎手</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-12 font-semibold">斤量</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold whitespace-nowrap">騎手<span className="hidden sm:inline">(斤量)</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1644,18 +1643,16 @@ export default function RaceCardPage() {
                                 </td>
                               );
                             })()}
-                            {/* 騎手 */}
-                            <td className="border border-slate-300 px-2 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-xs sm:text-sm">
-                              {horse.kishu.trim()}
-                            </td>
-                            {/* 斤量 */}
-                            <td className="border border-slate-300 px-1 sm:px-2 py-2 text-center text-slate-700 text-xs sm:text-sm tabular-nums">
-                              {horse.kinryo.trim()}
+                            {/* 騎手(斤量) */}
+                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm">
+                              <span className="sm:hidden">{horse.kishu.trim().slice(0, 3)}</span>
+                              <span className="hidden sm:inline">{horse.kishu.trim()}</span>
+                              <span className="text-slate-500">({horse.kinryo.trim()})</span>
                             </td>
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-100">
+                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-100">
                                 <div className="text-xs sm:text-sm font-bold mb-2 text-emerald-700">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>
