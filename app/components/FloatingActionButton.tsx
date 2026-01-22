@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import AIChatPanel from './AIChatPanel';
 
 interface MenuItem {
@@ -119,7 +119,6 @@ function saveFeatures(features: Set<string>) {
 
 export default function FloatingActionButton({ menuItems = [], raceContext: propRaceContext }: FloatingActionButtonProps) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   
   const [isOpen, setIsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -219,27 +218,40 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   }, [activeFeatures]);
 
   // URLパラメータからraceContextを取得（/cardページの場合）
-  const raceContext = React.useMemo<RaceContext | null>(() => {
-    if (propRaceContext) return propRaceContext;
+  const [raceContext, setRaceContext] = useState<RaceContext | null>(propRaceContext || null);
+  
+  useEffect(() => {
+    if (propRaceContext) {
+      setRaceContext(propRaceContext);
+      return;
+    }
     
     // /card ページでない場合はnull
-    if (!pathname?.startsWith('/card')) return null;
+    if (!pathname?.startsWith('/card')) {
+      setRaceContext(null);
+      return;
+    }
     
-    // URLパラメータから取得
-    const year = searchParams?.get('year');
-    const date = searchParams?.get('date');
-    const place = searchParams?.get('place');
-    const raceNo = searchParams?.get('race');
-    
-    if (!year || !date || !place || !raceNo) return null;
-    
-    return {
-      year: parseInt(year, 10),
-      date,
-      place,
-      raceNumber: parseInt(raceNo, 10),
-    };
-  }, [propRaceContext, pathname, searchParams]);
+    // window.locationからURLパラメータを取得（クライアントサイドのみ）
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const year = params.get('year');
+      const date = params.get('date');
+      const place = params.get('place');
+      const raceNo = params.get('race');
+      
+      if (year && date && place && raceNo) {
+        setRaceContext({
+          year: parseInt(year, 10),
+          date,
+          place,
+          raceNumber: parseInt(raceNo, 10),
+        });
+      } else {
+        setRaceContext(null);
+      }
+    }
+  }, [propRaceContext, pathname]);
 
   // AIチャットを開く
   const openAIChat = useCallback(() => {
