@@ -28,6 +28,12 @@ import {
   analyzeCornerPosition,
   type MemoAnalysisResult,
 } from '@/lib/ai-chat/memo-analyzer';
+import { 
+  SagaBrain, 
+  type HorseAnalysisInput, 
+  type PastRaceInfo,
+  type SagaAnalysis,
+} from '@/lib/saga-ai/saga-brain';
 import { toHalfWidth } from '@/utils/parse-helpers';
 
 // レート制限（1分間に10回まで）
@@ -218,7 +224,10 @@ async function handlePredictionRequest(
     className: horses[0]?.class_name || '',
   };
   
-  // 2. 各馬の過去走とStrideデータを取得、ルールエンジンを適用
+  // SagaBrainインスタンスを作成
+  const sagaBrain = new SagaBrain();
+  
+  // 2. 各馬の過去走とStrideデータを取得、SagaBrain分析 + ルールエンジンを適用
   const analyzedHorses: Array<{
     number: number;
     name: string;
@@ -233,6 +242,16 @@ async function handlePredictionRequest(
     matchedRules: Array<{ type: string; reason: string }>;
     totalScore: number;
     recommendation: string;
+    // SagaBrain分析結果
+    sagaAnalysis?: {
+      score: number;
+      timeEvaluation?: string;
+      lapEvaluation?: string;
+      raceLevelNote?: string;
+      courseMatch: { rating: string; reason: string };
+      comments: string[];
+      warnings: string[];
+    };
   }> = [];
   
   for (const horse of horses) {
@@ -400,14 +419,77 @@ async function handlePredictionRequest(
     const totalScore = calculateTotalScore(matchedRules);
     const recommendation = determineRecommendation(totalScore, estimatedPop);
     
+    // === SagaBrain分析を実行 ===
+    let sagaAnalysisResult: SagaAnalysis | undefined;
+    try {
+      // PastRaceInfoの形式に変換
+      const sagaPastRaces: PastRaceInfo[] = pastRaces.map(pr => ({
+        date: pr.date,
+        place: pr.place,
+        surface: pr.surface as '芝' | 'ダ',
+        distance: pr.distance,
+        finishPosition: pr.finishPosition,
+        popularity: pr.popularity,
+        margin: pr.margin,
+        trackCondition: pr.trackCondition,
+        T2F: pr.lapRating ? undefined : undefined, // 実際の値はindicesから
+        L4F: pr.lapRating ? undefined : undefined,
+        potential: latestPotential || undefined,
+        makikaeshi: latestMakikaeshi || undefined,
+        corner4: pr.corner4 || undefined,
+        totalHorses: pr.totalHorses,
+        className: pr.className,
+        raceLevel: pr.raceLevel ? {
+          level: pr.raceLevel as 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN',
+          labelSimple: pr.raceLevel,
+        } : undefined,
+      }));
+      
+      const sagaInput: HorseAnalysisInput = {
+        horseName,
+        horseNumber,
+        waku,
+        raceDate: `${year}.${date.slice(0, 2)}.${date.slice(2, 4)}`,
+        place: raceInfo.place,
+        surface: raceInfo.surface,
+        distance: raceInfo.distance,
+        trackCondition: (raceInfo.trackCondition || '良') as '良' | '稍' | '重' | '不',
+        pastRaces: sagaPastRaces,
+        indices: {
+          potential: latestPotential || undefined,
+          makikaeshi: latestMakikaeshi || undefined,
+        },
+      };
+      
+      sagaAnalysisResult = sagaBrain.analyzeHorse(sagaInput);
+      
+      // SagaBrain分析結果からラップ/タイム評価を取得
+      if (sagaAnalysisResult.lapEvaluation) {
+        // ラップ評価をパースしてレーティングを抽出（例: 「【ラップ】A評価...」からAを抽出）
+        const lapMatch = sagaAnalysisResult.lapEvaluation.match(/([SABCD]|LOW)/);
+        if (lapMatch) {
+          pastRaces[0].lapRating = lapMatch[1];
+        }
+      }
+      if (sagaAnalysisResult.timeEvaluation) {
+        const timeMatch = sagaAnalysisResult.timeEvaluation.match(/([SABCD]|LOW)/);
+        if (timeMatch) {
+          pastRaces[0].timeRating = timeMatch[1];
+        }
+      }
+      
+    } catch (e) {
+      console.error(`[AI Chat] SagaBrain analysis error for ${horseName}:`, e);
+    }
+    
     analyzedHorses.push({
       number: horseNumber,
       name: horseName,
       jockey: horse.kishu || '',
       waku,
       estimatedPopularity: estimatedPop,
-      lapRating: latestLapRating,
-      timeRating: latestTimeRating,
+      lapRating: pastRaces[0]?.lapRating || latestLapRating,
+      timeRating: pastRaces[0]?.timeRating || latestTimeRating,
       potential: latestPotential,
       makikaeshi: latestMakikaeshi,
       pastRaces: pastRaces.map(pr => ({
@@ -422,9 +504,19 @@ async function handlePredictionRequest(
       matchedRules: matchedRules.map(r => ({ type: r.type, reason: r.reason })),
       totalScore,
       recommendation,
+      // SagaBrain分析結果を追加
+      sagaAnalysis: sagaAnalysisResult ? {
+        score: sagaAnalysisResult.score,
+        timeEvaluation: sagaAnalysisResult.timeEvaluation,
+        lapEvaluation: sagaAnalysisResult.lapEvaluation,
+        raceLevelNote: sagaAnalysisResult.raceLevelNote,
+        courseMatch: sagaAnalysisResult.courseMatch,
+        comments: sagaAnalysisResult.comments,
+        warnings: sagaAnalysisResult.warnings,
+      } : undefined,
     });
     
-    console.log(`[AI Chat] Horse ${horseNumber} ${horseName}: score=${totalScore}, rec=${recommendation}, rules=${matchedRules.length}`);
+    console.log(`[AI Chat] Horse ${horseNumber} ${horseName}: score=${totalScore}, rec=${recommendation}, rules=${matchedRules.length}, sagaScore=${sagaAnalysisResult?.score || 'N/A'}`);
   }
   
   // 3. 過去予想からサンプルを取得

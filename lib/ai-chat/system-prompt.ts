@@ -148,6 +148,16 @@ export function formatRaceDataForPrompt(
     }>;
     totalScore: number;
     recommendation: string;
+    // SagaBrain分析結果
+    sagaAnalysis?: {
+      score: number;
+      timeEvaluation?: string;
+      lapEvaluation?: string;
+      raceLevelNote?: string;
+      courseMatch: { rating: string; reason: string };
+      comments: string[];
+      warnings: string[];
+    };
   }>,
   settings: {
     trackBias?: string;
@@ -174,6 +184,7 @@ ${raceInfo.className ? `クラス: ${raceInfo.className}` : ''}
   for (const horse of sortedHorses) {
     const last = horse.pastRaces[0];
     const last2 = horse.pastRaces[1];
+    const saga = horse.sagaAnalysis;
     
     text += `
 **${horse.number}番 ${horse.name}** [${horse.recommendation}] (想定${horse.estimatedPopularity}人気)
@@ -189,9 +200,32 @@ ${raceInfo.className ? `クラス: ${raceInfo.className}` : ''}
       text += `- 2走前: ${last2.place}${last2.surface}${last2.distance}m ${last2.finishPosition}着\n`;
     }
 
+    // SagaBrain分析結果
+    if (saga) {
+      text += `- 【Stride AI分析】スコア: ${saga.score}点\n`;
+      if (saga.timeEvaluation) {
+        text += `  📊 ${saga.timeEvaluation}\n`;
+      }
+      if (saga.lapEvaluation) {
+        text += `  🏃 ${saga.lapEvaluation}\n`;
+      }
+      if (saga.raceLevelNote) {
+        text += `  📈 ${saga.raceLevelNote}\n`;
+      }
+      if (saga.courseMatch && saga.courseMatch.rating !== 'C') {
+        text += `  🎯 コース適性: ${saga.courseMatch.rating} - ${saga.courseMatch.reason}\n`;
+      }
+      if (saga.comments.length > 0) {
+        text += `  💡 ${saga.comments.slice(0, 3).join(' / ')}\n`;
+      }
+      if (saga.warnings.length > 0) {
+        text += `  ⚠️ ${saga.warnings.join(' / ')}\n`;
+      }
+    }
+
     // ルール判定結果
     if (horse.matchedRules.length > 0) {
-      text += `- 【判定】\n`;
+      text += `- 【ルール判定】\n`;
       for (const rule of horse.matchedRules) {
         const icon = rule.type === 'POSITIVE' ? '✅' : 
                      rule.type === 'NEGATIVE' ? '⚠️' : 
