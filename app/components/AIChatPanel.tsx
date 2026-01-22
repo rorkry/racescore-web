@@ -182,17 +182,13 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
 
         .chat-header {
           padding: 20px;
-          background: linear-gradient(
-            135deg,
-            rgba(0, 200, 255, 0.2) 0%,
-            rgba(128, 0, 255, 0.2) 50%,
-            rgba(255, 0, 128, 0.2) 100%
-          );
           position: relative;
           overflow: hidden;
           border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          background: #0a0a12;
         }
 
+        /* ネオングリッド背景 */
         .chat-header::before {
           content: '';
           position: absolute;
@@ -201,14 +197,61 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           right: 0;
           bottom: 0;
           background: 
-            radial-gradient(ellipse at 20% 50%, rgba(0, 200, 255, 0.3) 0%, transparent 50%),
-            radial-gradient(ellipse at 80% 50%, rgba(255, 0, 128, 0.3) 0%, transparent 50%);
-          animation: pulse 4s ease-in-out infinite;
+            /* カラフルなネオンブロック */
+            linear-gradient(90deg, 
+              rgba(0, 230, 255, 0.4) 0%, 
+              rgba(0, 230, 255, 0.1) 10%,
+              rgba(255, 0, 200, 0.3) 25%,
+              rgba(255, 0, 200, 0.1) 35%,
+              rgba(255, 220, 0, 0.3) 50%,
+              rgba(255, 220, 0, 0.1) 60%,
+              rgba(0, 255, 150, 0.3) 75%,
+              rgba(0, 255, 150, 0.1) 85%,
+              rgba(0, 230, 255, 0.4) 100%
+            ),
+            /* グリッドライン */
+            repeating-linear-gradient(
+              0deg,
+              transparent,
+              transparent 8px,
+              rgba(255, 255, 255, 0.03) 8px,
+              rgba(255, 255, 255, 0.03) 9px
+            ),
+            repeating-linear-gradient(
+              90deg,
+              transparent,
+              transparent 8px,
+              rgba(255, 255, 255, 0.03) 8px,
+              rgba(255, 255, 255, 0.03) 9px
+            );
+          animation: neonShift 8s linear infinite;
         }
 
-        @keyframes pulse {
-          0%, 100% { opacity: 0.5; }
-          50% { opacity: 1; }
+        @keyframes neonShift {
+          0% { background-position: 0% 0%, 0 0, 0 0; }
+          100% { background-position: 200% 0%, 0 0, 0 0; }
+        }
+
+        /* ネオンライトのにじみ効果 */
+        .chat-header::after {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: 
+            radial-gradient(ellipse at 10% 50%, rgba(0, 230, 255, 0.5) 0%, transparent 40%),
+            radial-gradient(ellipse at 40% 30%, rgba(255, 0, 200, 0.4) 0%, transparent 35%),
+            radial-gradient(ellipse at 70% 60%, rgba(255, 220, 0, 0.4) 0%, transparent 35%),
+            radial-gradient(ellipse at 90% 40%, rgba(0, 255, 150, 0.4) 0%, transparent 40%);
+          filter: blur(15px);
+          animation: glowPulse 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes glowPulse {
+          0% { opacity: 0.6; }
+          100% { opacity: 1; }
         }
 
         .chat-header-content {
@@ -220,32 +263,54 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
         }
 
         .chat-header-title {
-          font-size: 18px;
-          font-weight: 700;
+          font-size: 20px;
+          font-weight: 800;
           color: #ffffff;
           text-shadow: 
-            0 0 10px rgba(0, 200, 255, 0.8),
-            0 0 20px rgba(0, 200, 255, 0.5),
-            0 0 30px rgba(0, 200, 255, 0.3);
+            /* 内側の強いグロー */
+            0 0 5px #fff,
+            0 0 10px #fff,
+            /* シアンのネオン */
+            0 0 20px #00e6ff,
+            0 0 35px #00e6ff,
+            0 0 50px #00e6ff,
+            /* 外側のにじみ */
+            0 0 75px rgba(0, 230, 255, 0.5);
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
+          letter-spacing: 0.05em;
         }
 
         .chat-header-title .brain-icon {
-          font-size: 24px;
-          filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.8));
+          font-size: 28px;
+          filter: 
+            drop-shadow(0 0 5px #ff00c8)
+            drop-shadow(0 0 10px #ff00c8)
+            drop-shadow(0 0 20px #ff00c8)
+            drop-shadow(0 0 30px rgba(255, 0, 200, 0.5));
+          animation: brainGlow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes brainGlow {
+          0% { filter: drop-shadow(0 0 5px #ff00c8) drop-shadow(0 0 10px #ff00c8) drop-shadow(0 0 20px #ff00c8); }
+          100% { filter: drop-shadow(0 0 8px #ffdc00) drop-shadow(0 0 15px #ffdc00) drop-shadow(0 0 25px #ffdc00); }
         }
 
         .chat-header-subtitle {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.7);
-          margin-top: 4px;
-          text-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
+          font-size: 13px;
+          color: #00e6ff;
+          margin-top: 6px;
+          font-weight: 600;
+          text-shadow: 
+            0 0 5px #00e6ff,
+            0 0 10px #00e6ff,
+            0 0 20px rgba(0, 230, 255, 0.5);
+          letter-spacing: 0.1em;
         }
 
         .chat-close {
-          background: rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.4);
           backdrop-filter: blur(10px);
           border: 1px solid rgba(255, 255, 255, 0.2);
           color: white;
@@ -258,11 +323,15 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           justify-content: center;
           font-size: 20px;
           transition: all 0.2s;
+          text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
         .chat-close:hover {
-          background: rgba(255, 255, 255, 0.2);
-          border-color: rgba(255, 255, 255, 0.4);
+          background: rgba(255, 0, 200, 0.3);
+          border-color: #ff00c8;
+          box-shadow: 
+            0 0 10px rgba(255, 0, 200, 0.5),
+            inset 0 0 10px rgba(255, 0, 200, 0.2);
           transform: scale(1.05);
         }
 
