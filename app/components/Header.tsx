@@ -184,6 +184,8 @@ export default function Header() {
                           <button
                             onClick={() => {
                               setIsMenuOpen(false);
+                              // プレミアム機能のトグル状態をクリア
+                              localStorage.removeItem('stride_active_features');
                               signOut({ callbackUrl: '/' });
                             }}
                             className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 w-full"

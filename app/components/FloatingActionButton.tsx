@@ -28,18 +28,35 @@ declare global {
 
 // 機能の表示状態を取得するヘルパー
 export function useFeatureAccess(featureId: string): boolean {
-  // 初期値はグローバル状態から取得（存在すれば）
+  // 初期値はグローバル状態またはlocalStorageから取得
   const [isActive, setIsActive] = useState(() => {
-    if (typeof window !== 'undefined' && window.__activeFeatures) {
-      return window.__activeFeatures.has(featureId);
+    if (typeof window !== 'undefined') {
+      // まずグローバル変数をチェック
+      if (window.__activeFeatures) {
+        return window.__activeFeatures.has(featureId);
+      }
+      // グローバル変数がなければlocalStorageから復元
+      const saved = loadSavedFeatures();
+      if (saved.size > 0) {
+        window.__activeFeatures = saved;
+        return saved.has(featureId);
+      }
     }
     return false;
   });
 
   useEffect(() => {
-    // マウント時にもグローバル状態を確認
-    if (typeof window !== 'undefined' && window.__activeFeatures) {
-      setIsActive(window.__activeFeatures.has(featureId));
+    // マウント時にグローバル状態またはlocalStorageを確認
+    if (typeof window !== 'undefined') {
+      if (window.__activeFeatures) {
+        setIsActive(window.__activeFeatures.has(featureId));
+      } else {
+        const saved = loadSavedFeatures();
+        if (saved.size > 0) {
+          window.__activeFeatures = saved;
+          setIsActive(saved.has(featureId));
+        }
+      }
     }
 
     const handleToggle = (event: CustomEvent<FeatureToggleEvent>) => {
@@ -59,17 +76,45 @@ interface FloatingActionButtonProps {
   menuItems?: MenuItem[];
 }
 
+const STORAGE_KEY = 'stride_active_features';
+
+// localStorageから保存済みの状態を復元
+function loadSavedFeatures(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed);
+      }
+    }
+  } catch {
+    // localStorageエラーは無視
+  }
+  return new Set();
+}
+
+// localStorageに状態を保存
+function saveFeatures(features: Set<string>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...features]));
+  } catch {
+    // localStorageエラーは無視
+  }
+}
+
 export default function FloatingActionButton({ menuItems = [] }: FloatingActionButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
-    // 初期状態をグローバル変数からも取得（ページ遷移時の状態保持）
+    // 初期状態をlocalStorageとグローバル変数から取得
     if (typeof window !== 'undefined') {
-      if (!window.__activeFeatures) {
-        window.__activeFeatures = new Set();
-      }
-      return window.__activeFeatures;
+      const saved = loadSavedFeatures();
+      window.__activeFeatures = saved;
+      return saved;
     }
     return new Set();
   });
@@ -122,7 +167,7 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
     // 現在の状態を取得して、次の状態を計算
     const willBeActive = !activeFeatures.has(featureId);
     
-    // 状態を更新（グローバル変数も同期）
+    // 状態を更新（グローバル変数も同期 + localStorage保存）
     setActiveFeatures(prev => {
       const newSet = new Set(prev);
       if (willBeActive) {
@@ -134,6 +179,8 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
       if (typeof window !== 'undefined') {
         window.__activeFeatures = newSet;
       }
+      // localStorageに保存（ログアウトまで維持）
+      saveFeatures(newSet);
       return newSet;
     });
     

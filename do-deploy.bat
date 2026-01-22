@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: umadata CSVアップロードを47列形式に対応"
+git commit -m "fix: umadata CSV 47列対応 + プレミアム機能トグル状態をログアウトまで維持"
 
 echo.
 echo === Pushing to origin ===

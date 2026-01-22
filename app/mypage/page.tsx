@@ -65,6 +65,8 @@ export default function MyPage() {
   };
 
   const handleLogout = async () => {
+    // プレミアム機能のトグル状態をクリア
+    localStorage.removeItem('stride_active_features');
     await signOut({ callbackUrl: '/' });
   };
 
