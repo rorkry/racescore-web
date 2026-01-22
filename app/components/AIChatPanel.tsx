@@ -677,7 +677,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
               </div>
             )}
 
-            {raceContext && messages.length <= 1 && (
+            {raceContext && (
               <div className="quick-actions">
                 <button 
                   className="quick-action" 
@@ -693,9 +693,9 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
                 </button>
                 <button 
                   className="quick-action" 
-                  onClick={() => setInput('お気に入り馬は？')}
+                  onClick={() => setInput('巻き返し指数が高いのは？')}
                 >
-                  ⭐ お気に入り
+                  📈 巻き返し
                 </button>
               </div>
             )}
