@@ -245,6 +245,8 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
   const batchSize = 500;
   const commitEvery = 2000; // 2000件ごとにコミット
 
+  let errors: string[] = [];
+  
   try {
     await client.query('BEGIN');
     
@@ -253,7 +255,11 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
       
       for (const row of batch) {
         if (Array.isArray(row) && row.length >= 39) {
+          const rowId = `row_${count}`;
           try {
+            // SAVEPOINTを使って、失敗した行だけロールバックできるようにする
+            await client.query(`SAVEPOINT ${rowId}`);
+            
             const horseName = (row[11] || '').trim();
             
             await client.query(`
@@ -312,10 +318,18 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
               (row[37] || '').trim(),
               (row[38] || '').trim()
             ]);
+            
+            await client.query(`RELEASE SAVEPOINT ${rowId}`);
             inserted++;
           } catch (e: any) {
+            // エラー時はSAVEPOINTまでロールバックして次の行へ
+            await client.query(`ROLLBACK TO SAVEPOINT ${rowId}`);
+            
             if (!e.message?.includes('duplicate')) {
-              console.error('Error processing umadata row:', e.message);
+              // 最初の5件のエラーのみログ
+              if (errors.length < 5) {
+                errors.push(`Row ${count}: ${e.message}`);
+              }
             }
           }
           count++;
@@ -326,7 +340,7 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
       if (count > 0 && count % commitEvery === 0) {
         await client.query('COMMIT');
         await client.query('BEGIN');
-        console.log(`[importUmadata] 中間コミット: ${count}/${data.length}行`);
+        console.log(`[importUmadata] 中間コミット: ${count}/${data.length}行 (成功: ${inserted})`);
       }
       
       if ((i + batchSize) % 5000 === 0 || i + batchSize >= data.length) {
@@ -335,6 +349,10 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
     }
 
     await client.query('COMMIT');
+    
+    if (errors.length > 0) {
+      console.log(`[importUmadata] エラー例: ${errors.join(', ')}`);
+    }
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[importUmadata] 完了: ${inserted}件処理 (${elapsed}秒)`);

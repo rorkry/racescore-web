@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: isPremiumをAPI応答に追加、グローバル設定を全APIで統一"
+git commit -m "fix: プレミアム判定修正+umadata CSVアップロードのトランザクションエラー修正"
 
 echo.
 echo === Pushing to origin ===
