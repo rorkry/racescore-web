@@ -38,18 +38,26 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 初回表示時のウェルカムメッセージ
+  // 初回表示時のウェルカムメッセージ（raceContextが変わったら更新）
   useEffect(() => {
-    if (isOpen && messages.length === 0) {
-      const welcomeMessage: Message = {
-        id: 'welcome',
-        role: 'assistant',
-        content: raceContext 
-          ? `${raceContext.place} ${raceContext.raceNumber}Rの予想をお手伝いします。\n「予想」と入力するとAI予想を生成します。`
-          : '競馬に関する質問にお答えします。\nレースカードを開いた状態で「予想」と入力すると、AI予想を生成します。',
-        timestamp: new Date(),
-      };
-      setMessages([welcomeMessage]);
+    console.log('[AIChatPanel] isOpen:', isOpen, 'raceContext:', raceContext);
+    
+    if (isOpen) {
+      // ウェルカムメッセージのみの場合、またはメッセージがない場合は更新
+      const shouldUpdate = messages.length === 0 || 
+        (messages.length === 1 && messages[0].id === 'welcome');
+      
+      if (shouldUpdate) {
+        const welcomeMessage: Message = {
+          id: 'welcome',
+          role: 'assistant',
+          content: raceContext 
+            ? `${raceContext.place} ${raceContext.raceNumber}Rの予想をお手伝いします。\n「予想」と入力するとAI予想を生成します。`
+            : '競馬に関する質問にお答えします。\nレースカードを開いた状態で「予想」と入力すると、AI予想を生成します。',
+          timestamp: new Date(),
+        };
+        setMessages([welcomeMessage]);
+      }
     }
   }, [isOpen, raceContext]);
 

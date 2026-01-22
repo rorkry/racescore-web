@@ -221,45 +221,47 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   // URLパラメータからraceContextを取得（/cardページの場合）
   const [raceContext, setRaceContext] = useState<RaceContext | null>(propRaceContext || null);
   
+  // URLパラメータからraceContextを取得する関数
+  const updateRaceContext = useCallback(() => {
+    if (propRaceContext) {
+      setRaceContext(propRaceContext);
+      return;
+    }
+    
+    // /card ページでない場合はnull
+    if (!pathname?.startsWith('/card')) {
+      setRaceContext(null);
+      return;
+    }
+    
+    // window.locationからURLパラメータを取得（クライアントサイドのみ）
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const year = params.get('year');
+      const date = params.get('date');
+      const place = params.get('place');
+      const raceNo = params.get('race');
+      
+      console.log('[FAB] Parsing URL params:', { year, date, place, raceNo, pathname });
+      
+      if (year && date && place && raceNo) {
+        const ctx = {
+          year: parseInt(year, 10),
+          date,
+          place,
+          raceNumber: parseInt(raceNo, 10),
+        };
+        console.log('[FAB] Setting raceContext:', ctx);
+        setRaceContext(ctx);
+      } else {
+        console.log('[FAB] Missing URL params, setting raceContext to null');
+        setRaceContext(null);
+      }
+    }
+  }, [propRaceContext, pathname]);
+  
   // URLパラメータを定期的にチェック（SPAでのルーティング対応）
   useEffect(() => {
-    const updateRaceContext = () => {
-      if (propRaceContext) {
-        setRaceContext(propRaceContext);
-        return;
-      }
-      
-      // /card ページでない場合はnull
-      if (!pathname?.startsWith('/card')) {
-        setRaceContext(null);
-        return;
-      }
-      
-      // window.locationからURLパラメータを取得（クライアントサイドのみ）
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        const year = params.get('year');
-        const date = params.get('date');
-        const place = params.get('place');
-        const raceNo = params.get('race');
-        
-        console.log('[FAB] Parsing URL params:', { year, date, place, raceNo });
-        
-        if (year && date && place && raceNo) {
-          const ctx = {
-            year: parseInt(year, 10),
-            date,
-            place,
-            raceNumber: parseInt(raceNo, 10),
-          };
-          console.log('[FAB] Setting raceContext:', ctx);
-          setRaceContext(ctx);
-        } else {
-          setRaceContext(null);
-        }
-      }
-    };
-    
     // 初回実行
     updateRaceContext();
     
@@ -268,7 +270,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
     window.addEventListener('popstate', handlePopState);
     
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [propRaceContext, pathname]);
+  }, [updateRaceContext]);
 
   // デフォルトメニュー項目（トグルのみ、AIチャットは常時表示）
   const defaultMenuItems: MenuItem[] = [
@@ -540,6 +542,10 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
           className={`fab-button ${isOpen ? 'open' : ''}`}
           onClick={() => {
             const newOpen = !isOpen;
+            // 開く時にraceContextを更新
+            if (newOpen) {
+              updateRaceContext();
+            }
             setIsOpen(newOpen);
             setIsChatOpen(newOpen);
           }}
