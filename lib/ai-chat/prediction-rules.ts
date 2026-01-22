@@ -3,6 +3,19 @@
  * 
  * ユーザーの予想スタイルを構造化したもの
  * これを基にAIが「思考」して予想を組み立てる
+ * 
+ * ルールカテゴリ（同一カテゴリ内では最高優先度のルールのみ適用）:
+ * - win_quality: 勝利/好走の価値評価
+ * - margin: 着差評価
+ * - lap: ラップ評価（勝利評価と排他）
+ * - time: 時計評価（勝利評価と排他）
+ * - potential: ポテンシャル指数
+ * - makikaeshi: 巻き返し指数
+ * - position: 先行力/差し脚
+ * - form: 調子（良化/悪化/安定）
+ * - track_bias: 馬場バイアス
+ * - pace: 展開連動
+ * - dismiss: 度外視
  */
 
 // 評価タイプ
@@ -14,11 +27,29 @@ export type EvaluationType =
   | 'ANA'         // 穴候補
   | 'KESHI';      // 消し候補
 
+// ルールカテゴリ（排他制御用）
+export type RuleCategory = 
+  | 'win_quality'   // 勝利/好走の価値評価
+  | 'margin'        // 着差評価
+  | 'lap'           // ラップ評価
+  | 'time'          // 時計評価
+  | 'potential'     // ポテンシャル指数
+  | 'makikaeshi'    // 巻き返し指数
+  | 'position'      // 先行力/差し脚
+  | 'form'          // 調子
+  | 'track_bias'    // 馬場バイアス
+  | 'pace'          // 展開連動
+  | 'upset'         // 人気薄好走
+  | 'overrated'     // 過大評価
+  | 'dismiss';      // 度外視
+
 // ルール適用結果
 export interface RuleMatchResult {
   ruleId: string;
   ruleName: string;
   type: EvaluationType;
+  category: RuleCategory;
+  priority: number;
   reason: string;        // AIが使う理由文
   confidence: 'high' | 'medium' | 'low';
   scoreAdjust: number;   // スコア調整値
@@ -157,24 +188,37 @@ function parseMargin(margin: string): number {
   return 99;
 }
 
+// ルール定義の型
+interface PredictionRule {
+  id: string;
+  name: string;
+  type: EvaluationType;
+  category: RuleCategory;
+  priority: number;  // 数字が大きいほど優先
+  excludeCategories?: RuleCategory[];  // このルールがマッチしたらこれらのカテゴリはスキップ
+  check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
+    reason: string;
+    confidence: 'high' | 'medium' | 'low';
+    scoreAdjust: number;
+  } | null;
+}
+
 /**
  * 予想ルール定義
  */
-export const PREDICTION_RULES = {
+export const PREDICTION_RULES: Record<string, PredictionRule> = {
   // ============================================
-  // 評価UP系（POSITIVE）
-  // ============================================
-  
-  // ============================================
-  // 価値あるレースでの好走（タイム・ラップ・レースレベル複合評価）
-  // 「1着だから高評価」ではなく「価値あるレースで好走したか」が重要
+  // 勝利/好走の価値評価（win_quality）
+  // ラップ・時計評価と排他
   // ============================================
   
-  // === 高レベル戦 + 好走 → 高評価 ===
   HIGH_VALUE_WIN: {
     id: 'high_value_win',
-    name: '価値ある勝利',
-    type: 'POSITIVE' as EvaluationType,
+    name: '価値ある勝利/好走',
+    type: 'POSITIVE',
+    category: 'win_quality',
+    priority: 100,
+    excludeCategories: ['lap', 'time'],  // 勝利評価がマッチしたらラップ/時計単独は除外
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       if (!last) return null;
@@ -183,32 +227,31 @@ export const PREDICTION_RULES = {
       const goodLap = horse.lapRating === 'S' || horse.lapRating === 'A';
       const goodTime = horse.timeRating === 'S' || horse.timeRating === 'A';
       
-      // レースレベルA/B + 1着 = 価値ある勝利
-      if (isHighLevel && last.finishPosition === 1) {
+      // レースレベルA/B + 好走（3着以内）= 価値ある好走
+      if (isHighLevel && last.finishPosition <= 3) {
         return {
-          reason: `レースレベル${last.raceLevel}で勝利、相手関係から高評価`,
+          reason: `レースレベル${last.raceLevel}で${last.finishPosition}着、相手関係から高評価`,
           confidence: 'high' as const,
-          scoreAdjust: 10,
+          scoreAdjust: last.finishPosition === 1 ? 10 : 8,
         };
       }
       
-      // ラップ/タイム優秀 + 1着 = 中身のある勝利
-      if ((goodLap || goodTime) && last.finishPosition === 1) {
-        const quality = goodLap && goodTime ? 'ラップ・時計ともに優秀' : 
-                        goodLap ? 'ラップ優秀' : '時計優秀';
+      // ラップ・タイムともに優秀 + 好走 = 中身のある好走
+      if (goodLap && goodTime && last.finishPosition <= 3) {
         return {
-          reason: `${quality}な中身のある勝利`,
+          reason: 'ラップ・時計ともに優秀な中身のある好走',
           confidence: 'high' as const,
           scoreAdjust: 8,
         };
       }
       
-      // レースレベル不明 + 1着 = 一応プラスだが過信禁物
-      if (last.finishPosition === 1 && !isHighLevel && !goodLap && !goodTime) {
+      // ラップまたはタイム優秀 + 勝利
+      if ((goodLap || goodTime) && last.finishPosition === 1) {
+        const quality = goodLap ? 'ラップ優秀' : '時計優秀';
         return {
-          reason: '前走勝利も中身の評価待ち',
-          confidence: 'low' as const,
-          scoreAdjust: 3,
+          reason: `${quality}な中身のある勝利`,
+          confidence: 'high' as const,
+          scoreAdjust: 7,
         };
       }
       
@@ -216,11 +259,13 @@ export const PREDICTION_RULES = {
     },
   },
   
-  // === 低レベル戦 + 好走 → 評価フラット（過信禁物） ===
   LOW_VALUE_WIN: {
     id: 'low_value_win',
     name: '低レベル戦勝利（過信禁物）',
-    type: 'NEGATIVE' as EvaluationType,
+    type: 'NEGATIVE',
+    category: 'win_quality',
+    priority: 90,
+    excludeCategories: ['lap', 'time'],
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       if (!last) return null;
@@ -239,7 +284,7 @@ export const PREDICTION_RULES = {
       }
       
       // ラップ/タイム悪い + 勝利 = 価値低い
-      if ((badLap && badTime) && last.finishPosition === 1) {
+      if (badLap && badTime && last.finishPosition === 1) {
         return {
           reason: 'ラップ・時計ともに平凡な勝利、評価据え置き',
           confidence: 'medium' as const,
@@ -251,14 +296,50 @@ export const PREDICTION_RULES = {
     },
   },
   
-  // === 着差ベース（レースレベルと組み合わせ） ===
-  CLOSE_MARGIN_HIGH_LEVEL: {
-    id: 'close_margin_high_level',
-    name: '高レベル戦で僅差',
-    type: 'POSITIVE' as EvaluationType,
+  UNKNOWN_VALUE_WIN: {
+    id: 'unknown_value_win',
+    name: '勝利も評価待ち',
+    type: 'POSITIVE',
+    category: 'win_quality',
+    priority: 50,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       if (!last) return null;
+      
+      const isHighLevel = last.raceLevel === 'A' || last.raceLevel === 'B';
+      const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
+      const goodLap = horse.lapRating === 'S' || horse.lapRating === 'A';
+      const goodTime = horse.timeRating === 'S' || horse.timeRating === 'A';
+      
+      // 他のルールでマッチしなかった勝利
+      if (last.finishPosition === 1 && !isHighLevel && !isLowLevel && !goodLap && !goodTime) {
+        return {
+          reason: '前走勝利も中身の評価待ち',
+          confidence: 'low' as const,
+          scoreAdjust: 3,
+        };
+      }
+      
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 着差評価（margin）
+  // ============================================
+  
+  CLOSE_MARGIN_HIGH_LEVEL: {
+    id: 'close_margin_high_level',
+    name: '高レベル戦で僅差',
+    type: 'POSITIVE',
+    category: 'margin',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last) return null;
+      
+      // 勝利はwin_qualityで処理
+      if (last.finishPosition === 1) return null;
       
       const isHighLevel = last.raceLevel === 'A' || last.raceLevel === 'B';
       const marginSec = parseMargin(last.margin);
@@ -288,14 +369,19 @@ export const PREDICTION_RULES = {
   CLOSE_MARGIN_UNKNOWN_LEVEL: {
     id: 'close_margin_unknown_level',
     name: '僅差の負け（レベル不明）',
-    type: 'POSITIVE' as EvaluationType,
+    type: 'POSITIVE',
+    category: 'margin',
+    priority: 50,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       if (!last) return null;
       
-      // レースレベル不明の場合
-      if (last.raceLevel && (last.raceLevel === 'A' || last.raceLevel === 'B' || last.raceLevel === 'C' || last.raceLevel === 'D')) {
-        return null; // レベル判明してる場合は他のルールで処理
+      // 勝利はwin_qualityで処理
+      if (last.finishPosition === 1) return null;
+      
+      // レースレベル判明している場合は他のルールで処理
+      if (last.raceLevel && ['A', 'B', 'C', 'D'].includes(last.raceLevel)) {
+        return null;
       }
       
       const marginSec = parseMargin(last.margin);
@@ -312,382 +398,12 @@ export const PREDICTION_RULES = {
     },
   },
   
-  IMPROVING_FORM: {
-    id: 'improving_form',
-    name: '着順良化',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      if (horse.pastRaces.length < 2) return null;
-      
-      const last = horse.pastRaces[0];
-      const prev = horse.pastRaces[1];
-      
-      // 着順が2つ以上良化
-      if (last.finishPosition < prev.finishPosition - 1) {
-        return {
-          reason: `着順が${prev.finishPosition}着→${last.finishPosition}着と良化、上昇気配`,
-          confidence: 'medium' as const,
-          scoreAdjust: 3,
-        };
-      }
-      return null;
-    },
-  },
-  
-  CONSISTENT_TOP5_HIGH_LEVEL: {
-    id: 'consistent_top5_high_level',
-    name: '高レベル戦で安定好走',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const recent3 = horse.pastRaces.slice(0, 3);
-      if (recent3.length < 3) return null;
-      
-      const allTop5 = recent3.every(r => r.finishPosition <= 5);
-      const hasHighLevel = recent3.some(r => r.raceLevel === 'A' || r.raceLevel === 'B');
-      
-      if (allTop5 && hasHighLevel) {
-        return {
-          reason: '近走は高レベル戦含め安定して5着内、信頼度高い',
-          confidence: 'high' as const,
-          scoreAdjust: 8,
-        };
-      }
-      
-      // 安定5着内だがレベル不明
-      if (allTop5) {
-        return {
-          reason: '近3走すべて5着内、安定感あり（レベル評価は別途）',
-          confidence: 'medium' as const,
-          scoreAdjust: 4,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // === 指数ベース（タイム・ラップ） ===
-  // ラップ評価（価値判断の3要素の1つ）
-  GOOD_LAP_RATING: {
-    id: 'good_lap_rating',
-    name: 'ラップ評価が優秀',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const lapGood = horse.lapRating === 'S' || horse.lapRating === 'A';
-      const last = horse.pastRaces[0];
-      
-      if (lapGood && last) {
-        // ラップ優秀 + 好走 = 中身のある好走
-        if (last.finishPosition <= 5) {
-          return {
-            reason: `ラップ評価${horse.lapRating}で${last.finishPosition}着、後半の脚に見所あり`,
-            confidence: 'high' as const,
-            scoreAdjust: 6,
-          };
-        }
-        // ラップ優秀 + 凡走 = 展開向かず
-        return {
-          reason: `ラップ評価${horse.lapRating}も${last.finishPosition}着、展開向けば浮上`,
-          confidence: 'medium' as const,
-          scoreAdjust: 3,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // 時計評価（価値判断の3要素の1つ）
-  GOOD_TIME_RATING: {
-    id: 'good_time_rating',
-    name: '時計評価が優秀',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const timeGood = horse.timeRating === 'S' || horse.timeRating === 'A';
-      const last = horse.pastRaces[0];
-      
-      if (timeGood && last) {
-        // 時計優秀 + 好走 = 中身のある好走
-        if (last.finishPosition <= 5) {
-          return {
-            reason: `時計評価${horse.timeRating}で${last.finishPosition}着、格上と遜色ないタイム`,
-            confidence: 'high' as const,
-            scoreAdjust: 6,
-          };
-        }
-        // 時計優秀 + 凡走 = 力は見せている
-        return {
-          reason: `時計評価${horse.timeRating}、着順以上の力はある`,
-          confidence: 'medium' as const,
-          scoreAdjust: 3,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // ラップ・時計ともに悪い
-  BAD_LAP_AND_TIME: {
-    id: 'bad_lap_and_time',
-    name: 'ラップ・時計ともに平凡',
-    type: 'NEGATIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const lapBad = horse.lapRating === 'C' || horse.lapRating === 'D' || horse.lapRating === 'LOW';
-      const timeBad = horse.timeRating === 'C' || horse.timeRating === 'D' || horse.timeRating === 'LOW';
-      const last = horse.pastRaces[0];
-      
-      // ラップ・時計ともに悪いのに好走 = 恵まれた可能性
-      if (lapBad && timeBad && last && last.finishPosition <= 3) {
-        return {
-          reason: `ラップ・時計ともに平凡な好走、中身が伴っていない`,
-          confidence: 'medium' as const,
-          scoreAdjust: -4,
-        };
-      }
-      return null;
-    },
-  },
-  
-  HIGH_POTENTIAL: {
-    id: 'high_potential',
-    name: 'ポテンシャル指数が高い',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      // ポテンシャル指数は最大10までの数値
-      if (horse.potential !== null && horse.potential >= 8) {
-        return {
-          reason: `ポテンシャル指数${horse.potential.toFixed(1)}と高く、能力上位`,
-          confidence: 'high' as const,
-          scoreAdjust: 8,
-        };
-      }
-      if (horse.potential !== null && horse.potential >= 6) {
-        return {
-          reason: `ポテンシャル指数${horse.potential.toFixed(1)}、まずまずの能力`,
-          confidence: 'medium' as const,
-          scoreAdjust: 5,
-        };
-      }
-      if (horse.potential !== null && horse.potential >= 4) {
-        return {
-          reason: `ポテンシャル指数${horse.potential.toFixed(1)}、平均的`,
-          confidence: 'low' as const,
-          scoreAdjust: 2,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // === 巻き返し系 ===
-  MAKIKAESHI_CANDIDATE: {
-    id: 'makikaeshi_candidate',
-    name: '巻き返し候補',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      if (horse.makikaeshi !== null && horse.makikaeshi >= 3.0) {
-        return {
-          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}と高く、前走は不利があった可能性大、巻き返しに期待`,
-          confidence: 'high' as const,
-          scoreAdjust: 8,
-        };
-      }
-      if (horse.makikaeshi !== null && horse.makikaeshi >= 2.0) {
-        return {
-          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、前走より上積み期待`,
-          confidence: 'medium' as const,
-          scoreAdjust: 5,
-        };
-      }
-      return null;
-    },
-  },
-  
-  UNLUCKY_LAST_RUN: {
-    id: 'unlucky_last_run',
-    name: '前走不利',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const blessed = calculateBlessed(horse.makikaeshi, horse.blessedManual);
-      const last = horse.pastRaces[0];
-      
-      if (blessed === 'unlucky' && last) {
-        // 不利があったのに着差小
-        const marginSec = parseMargin(last.margin);
-        if (marginSec <= 1.0) {
-          return {
-            reason: '前走は不利がありながら着差は僅か、巻き返しに期待',
-            confidence: 'high' as const,
-            scoreAdjust: 7,
-          };
-        } else {
-          return {
-            reason: '前走は不利があった、立て直しに期待',
-            confidence: 'medium' as const,
-            scoreAdjust: 4,
-          };
-        }
-      }
-      return null;
-    },
-  },
-  
-  // === 枠順・位置取り系 ===
-  WAKU_CHANGE_POSITIVE: {
-    id: 'waku_change_positive',
-    name: '外枠替わりで好転',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      if (!last || !last.corner4) return null;
-      
-      // 前走が後方（60%以降）で今回外枠
-      const wasBack = last.corner4 > last.totalHorses * 0.6;
-      const nowOuter = horse.waku >= 6;
-      
-      if (wasBack && nowOuter) {
-        return {
-          reason: '前走は後方から、外枠替わりでスムーズに運べそう',
-          confidence: 'medium' as const,
-          scoreAdjust: 4,
-        };
-      }
-      return null;
-    },
-  },
-  
-  FRONT_RUNNER: {
-    id: 'front_runner',
-    name: '先行力がある',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      if (!last || !last.corner4) return null;
-      
-      // 前走4角3番手以内
-      const isFront = last.corner4 <= 3;
-      
-      if (isFront) {
-        // スローペース予想なら加点
-        if (settings.paceExpectation === 'slow') {
-          return {
-            reason: `先行力あり（前走4角${last.corner4}番手）、スローなら逃げ粘り期待`,
-            confidence: 'high' as const,
-            scoreAdjust: 6,
-          };
-        }
-        return {
-          reason: `先行力あり（前走4角${last.corner4}番手）、前で競馬できる`,
-          confidence: 'medium' as const,
-          scoreAdjust: 3,
-        };
-      }
-      return null;
-    },
-  },
-  
-  CLOSER_ABILITY: {
-    id: 'closer_ability',
-    name: '差し脚が使える',
-    type: 'POSITIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      if (!last || !last.corner4) return null;
-      
-      // 前走4角10番手以降で5着以内
-      const wasBack = last.corner4 >= 10;
-      const goodFinish = last.finishPosition <= 5;
-      
-      if (wasBack && goodFinish) {
-        // ハイペース予想なら加点
-        if (settings.paceExpectation === 'fast') {
-          return {
-            reason: `差し脚あり（4角${last.corner4}番手→${last.finishPosition}着）、ハイペースで浮上`,
-            confidence: 'high' as const,
-            scoreAdjust: 6,
-          };
-        }
-        return {
-          reason: `差し脚あり（4角${last.corner4}番手→${last.finishPosition}着）、展開一つで台頭`,
-          confidence: 'medium' as const,
-          scoreAdjust: 4,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // === 人気薄での好走（穴候補） ===
-  UPSET_CANDIDATE: {
-    id: 'upset_candidate',
-    name: '人気薄でも実力あり',
-    type: 'ANA' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      if (!last) return null;
-      
-      // 人気薄（6番人気以下）で5着以内
-      if (last.popularity >= 6 && last.finishPosition <= 5) {
-        return {
-          reason: `前走${last.popularity}番人気で${last.finishPosition}着と好走、人気以上の実力`,
-          confidence: 'medium' as const,
-          scoreAdjust: 5,
-        };
-      }
-      return null;
-    },
-  },
-  
-  // ============================================
-  // 評価DOWN系（NEGATIVE）
-  // ============================================
-  
-  // === 着順・成績悪化系 ===
-  DECLINING_FORM: {
-    id: 'declining_form',
-    name: '着順悪化',
-    type: 'NEGATIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      if (horse.pastRaces.length < 2) return null;
-      
-      const last = horse.pastRaces[0];
-      const prev = horse.pastRaces[1];
-      
-      // 着順が3つ以上悪化
-      if (last.finishPosition > prev.finishPosition + 2) {
-        return {
-          reason: `着順が${prev.finishPosition}着→${last.finishPosition}着と悪化、下降気配`,
-          confidence: 'medium' as const,
-          scoreAdjust: -4,
-        };
-      }
-      return null;
-    },
-  },
-  
-  CONSECUTIVE_LOSSES: {
-    id: 'consecutive_losses',
-    name: '連続凡走',
-    type: 'NEGATIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const recent3 = horse.pastRaces.slice(0, 3);
-      if (recent3.length < 3) return null;
-      
-      const allBad = recent3.every(r => r.finishPosition >= 6);
-      
-      if (allBad) {
-        return {
-          reason: '近3走すべて6着以下、調子が上がらない',
-          confidence: 'high' as const,
-          scoreAdjust: -6,
-        };
-      }
-      return null;
-    },
-  },
-  
   LARGE_MARGIN_LOSS: {
     id: 'large_margin_loss',
     name: '大差負け',
-    type: 'NEGATIVE' as EvaluationType,
+    type: 'NEGATIVE',
+    category: 'margin',
+    priority: 80,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       if (!last) return null;
@@ -706,74 +422,82 @@ export const PREDICTION_RULES = {
     },
   },
   
-  // === 低レベル戦での凡走 → マイナス評価 ===
-  LOW_LEVEL_RACE_BAD: {
-    id: 'low_level_race_bad',
-    name: '低レベル戦での凡走',
-    type: 'NEGATIVE' as EvaluationType,
+  // ============================================
+  // ラップ評価（lap）- 勝利評価とは排他
+  // ============================================
+  
+  GOOD_LAP_RATING: {
+    id: 'good_lap_rating',
+    name: 'ラップ評価が優秀',
+    type: 'POSITIVE',
+    category: 'lap',
+    priority: 100,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const lapGood = horse.lapRating === 'S' || horse.lapRating === 'A';
       const last = horse.pastRaces[0];
-      if (!last) return null;
       
-      const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
-      const badFinish = last.finishPosition >= 6;
+      // 勝利/3着以内はwin_qualityで処理済みなので、4着以降のみ
+      if (!lapGood || !last || last.finishPosition <= 3) return null;
       
-      if (isLowLevel && badFinish) {
+      // ラップ優秀だが凡走 = 展開向かず
+      return {
+        reason: `ラップ評価${horse.lapRating}も${last.finishPosition}着、展開向けば浮上`,
+        confidence: 'medium' as const,
+        scoreAdjust: 4,
+      };
+    },
+  },
+  
+  // ============================================
+  // 時計評価（time）- 勝利評価とは排他
+  // ============================================
+  
+  GOOD_TIME_RATING: {
+    id: 'good_time_rating',
+    name: '時計評価が優秀',
+    type: 'POSITIVE',
+    category: 'time',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const timeGood = horse.timeRating === 'S' || horse.timeRating === 'A';
+      const last = horse.pastRaces[0];
+      
+      // 勝利/3着以内はwin_qualityで処理済みなので、4着以降のみ
+      if (!timeGood || !last || last.finishPosition <= 3) return null;
+      
+      // 時計優秀だが凡走 = 力は見せている
+      return {
+        reason: `時計評価${horse.timeRating}、着順以上の力はある`,
+        confidence: 'medium' as const,
+        scoreAdjust: 4,
+      };
+    },
+  },
+  
+  // ============================================
+  // ポテンシャル指数（potential）
+  // ============================================
+  
+  HIGH_POTENTIAL: {
+    id: 'high_potential',
+    name: 'ポテンシャル指数が高い',
+    type: 'POSITIVE',
+    category: 'potential',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      // ポテンシャル指数は最大10までの数値
+      if (horse.potential !== null && horse.potential >= 8) {
         return {
-          reason: `メンバーレベル${last.raceLevel}のところで${last.finishPosition}着と凡走、マイナス評価`,
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}と高く、能力上位`,
           confidence: 'high' as const,
-          scoreAdjust: -5,
+          scoreAdjust: 6,
         };
       }
-      return null;
-    },
-  },
-  
-  // === 恵まれ系 ===
-  BLESSED_LOW_LEVEL: {
-    id: 'blessed_low_level',
-    name: '恵まれた低レベル戦',
-    type: 'NEGATIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const blessed = calculateBlessed(horse.makikaeshi, horse.blessedManual);
-      const last = horse.pastRaces[0];
-      
-      if (blessed === 'blessed' && last) {
-        const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
-        const goodFinish = last.finishPosition <= 3;
-        
-        if (isLowLevel && goodFinish) {
-          return {
-            reason: 'レースレベルが低い中で恵まれた好走、再現性に疑問',
-            confidence: 'high' as const,
-            scoreAdjust: -6,
-          };
-        }
-      }
-      return null;
-    },
-  },
-  
-  // === 人気と実力の乖離 ===
-  OVERRATED_POPULAR: {
-    id: 'overrated_popular',
-    name: '人気先行（過大評価）',
-    type: 'NEGATIVE' as EvaluationType,
-    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      if (!last) return null;
-      
-      const lapBad = horse.lapRating === 'C' || horse.lapRating === 'D' || horse.lapRating === 'LOW';
-      const timeBad = horse.timeRating === 'C' || horse.timeRating === 'D' || horse.timeRating === 'LOW';
-      const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
-      const popular = horse.estimatedPopularity <= 3;
-      
-      // 低レベル戦 + ラップ/時計悪い + 人気 = 過大評価
-      if ((lapBad || timeBad || isLowLevel) && popular && last.finishPosition <= 3) {
+      if (horse.potential !== null && horse.potential >= 6) {
         return {
-          reason: '前走好走も中身が伴わず人気、過大評価の可能性',
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}、まずまずの能力`,
           confidence: 'medium' as const,
-          scoreAdjust: -5,
+          scoreAdjust: 4,
         };
       }
       return null;
@@ -783,9 +507,10 @@ export const PREDICTION_RULES = {
   LOW_POTENTIAL_POPULAR: {
     id: 'low_potential_popular',
     name: '低ポテンシャルで人気',
-    type: 'NEGATIVE' as EvaluationType,
+    type: 'NEGATIVE',
+    category: 'potential',
+    priority: 50,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      // ポテンシャル指数は最大10までの数値
       const lowPotential = horse.potential !== null && horse.potential < 3;
       const popular = horse.estimatedPopularity <= 3;
       
@@ -801,13 +526,239 @@ export const PREDICTION_RULES = {
   },
   
   // ============================================
-  // 馬場・展開連動系
+  // 巻き返し指数（makikaeshi）
+  // ============================================
+  
+  MAKIKAESHI_CANDIDATE: {
+    id: 'makikaeshi_candidate',
+    name: '巻き返し候補',
+    type: 'POSITIVE',
+    category: 'makikaeshi',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      const marginSec = last ? parseMargin(last.margin) : 99;
+      
+      if (horse.makikaeshi !== null && horse.makikaeshi >= 3.0) {
+        // 巻き返し指数高い + 僅差負けなら特に期待大
+        if (marginSec <= 1.0) {
+          return {
+            reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、不利がありながら僅差、大きな巻き返し期待`,
+            confidence: 'high' as const,
+            scoreAdjust: 8,
+          };
+        }
+        return {
+          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、前走は不利があった可能性大、巻き返しに期待`,
+          confidence: 'high' as const,
+          scoreAdjust: 6,
+        };
+      }
+      if (horse.makikaeshi !== null && horse.makikaeshi >= 2.0) {
+        return {
+          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、前走より上積み期待`,
+          confidence: 'medium' as const,
+          scoreAdjust: 4,
+        };
+      }
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 先行力/差し脚（position）
+  // ============================================
+  
+  FRONT_RUNNER: {
+    id: 'front_runner',
+    name: '先行力がある',
+    type: 'POSITIVE',
+    category: 'position',
+    priority: 100,
+    check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last || !last.corner4) return null;
+      
+      // 前走4角3番手以内
+      const isFront = last.corner4 <= 3;
+      
+      if (isFront) {
+        // スローペース予想なら加点
+        if (settings.paceExpectation === 'slow') {
+          return {
+            reason: `先行力あり（前走4角${last.corner4}番手）、スローなら逃げ粘り期待`,
+            confidence: 'high' as const,
+            scoreAdjust: 5,
+          };
+        }
+        return {
+          reason: `先行力あり（前走4角${last.corner4}番手）、前で競馬できる`,
+          confidence: 'medium' as const,
+          scoreAdjust: 3,
+        };
+      }
+      return null;
+    },
+  },
+  
+  CLOSER_ABILITY: {
+    id: 'closer_ability',
+    name: '差し脚が使える',
+    type: 'POSITIVE',
+    category: 'position',
+    priority: 90,
+    check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last || !last.corner4) return null;
+      
+      // 前走4角10番手以降で5着以内
+      const wasBack = last.corner4 >= 10;
+      const goodFinish = last.finishPosition <= 5;
+      
+      if (wasBack && goodFinish) {
+        // ハイペース予想なら加点
+        if (settings.paceExpectation === 'fast') {
+          return {
+            reason: `差し脚あり（4角${last.corner4}番手→${last.finishPosition}着）、ハイペースで浮上`,
+            confidence: 'high' as const,
+            scoreAdjust: 5,
+          };
+        }
+        return {
+          reason: `差し脚あり（4角${last.corner4}番手→${last.finishPosition}着）、展開一つで台頭`,
+          confidence: 'medium' as const,
+          scoreAdjust: 3,
+        };
+      }
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 調子（form）
+  // ============================================
+  
+  IMPROVING_FORM: {
+    id: 'improving_form',
+    name: '着順良化',
+    type: 'POSITIVE',
+    category: 'form',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      if (horse.pastRaces.length < 2) return null;
+      
+      const last = horse.pastRaces[0];
+      const prev = horse.pastRaces[1];
+      
+      // 着順が3つ以上良化
+      if (last.finishPosition < prev.finishPosition - 2) {
+        return {
+          reason: `着順が${prev.finishPosition}着→${last.finishPosition}着と大幅良化、上昇気配`,
+          confidence: 'high' as const,
+          scoreAdjust: 4,
+        };
+      }
+      // 着順が2つ良化
+      if (last.finishPosition < prev.finishPosition - 1) {
+        return {
+          reason: `着順が${prev.finishPosition}着→${last.finishPosition}着と良化`,
+          confidence: 'medium' as const,
+          scoreAdjust: 2,
+        };
+      }
+      return null;
+    },
+  },
+  
+  DECLINING_FORM: {
+    id: 'declining_form',
+    name: '着順悪化',
+    type: 'NEGATIVE',
+    category: 'form',
+    priority: 90,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      if (horse.pastRaces.length < 2) return null;
+      
+      const last = horse.pastRaces[0];
+      const prev = horse.pastRaces[1];
+      
+      // 着順が3つ以上悪化
+      if (last.finishPosition > prev.finishPosition + 2) {
+        return {
+          reason: `着順が${prev.finishPosition}着→${last.finishPosition}着と悪化、下降気配`,
+          confidence: 'medium' as const,
+          scoreAdjust: -4,
+        };
+      }
+      return null;
+    },
+  },
+  
+  CONSISTENT_TOP5: {
+    id: 'consistent_top5',
+    name: '安定好走',
+    type: 'POSITIVE',
+    category: 'form',
+    priority: 80,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const recent3 = horse.pastRaces.slice(0, 3);
+      if (recent3.length < 3) return null;
+      
+      const allTop5 = recent3.every(r => r.finishPosition <= 5);
+      const hasHighLevel = recent3.some(r => r.raceLevel === 'A' || r.raceLevel === 'B');
+      
+      if (allTop5 && hasHighLevel) {
+        return {
+          reason: '近走は高レベル戦含め安定して5着内、信頼度高い',
+          confidence: 'high' as const,
+          scoreAdjust: 5,
+        };
+      }
+      
+      if (allTop5) {
+        return {
+          reason: '近3走すべて5着内、安定感あり',
+          confidence: 'medium' as const,
+          scoreAdjust: 3,
+        };
+      }
+      return null;
+    },
+  },
+  
+  CONSECUTIVE_LOSSES: {
+    id: 'consecutive_losses',
+    name: '連続凡走',
+    type: 'NEGATIVE',
+    category: 'form',
+    priority: 70,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const recent3 = horse.pastRaces.slice(0, 3);
+      if (recent3.length < 3) return null;
+      
+      const allBad = recent3.every(r => r.finishPosition >= 6);
+      
+      if (allBad) {
+        return {
+          reason: '近3走すべて6着以下、調子が上がらない',
+          confidence: 'high' as const,
+          scoreAdjust: -5,
+        };
+      }
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 馬場バイアス（track_bias）
   // ============================================
   
   TRACK_BIAS_INNER: {
     id: 'track_bias_inner',
-    name: '内有利馬場×内枠',
-    type: 'POSITIVE' as EvaluationType,
+    name: '内有利馬場×枠順',
+    type: 'POSITIVE',
+    category: 'track_bias',
+    priority: 100,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.trackBias !== 'inner') return null;
       
@@ -815,13 +766,13 @@ export const PREDICTION_RULES = {
         return {
           reason: '内有利馬場で内枠、立ち回りの利がある',
           confidence: 'high' as const,
-          scoreAdjust: 6,
+          scoreAdjust: 5,
         };
       } else if (horse.waku >= 6) {
         return {
           reason: '内有利馬場で外枠、不利な条件',
           confidence: 'medium' as const,
-          scoreAdjust: -4,
+          scoreAdjust: -3,
         };
       }
       return null;
@@ -830,8 +781,10 @@ export const PREDICTION_RULES = {
   
   TRACK_BIAS_OUTER: {
     id: 'track_bias_outer',
-    name: '外有利馬場×外枠',
-    type: 'POSITIVE' as EvaluationType,
+    name: '外有利馬場×枠順',
+    type: 'POSITIVE',
+    category: 'track_bias',
+    priority: 100,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.trackBias !== 'outer') return null;
       
@@ -839,13 +792,13 @@ export const PREDICTION_RULES = {
         return {
           reason: '外有利馬場で外枠、馬場を生かせる',
           confidence: 'high' as const,
-          scoreAdjust: 6,
+          scoreAdjust: 5,
         };
       } else if (horse.waku <= 3) {
         return {
           reason: '外有利馬場で内枠、揉まれると厳しい',
           confidence: 'medium' as const,
-          scoreAdjust: -4,
+          scoreAdjust: -3,
         };
       }
       return null;
@@ -854,8 +807,10 @@ export const PREDICTION_RULES = {
   
   TRACK_BIAS_FRONT: {
     id: 'track_bias_front',
-    name: '前有利馬場×先行馬',
-    type: 'POSITIVE' as EvaluationType,
+    name: '前有利馬場×脚質',
+    type: 'POSITIVE',
+    category: 'track_bias',
+    priority: 90,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.trackBias !== 'front') return null;
       
@@ -868,7 +823,7 @@ export const PREDICTION_RULES = {
         return {
           reason: '前有利馬場で先行脚質、展開も向きそう',
           confidence: 'high' as const,
-          scoreAdjust: 6,
+          scoreAdjust: 5,
         };
       }
       return null;
@@ -877,8 +832,10 @@ export const PREDICTION_RULES = {
   
   TRACK_BIAS_CLOSER: {
     id: 'track_bias_closer',
-    name: '差し有利馬場×差し馬',
-    type: 'POSITIVE' as EvaluationType,
+    name: '差し有利馬場×脚質',
+    type: 'POSITIVE',
+    category: 'track_bias',
+    priority: 90,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.trackBias !== 'closer') return null;
       
@@ -891,17 +848,23 @@ export const PREDICTION_RULES = {
         return {
           reason: '差し有利馬場で差し脚質、展開向きそう',
           confidence: 'high' as const,
-          scoreAdjust: 6,
+          scoreAdjust: 5,
         };
       }
       return null;
     },
   },
   
+  // ============================================
+  // 展開連動（pace）
+  // ============================================
+  
   PACE_SLOW_FRONT: {
     id: 'pace_slow_front',
     name: 'スロー予想×先行馬',
-    type: 'POSITIVE' as EvaluationType,
+    type: 'POSITIVE',
+    category: 'pace',
+    priority: 100,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.paceExpectation !== 'slow') return null;
       
@@ -914,7 +877,7 @@ export const PREDICTION_RULES = {
         return {
           reason: 'スローペース予想で先行脚質、行った行ったになりやすい',
           confidence: 'medium' as const,
-          scoreAdjust: 5,
+          scoreAdjust: 4,
         };
       }
       return null;
@@ -924,7 +887,9 @@ export const PREDICTION_RULES = {
   PACE_FAST_CLOSER: {
     id: 'pace_fast_closer',
     name: 'ハイペース予想×差し馬',
-    type: 'POSITIVE' as EvaluationType,
+    type: 'POSITIVE',
+    category: 'pace',
+    priority: 100,
     check: (horse: HorseAnalysisData, settings: RaceConditionSettings) => {
       if (settings.paceExpectation !== 'fast') return null;
       
@@ -937,7 +902,7 @@ export const PREDICTION_RULES = {
         return {
           reason: 'ハイペース予想で差し脚質、前が潰れれば浮上',
           confidence: 'medium' as const,
-          scoreAdjust: 5,
+          scoreAdjust: 4,
         };
       }
       return null;
@@ -945,13 +910,122 @@ export const PREDICTION_RULES = {
   },
   
   // ============================================
-  // 度外視系（DISMISS）
+  // 人気薄好走（upset）
+  // ============================================
+  
+  UPSET_CANDIDATE: {
+    id: 'upset_candidate',
+    name: '人気薄でも実力あり',
+    type: 'ANA',
+    category: 'upset',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last) return null;
+      
+      // 人気薄（6番人気以下）で3着以内
+      if (last.popularity >= 6 && last.finishPosition <= 3) {
+        return {
+          reason: `前走${last.popularity}番人気で${last.finishPosition}着と好走、人気以上の実力`,
+          confidence: 'medium' as const,
+          scoreAdjust: 4,
+        };
+      }
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 過大評価（overrated）
+  // ============================================
+  
+  OVERRATED_POPULAR: {
+    id: 'overrated_popular',
+    name: '人気先行（過大評価）',
+    type: 'NEGATIVE',
+    category: 'overrated',
+    priority: 100,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last) return null;
+      
+      const lapBad = horse.lapRating === 'C' || horse.lapRating === 'D' || horse.lapRating === 'LOW';
+      const timeBad = horse.timeRating === 'C' || horse.timeRating === 'D' || horse.timeRating === 'LOW';
+      const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
+      const popular = horse.estimatedPopularity <= 3;
+      
+      // 低レベル戦 + ラップ/時計悪い + 人気 = 過大評価
+      if ((lapBad || timeBad || isLowLevel) && popular && last.finishPosition <= 3) {
+        return {
+          reason: '前走好走も中身が伴わず人気、過大評価の可能性',
+          confidence: 'medium' as const,
+          scoreAdjust: -4,
+        };
+      }
+      return null;
+    },
+  },
+  
+  LOW_LEVEL_RACE_BAD: {
+    id: 'low_level_race_bad',
+    name: '低レベル戦での凡走',
+    type: 'NEGATIVE',
+    category: 'overrated',
+    priority: 90,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const last = horse.pastRaces[0];
+      if (!last) return null;
+      
+      const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
+      const badFinish = last.finishPosition >= 6;
+      
+      if (isLowLevel && badFinish) {
+        return {
+          reason: `メンバーレベル${last.raceLevel}のところで${last.finishPosition}着と凡走、マイナス評価`,
+          confidence: 'high' as const,
+          scoreAdjust: -4,
+        };
+      }
+      return null;
+    },
+  },
+  
+  BLESSED_LOW_LEVEL: {
+    id: 'blessed_low_level',
+    name: '恵まれた低レベル戦',
+    type: 'NEGATIVE',
+    category: 'overrated',
+    priority: 80,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      const blessed = calculateBlessed(horse.makikaeshi, horse.blessedManual);
+      const last = horse.pastRaces[0];
+      
+      if (blessed === 'blessed' && last) {
+        const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
+        const goodFinish = last.finishPosition <= 3;
+        
+        if (isLowLevel && goodFinish) {
+          return {
+            reason: 'レースレベルが低い中で恵まれた好走、再現性に疑問',
+            confidence: 'high' as const,
+            scoreAdjust: -5,
+          };
+        }
+      }
+      return null;
+    },
+  },
+  
+  // ============================================
+  // 度外視（dismiss）
   // ============================================
   
   DISMISS_DIFFERENT_CONDITION: {
     id: 'dismiss_different_condition',
     name: '条件替わりで度外視',
-    type: 'DISMISS' as EvaluationType,
+    type: 'DISMISS',
+    category: 'dismiss',
+    priority: 100,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       const last2 = horse.pastRaces[1];
@@ -964,7 +1038,7 @@ export const PREDICTION_RULES = {
         return {
           reason: `前走は履歴にない距離（${last.distance}m）、度外視可能`,
           confidence: 'medium' as const,
-          scoreAdjust: 0, // 度外視なのでスコア影響なし
+          scoreAdjust: 0,
         };
       }
       return null;
@@ -974,7 +1048,9 @@ export const PREDICTION_RULES = {
   DISMISS_SURFACE_CHANGE: {
     id: 'dismiss_surface_change',
     name: '芝ダ替わりで度外視',
-    type: 'DISMISS' as EvaluationType,
+    type: 'DISMISS',
+    category: 'dismiss',
+    priority: 90,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
       const last = horse.pastRaces[0];
       const last2 = horse.pastRaces[1];
@@ -995,33 +1071,60 @@ export const PREDICTION_RULES = {
 
 /**
  * 全ルールを馬に適用して判定結果を返す
+ * 同一カテゴリ内では最高優先度のルールのみを適用
+ * excludeCategoriesで指定されたカテゴリは除外
  */
 export function applyAllRules(
   horse: HorseAnalysisData,
   settings: RaceConditionSettings
 ): RuleMatchResult[] {
-  const results: RuleMatchResult[] = [];
+  const allMatches: RuleMatchResult[] = [];
+  const excludedCategories = new Set<RuleCategory>();
   
+  // 全ルールを適用してマッチ結果を収集
   for (const [_key, rule] of Object.entries(PREDICTION_RULES)) {
     try {
       const match = rule.check(horse, settings);
       if (match) {
-        results.push({
+        allMatches.push({
           ruleId: rule.id,
           ruleName: rule.name,
           type: rule.type,
+          category: rule.category,
+          priority: rule.priority,
           reason: match.reason,
           confidence: match.confidence,
           scoreAdjust: match.scoreAdjust,
         });
+        
+        // 排他カテゴリを記録
+        if (rule.excludeCategories) {
+          for (const cat of rule.excludeCategories) {
+            excludedCategories.add(cat);
+          }
+        }
       }
     } catch (e) {
-      // ルール適用エラーは無視
       console.error(`[Rules] Error applying rule ${rule.id}:`, e);
     }
   }
   
-  return results;
+  // カテゴリ別に最高優先度のルールのみを選択
+  const categoryBestMatch = new Map<RuleCategory, RuleMatchResult>();
+  
+  for (const match of allMatches) {
+    // 排他カテゴリはスキップ
+    if (excludedCategories.has(match.category)) {
+      continue;
+    }
+    
+    const existing = categoryBestMatch.get(match.category);
+    if (!existing || match.priority > existing.priority) {
+      categoryBestMatch.set(match.category, match);
+    }
+  }
+  
+  return Array.from(categoryBestMatch.values());
 }
 
 /**
@@ -1039,15 +1142,15 @@ export function determineRecommendation(
   popularity: number
 ): '◎' | '○' | '▲' | '△' | '×' | '-' {
   // 高スコア＋低人気 → 穴
-  if (score >= 60 && popularity >= 6) return '▲';
+  if (score >= 58 && popularity >= 6) return '▲';
   
   // 高スコア → 本命候補
-  if (score >= 70) return '◎';
-  if (score >= 60) return '○';
+  if (score >= 65) return '◎';
+  if (score >= 58) return '○';
   if (score >= 50) return '△';
   
   // 低スコア＋高人気 → 消し
-  if (score < 45 && popularity <= 3) return '×';
+  if (score < 46 && popularity <= 3) return '×';
   
   return '-';
 }
