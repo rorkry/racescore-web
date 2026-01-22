@@ -284,7 +284,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
     {
       id: 'race-pace',
       label: '展開予想カード',
-      icon: '🏇',
+      icon: '',
       description: isPremium ? 'レース展開を予想' : 'プレミアム限定',
       isActive: activeFeatures.has('race-pace'),
       locked: !isPremium,
@@ -292,7 +292,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
     {
       id: 'saga-ai',
       label: 'おれAI',
-      icon: '🧠',
+      icon: '',
       description: isPremium ? 'AI分析を表示' : 'プレミアム限定',
       isActive: activeFeatures.has('saga-ai'),
       locked: !isPremium,
@@ -529,7 +529,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
               className={`fab-menu-item ${item.isActive ? 'active' : ''} ${item.locked ? 'locked' : ''}`}
               onClick={() => toggleFeature(item.id, !!item.locked)}
             >
-              <span className="fab-menu-item-icon">{item.locked ? '🔒' : item.icon}</span>
+              {item.locked && <span className="fab-menu-item-icon">🔒</span>}
               <div className="fab-menu-item-content">
                 <span className="fab-menu-item-label">{item.label}</span>
                 {item.description && (

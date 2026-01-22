@@ -153,18 +153,21 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           position: fixed;
           bottom: 90px;
           right: 24px;
-          width: 380px;
+          width: 400px;
           max-width: calc(100vw - 48px);
-          height: 500px;
+          height: 520px;
           max-height: calc(100vh - 120px);
-          background: #ffffff;
-          border-radius: 16px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
+          background: #0a0a0f;
+          border-radius: 20px;
+          box-shadow: 
+            0 0 40px rgba(0, 200, 255, 0.15),
+            0 0 80px rgba(255, 0, 128, 0.1),
+            0 25px 50px rgba(0, 0, 0, 0.5);
           display: flex;
           flex-direction: column;
           z-index: 1001;
           overflow: hidden;
-          border: 1px solid #e5e7eb;
+          border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         @media (max-width: 640px) {
@@ -178,46 +181,89 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
         }
 
         .chat-header {
-          padding: 16px;
-          background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
-          color: white;
+          padding: 20px;
+          background: linear-gradient(
+            135deg,
+            rgba(0, 200, 255, 0.2) 0%,
+            rgba(128, 0, 255, 0.2) 50%,
+            rgba(255, 0, 128, 0.2) 100%
+          );
+          position: relative;
+          overflow: hidden;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-header::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: 
+            radial-gradient(ellipse at 20% 50%, rgba(0, 200, 255, 0.3) 0%, transparent 50%),
+            radial-gradient(ellipse at 80% 50%, rgba(255, 0, 128, 0.3) 0%, transparent 50%);
+          animation: pulse 4s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+
+        .chat-header-content {
+          position: relative;
+          z-index: 1;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          flex-shrink: 0;
         }
 
         .chat-header-title {
-          font-size: 15px;
-          font-weight: 600;
+          font-size: 18px;
+          font-weight: 700;
+          color: #ffffff;
+          text-shadow: 
+            0 0 10px rgba(0, 200, 255, 0.8),
+            0 0 20px rgba(0, 200, 255, 0.5),
+            0 0 30px rgba(0, 200, 255, 0.3);
           display: flex;
           align-items: center;
           gap: 8px;
         }
 
+        .chat-header-title .brain-icon {
+          font-size: 24px;
+          filter: drop-shadow(0 0 8px rgba(255, 200, 0, 0.8));
+        }
+
         .chat-header-subtitle {
-          font-size: 11px;
-          opacity: 0.8;
-          margin-top: 2px;
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.7);
+          margin-top: 4px;
+          text-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
         }
 
         .chat-close {
           background: rgba(255, 255, 255, 0.1);
-          border: none;
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
           color: white;
-          width: 32px;
-          height: 32px;
-          border-radius: 8px;
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
           cursor: pointer;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 18px;
-          transition: background 0.2s;
+          font-size: 20px;
+          transition: all 0.2s;
         }
 
         .chat-close:hover {
           background: rgba(255, 255, 255, 0.2);
+          border-color: rgba(255, 255, 255, 0.4);
+          transform: scale(1.05);
         }
 
         .chat-messages {
@@ -227,176 +273,202 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           display: flex;
           flex-direction: column;
           gap: 12px;
+          background: linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
+        }
+
+        .chat-messages::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 3px;
         }
 
         .message {
           max-width: 85%;
-          padding: 10px 14px;
-          border-radius: 12px;
+          padding: 12px 16px;
+          border-radius: 16px;
           font-size: 13px;
-          line-height: 1.5;
+          line-height: 1.6;
           white-space: pre-wrap;
           word-break: break-word;
         }
 
         .message.user {
           align-self: flex-end;
-          background: #1e3a5f;
+          background: linear-gradient(135deg, #00c8ff 0%, #0080ff 100%);
           color: white;
           border-bottom-right-radius: 4px;
+          box-shadow: 0 4px 15px rgba(0, 200, 255, 0.3);
         }
 
         .message.assistant {
           align-self: flex-start;
-          background: #f3f4f6;
-          color: #1f2937;
+          background: rgba(255, 255, 255, 0.08);
+          color: #e0e0e0;
           border-bottom-left-radius: 4px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .chat-input-container {
-          padding: 12px 16px;
-          border-top: 1px solid #e5e7eb;
+          padding: 16px;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
           display: flex;
-          gap: 8px;
+          gap: 10px;
           flex-shrink: 0;
-          background: #fafafa;
+          background: rgba(0, 0, 0, 0.3);
         }
 
         .chat-input {
           flex: 1;
-          padding: 10px 14px;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
+          padding: 12px 16px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 12px;
           font-size: 14px;
           outline: none;
-          transition: border-color 0.2s;
-          color: #000000;
-          background: #ffffff;
+          transition: all 0.2s;
+          color: #ffffff;
+          background: rgba(255, 255, 255, 0.05);
         }
 
         .chat-input::placeholder {
-          color: #9ca3af;
+          color: rgba(255, 255, 255, 0.4);
         }
 
         .chat-input:focus {
-          border-color: #1e3a5f;
+          border-color: #00c8ff;
+          box-shadow: 0 0 15px rgba(0, 200, 255, 0.3);
+          background: rgba(255, 255, 255, 0.08);
         }
 
         .chat-input:disabled {
-          background: #f3f4f6;
-          color: #6b7280;
+          background: rgba(255, 255, 255, 0.02);
+          color: rgba(255, 255, 255, 0.3);
         }
 
         .chat-send {
-          padding: 10px 16px;
-          background: #1e3a5f;
+          padding: 12px 20px;
+          background: linear-gradient(135deg, #00c8ff 0%, #0080ff 100%);
           color: white;
           border: none;
-          border-radius: 8px;
+          border-radius: 12px;
           font-size: 14px;
-          font-weight: 500;
+          font-weight: 600;
           cursor: pointer;
-          transition: background 0.2s;
+          transition: all 0.2s;
           display: flex;
           align-items: center;
           justify-content: center;
-          min-width: 60px;
+          min-width: 70px;
+          box-shadow: 0 4px 15px rgba(0, 200, 255, 0.3);
         }
 
         .chat-send:hover:not(:disabled) {
-          background: #2d5a87;
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(0, 200, 255, 0.4);
         }
 
         .chat-send:disabled {
-          background: #9ca3af;
+          background: rgba(255, 255, 255, 0.1);
+          box-shadow: none;
           cursor: not-allowed;
         }
 
         .loading-dots {
           display: flex;
-          gap: 4px;
+          gap: 6px;
           padding: 8px 0;
         }
 
         .loading-dots span {
           width: 8px;
           height: 8px;
-          background: #9ca3af;
+          background: #00c8ff;
           border-radius: 50%;
           animation: bounce 1.4s infinite ease-in-out both;
+          box-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
         }
 
         .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
         .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
 
         @keyframes bounce {
-          0%, 80%, 100% { transform: scale(0); }
-          40% { transform: scale(1); }
+          0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+          40% { transform: scale(1); opacity: 1; }
         }
 
         .error-message {
-          background: #fef2f2;
-          color: #991b1b;
-          padding: 8px 12px;
-          border-radius: 8px;
+          background: rgba(255, 50, 50, 0.2);
+          color: #ff6b6b;
+          padding: 10px 14px;
+          border-radius: 10px;
           font-size: 12px;
           margin: 0 16px;
+          border: 1px solid rgba(255, 50, 50, 0.3);
         }
 
         .premium-required {
           text-align: center;
-          padding: 40px 20px;
-          color: #6b7280;
+          padding: 60px 20px;
+          color: rgba(255, 255, 255, 0.6);
+          background: linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
+          flex: 1;
         }
 
         .premium-required h3 {
-          font-size: 16px;
+          font-size: 18px;
           font-weight: 600;
-          margin-bottom: 8px;
-          color: #1f2937;
+          margin-bottom: 12px;
+          color: #ffffff;
+          text-shadow: 0 0 20px rgba(255, 200, 0, 0.5);
         }
 
         .quick-actions {
           display: flex;
-          gap: 8px;
-          padding: 8px 16px;
-          border-top: 1px solid #e5e7eb;
-          background: #fafafa;
+          gap: 10px;
+          padding: 12px 16px;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.2);
           flex-wrap: wrap;
         }
 
         .quick-action {
-          padding: 6px 12px;
-          background: white;
-          border: 1px solid #d1d5db;
-          border-radius: 16px;
+          padding: 8px 14px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 20px;
           font-size: 12px;
           cursor: pointer;
           transition: all 0.2s;
-          color: #374151;
+          color: rgba(255, 255, 255, 0.8);
         }
 
         .quick-action:hover {
-          background: #f3f4f6;
-          border-color: #1e3a5f;
-          color: #1e3a5f;
+          background: rgba(0, 200, 255, 0.15);
+          border-color: rgba(0, 200, 255, 0.5);
+          color: #00c8ff;
+          box-shadow: 0 0 15px rgba(0, 200, 255, 0.2);
         }
 
         .feature-toggles {
           display: flex;
-          gap: 8px;
-          padding: 8px 12px;
-          background: #f8fafc;
-          border-bottom: 1px solid #e5e7eb;
-          flex-wrap: wrap;
+          gap: 10px;
+          padding: 12px 16px;
+          background: rgba(0, 0, 0, 0.3);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .feature-toggle {
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 6px 10px;
-          border-radius: 8px;
+          gap: 8px;
+          padding: 8px 12px;
+          border-radius: 10px;
           font-size: 12px;
           font-weight: 500;
           cursor: pointer;
@@ -405,43 +477,44 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
         }
 
         .feature-toggle.active {
-          background: #ecfdf5;
-          color: #065f46;
-          border-color: #10b981;
+          background: rgba(16, 185, 129, 0.2);
+          color: #10b981;
+          border-color: rgba(16, 185, 129, 0.4);
         }
 
         .feature-toggle.inactive {
-          background: #f3f4f6;
-          color: #6b7280;
+          background: rgba(255, 255, 255, 0.05);
+          color: rgba(255, 255, 255, 0.5);
         }
 
         .feature-toggle.locked {
-          opacity: 0.5;
+          opacity: 0.4;
           cursor: not-allowed;
         }
 
         .feature-toggle:hover:not(.locked) {
-          border-color: #d1d5db;
+          background: rgba(255, 255, 255, 0.1);
         }
 
         .toggle-switch {
-          width: 28px;
-          height: 16px;
-          background: #d1d5db;
-          border-radius: 8px;
+          width: 32px;
+          height: 18px;
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 9px;
           position: relative;
-          transition: background 0.2s;
+          transition: all 0.2s;
         }
 
         .toggle-switch.active {
           background: #10b981;
+          box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
         }
 
         .toggle-switch::after {
           content: '';
           position: absolute;
-          width: 12px;
-          height: 12px;
+          width: 14px;
+          height: 14px;
           background: white;
           border-radius: 50%;
           top: 2px;
@@ -450,26 +523,28 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
         }
 
         .toggle-switch.active::after {
-          transform: translateX(12px);
+          transform: translateX(14px);
         }
       `}</style>
 
       <div ref={ref} className="chat-panel">
         <div className="chat-header">
-          <div>
-            <div className="chat-header-title">
-              <span>🧠</span>
-              <span>AI予想アシスタント</span>
-            </div>
-            {raceContext && (
-              <div className="chat-header-subtitle">
-                {raceContext.place} {raceContext.raceNumber}R
+          <div className="chat-header-content">
+            <div>
+              <div className="chat-header-title">
+                <span className="brain-icon">🧠</span>
+                <span>競馬の脳みそ</span>
               </div>
-            )}
+              {raceContext && (
+                <div className="chat-header-subtitle">
+                  {raceContext.place} {raceContext.raceNumber}R
+                </div>
+              )}
+            </div>
+            <button className="chat-close" onClick={onClose} aria-label="閉じる">
+              ×
+            </button>
           </div>
-          <button className="chat-close" onClick={onClose} aria-label="閉じる">
-            ×
-          </button>
         </div>
 
         {/* 機能トグル */}
@@ -479,7 +554,6 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
               className={`feature-toggle ${activeFeatures.has('saga-ai') ? 'active' : 'inactive'}`}
               onClick={() => onToggleFeature('saga-ai', false)}
             >
-              <span>🧠</span>
               <span>おれAI</span>
               <div className={`toggle-switch ${activeFeatures.has('saga-ai') ? 'active' : ''}`} />
             </div>
@@ -487,7 +561,6 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
               className={`feature-toggle ${activeFeatures.has('race-pace') ? 'active' : 'inactive'}`}
               onClick={() => onToggleFeature('race-pace', false)}
             >
-              <span>🏇</span>
               <span>展開予想</span>
               <div className={`toggle-switch ${activeFeatures.has('race-pace') ? 'active' : ''}`} />
             </div>
@@ -541,6 +614,12 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
                 >
                   📊 コース特徴
                 </button>
+                <button 
+                  className="quick-action" 
+                  onClick={() => setInput('お気に入り馬は？')}
+                >
+                  ⭐ お気に入り
+                </button>
               </div>
             )}
 
@@ -549,7 +628,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
                 ref={inputRef}
                 type="text"
                 className="chat-input"
-                placeholder="「予想」と入力してAI予想を生成..."
+                placeholder="質問を入力..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
