@@ -118,8 +118,8 @@ export async function POST(request: NextRequest) {
         answer: 'レースカードを開いた状態で「予想」と入力してください。\n現在表示中のレースの予想を生成します。' 
       });
     } else {
-      // 一般質問に回答
-      const response = await handleGeneralQuestion(message, raceContext, apiKey);
+      // 一般質問に回答（お気に入り馬・メモ機能含む）
+      const response = await handleGeneralQuestion(message, raceContext, apiKey, userId);
       return NextResponse.json({ answer: response });
     }
     
@@ -657,12 +657,27 @@ async function getSamplePredictions(
 async function handleGeneralQuestion(
   message: string,
   raceContext: any | undefined,
-  apiKey: string
+  apiKey: string,
+  userId?: string
 ): Promise<string> {
   const db = getDb();
+  const lowerMessage = message.toLowerCase();
+  
+  // メモ更新要求の検出
+  if (lowerMessage.includes('メモ') && (lowerMessage.includes('更新') || lowerMessage.includes('登録') || lowerMessage.includes('追加'))) {
+    return `メモの更新はレースカードから直接行えます：
+
+📝 **レースメモ**: 各レースの上部にある「📝」ボタンをクリック
+🏇 **馬場メモ**: ヘッダーの「馬場メモ」ボタンをクリック
+⭐ **馬メモ**: 馬名をクリックして表示されるポップアップから「メモ」を選択
+
+チャットからの直接更新は今後対応予定です。`;
+  }
   
   // レースコンテキストがある場合は、そのレースの全データを取得してAIに渡す
   let raceDataContext = '';
+  let favoriteContext = '';
+  let horseList: Array<{ name: string; number: number; waku: number; jockey: string }> = [];
   
   if (raceContext) {
     const { year, date, place, raceNumber } = raceContext;
@@ -693,7 +708,10 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
       for (const horse of horses) {
         const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
         const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
+        const waku = parseInt(toHalfWidth(horse.waku || '0'), 10);
         const jockey = horse.kishu || '';
+        
+        horseList.push({ name: horseName, number: horseNumber, waku, jockey });
         
         // 過去走を取得（5走分）
         const pastRaces = await db.prepare(`
@@ -708,7 +726,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
           LIMIT 5
         `).all<any>(horseName);
         
-        raceDataContext += `\n**${horseNumber}番 ${horseName}** (${jockey})\n`;
+        raceDataContext += `\n**${horseNumber}番 ${horseName}** (${waku}枠, ${jockey})\n`;
         
         // 各過去走の詳細とindicesを取得
         for (let i = 0; i < pastRaces.length; i++) {
@@ -766,12 +784,111 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
 - レースレベル: A=ハイレベル, B=やや高い, C=標準, D=低い
 `;
     }
+    
+    // ユーザーのお気に入り馬を取得してマッチング
+    if (userId && horseList.length > 0) {
+      try {
+        const favorites = await db.prepare(`
+          SELECT horse_name, memo FROM user_favorite_horses WHERE user_id = $1
+        `).all<{ horse_name: string; memo: string | null }>(userId);
+        
+        if (favorites && favorites.length > 0) {
+          // 今回出走するお気に入り馬をチェック
+          const matchedFavorites: Array<{
+            horseName: string;
+            memo: string | null;
+            number: number;
+            waku: number;
+            memoMatch: string[];
+          }> = [];
+          
+          for (const fav of favorites) {
+            const normalizedFavName = fav.horse_name.trim().replace(/^[\$\*]+/, '');
+            const matchedHorse = horseList.find(h => 
+              h.name === normalizedFavName || 
+              h.name.includes(normalizedFavName) ||
+              normalizedFavName.includes(h.name)
+            );
+            
+            if (matchedHorse) {
+              const memoMatch: string[] = [];
+              const memo = fav.memo || '';
+              const memoLower = memo.toLowerCase();
+              
+              // メモと条件のマッチング
+              if ((memoLower.includes('外枠') || memoLower.includes('外有利')) && matchedHorse.waku >= 6) {
+                memoMatch.push(`✅ 「${memo}」→ 今回${matchedHorse.waku}枠（外枠）`);
+              }
+              if ((memoLower.includes('内枠') || memoLower.includes('内有利')) && matchedHorse.waku <= 3) {
+                memoMatch.push(`✅ 「${memo}」→ 今回${matchedHorse.waku}枠（内枠）`);
+              }
+              if (memoLower.includes('短縮') && distanceStr) {
+                memoMatch.push(`📝 「${memo}」→ 距離変更を確認してください`);
+              }
+              if (memoLower.includes('延長') && distanceStr) {
+                memoMatch.push(`📝 「${memo}」→ 距離変更を確認してください`);
+              }
+              if (memoLower.includes('良馬場') || memoLower.includes('重馬場') || memoLower.includes('道悪')) {
+                memoMatch.push(`📝 「${memo}」→ 馬場状態を確認してください`);
+              }
+              if (memoLower.includes('中山') && place.includes('中山')) {
+                memoMatch.push(`✅ 「${memo}」→ 今回中山`);
+              }
+              if (memoLower.includes('東京') && place.includes('東京')) {
+                memoMatch.push(`✅ 「${memo}」→ 今回東京`);
+              }
+              if (memoLower.includes('京都') && place.includes('京都')) {
+                memoMatch.push(`✅ 「${memo}」→ 今回京都`);
+              }
+              if (memoLower.includes('阪神') && place.includes('阪神')) {
+                memoMatch.push(`✅ 「${memo}」→ 今回阪神`);
+              }
+              if (memoLower.includes('芝') && surface === '芝') {
+                memoMatch.push(`✅ 「${memo}」→ 今回芝`);
+              }
+              if (memoLower.includes('ダート') && surface === 'ダ') {
+                memoMatch.push(`✅ 「${memo}」→ 今回ダート`);
+              }
+              
+              matchedFavorites.push({
+                horseName: matchedHorse.name,
+                memo: fav.memo,
+                number: matchedHorse.number,
+                waku: matchedHorse.waku,
+                memoMatch,
+              });
+            }
+          }
+          
+          if (matchedFavorites.length > 0) {
+            favoriteContext = `
+【⭐ お気に入り馬の出走情報】
+`;
+            for (const mf of matchedFavorites) {
+              favoriteContext += `\n**${mf.number}番 ${mf.horseName}** (${mf.waku}枠)\n`;
+              favoriteContext += `  メモ: ${mf.memo || '(メモなし)'}\n`;
+              if (mf.memoMatch.length > 0) {
+                favoriteContext += `  【条件マッチ】\n`;
+                for (const match of mf.memoMatch) {
+                  favoriteContext += `    ${match}\n`;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[AI Chat] Error fetching favorites:', e);
+      }
+    }
   }
   
   // コンテキスト情報を構築
   let context = '';
   if (raceContext) {
     context = `現在表示中のレース: ${raceContext.place} ${raceContext.raceNumber}R\n`;
+  }
+  if (favoriteContext) {
+    context += favoriteContext;
   }
   context += raceDataContext;
   
