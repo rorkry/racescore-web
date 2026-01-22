@@ -132,24 +132,26 @@ export function estimatePopularity(pastRaces: HorseAnalysisData['pastRaces']): n
 function parseMargin(margin: string): number {
   if (!margin) return 99;
   
-  // "0.1" のような形式
-  const numMatch = margin.match(/(\d+\.?\d*)/);
-  if (numMatch) {
-    return parseFloat(numMatch[1]);
-  }
-  
-  // "ハナ"、"クビ"、"アタマ" など
+  // 特殊表記を先にチェック（数値マッチより優先）
   const shortMargins: { [key: string]: number } = {
     'ハナ': 0.05,
     'アタマ': 0.1,
     'クビ': 0.15,
     '1/2': 0.3,
     '3/4': 0.4,
-    '1': 0.5,
+    '1 1/2': 0.8,
+    '1 1/4': 0.7,
+    '2 1/2': 1.3,
   };
   
   for (const [key, val] of Object.entries(shortMargins)) {
     if (margin.includes(key)) return val;
+  }
+  
+  // 数値形式 "0.1", "1.5" など
+  const numMatch = margin.match(/(\d+\.?\d*)/);
+  if (numMatch) {
+    return parseFloat(numMatch[1]);
   }
   
   return 99;
