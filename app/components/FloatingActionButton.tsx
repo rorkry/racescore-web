@@ -121,6 +121,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   const pathname = usePathname();
   
   const [isOpen, setIsOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false); // チャットパネルの開閉状態を分離
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
@@ -135,6 +136,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   const [isPremium, setIsPremium] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
 
   // プレミアム状態を取得（グローバル設定 + 個人のプレミアム状態）
   useEffect(() => {
@@ -302,24 +304,26 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
     return () => clearInterval(interval);
   }, []);
 
-  // メニュー外クリックで閉じる
+  // メニュー外クリックで閉じる（チャットパネル内のクリックは除外）
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        menuRef.current &&
-        buttonRef.current &&
-        !menuRef.current.contains(event.target as Node) &&
-        !buttonRef.current.contains(event.target as Node)
-      ) {
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      
+      // FABボタン、メニュー、チャットパネル内のクリックは無視
+      if (buttonRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      if (chatRef.current?.contains(target)) return;
+      
+      // それ以外の場所をクリックしたら閉じる
+      setIsOpen(false);
+      setIsChatOpen(false);
     };
 
-    if (isOpen) {
+    if (isOpen || isChatOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isOpen]);
+  }, [isOpen, isChatOpen]);
 
   return (
     <>
@@ -534,7 +538,11 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
         <button
           ref={buttonRef}
           className={`fab-button ${isOpen ? 'open' : ''}`}
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const newOpen = !isOpen;
+            setIsOpen(newOpen);
+            setIsChatOpen(newOpen);
+          }}
           aria-label="メニューを開く"
         >
           {/* ロゴ画像（存在する場合）またはプレースホルダー */}
@@ -563,12 +571,18 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
         </button>
       </div>
 
-      {/* AIチャットパネル - FABメニューを開くと常時表示 */}
+      {/* AIチャットパネル */}
       <AIChatPanel
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
+        ref={chatRef}
+        isOpen={isChatOpen}
+        onClose={() => {
+          setIsChatOpen(false);
+          setIsOpen(false);
+        }}
         raceContext={raceContext}
         isPremium={isPremium}
+        activeFeatures={activeFeatures}
+        onToggleFeature={toggleFeature}
       />
     </>
   );

@@ -404,7 +404,25 @@ async function initDb(database: DatabaseWrapper) {
       full_text TEXT NOT NULL,
       reaction_count INTEGER DEFAULT 0,
       hit INTEGER DEFAULT 0,
-      created_at TIMESTAMP DEFAULT NOW()
+      created_at TIMESTAMP DEFAULT NOW(),
+      -- 構造化分析結果
+      parsed_reasons TEXT,
+      conditions_json TEXT
+    )
+  `);
+
+  // 予想パターン集計テーブル
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS prediction_patterns (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      subcategory TEXT NOT NULL,
+      count INTEGER DEFAULT 0,
+      sentiment TEXT,
+      examples TEXT,
+      suggested_rule TEXT,
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (category, subcategory)
     )
   `);
 

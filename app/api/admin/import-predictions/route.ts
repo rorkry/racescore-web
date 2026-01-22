@@ -4,12 +4,19 @@
  * POST /api/admin/import-predictions
  * - FormDataでJSONファイルを受け取る
  * - 管理者のみ実行可能
+ * - パターン抽出・集計も実行
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { randomUUID } from 'crypto';
+import { 
+  parsePredictionText, 
+  aggregatePatterns, 
+  generateRuleSuggestions,
+  type ParsedPrediction 
+} from '@/lib/ai-chat/prediction-parser';
 
 // パーサー関数群（parse-predictions.tsと同じロジック）
 
@@ -174,6 +181,9 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
     let errors = 0;
     
+    // パターン抽出用に予想を収集
+    const parsedPredictions: ParsedPrediction[] = [];
+    
     for (const msg of data.messages) {
       const content = msg.content || '';
       
@@ -209,19 +219,29 @@ export async function POST(request: NextRequest) {
       // 🎯リアクションがあれば的中とみなす
       const hit = msg.reactions?.some((r: any) => r.emoji?.name === '🎯') ? 1 : 0;
       
+      // パターン抽出（構造化分析）
+      const parsed = parsePredictionText(content, {
+        id: msg.id,
+        timestamp: msg.timestamp,
+      });
+      parsedPredictions.push(parsed);
+      
       try {
         await db.prepare(`
           INSERT INTO ai_predictions (
             id, discord_message_id, timestamp, author,
             race_course, race_number, race_name, distance, surface,
             honmei, taikou, ana, bets_json, full_text,
-            reaction_count, hit
+            reaction_count, hit,
+            parsed_reasons, conditions_json
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
           )
           ON CONFLICT (discord_message_id) DO UPDATE SET
             reaction_count = $15,
-            hit = $16
+            hit = $16,
+            parsed_reasons = $17,
+            conditions_json = $18
         `).run(
           randomUUID(),
           msg.id,
@@ -238,7 +258,9 @@ export async function POST(request: NextRequest) {
           JSON.stringify(bets),
           content,
           reactionCount,
-          hit
+          hit,
+          JSON.stringify(parsed.honmeiReasons),  // 抽出された理由
+          JSON.stringify(parsed.conditions)       // 馬場・展開条件
         );
         imported++;
       } catch (e) {
@@ -247,13 +269,50 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    console.log(`[Import] Complete: imported=${imported}, skipped=${skipped}, errors=${errors}`);
+    // パターン集計を保存
+    let patternsSaved = 0;
+    if (parsedPredictions.length > 0) {
+      const aggregated = aggregatePatterns(parsedPredictions);
+      const suggestions = generateRuleSuggestions(aggregated);
+      
+      for (const suggestion of suggestions) {
+        try {
+          const patternData = aggregated.get(`${suggestion.category}:${suggestion.subcategory}`);
+          await db.prepare(`
+            INSERT INTO prediction_patterns (
+              id, category, subcategory, count, sentiment, examples, suggested_rule, updated_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, NOW()
+            )
+            ON CONFLICT (category, subcategory) DO UPDATE SET
+              count = prediction_patterns.count + $4,
+              examples = $6,
+              suggested_rule = $7,
+              updated_at = NOW()
+          `).run(
+            randomUUID(),
+            suggestion.category,
+            suggestion.subcategory,
+            suggestion.frequency,
+            suggestion.sentiment,
+            JSON.stringify(patternData?.examples || []),
+            suggestion.suggestedRule
+          );
+          patternsSaved++;
+        } catch (e) {
+          console.error('[Import] Error saving pattern:', e);
+        }
+      }
+    }
+    
+    console.log(`[Import] Complete: imported=${imported}, skipped=${skipped}, errors=${errors}, patterns=${patternsSaved}`);
     
     return NextResponse.json({
       success: true,
       imported,
       skipped,
       errors,
+      patternsSaved,
       total: data.messages.length
     });
     

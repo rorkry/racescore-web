@@ -522,8 +522,11 @@ async function handlePredictionRequest(
   // 3. 過去予想からサンプルを取得
   const samplePredictions = await getSamplePredictions(db, place, raceInfo.surface, raceInfo.distance);
   
-  // 4. プロンプトを構築してAI予想を生成
-  const systemPrompt = PREDICTION_SYSTEM_PROMPT + addSamplePredictions(samplePredictions);
+  // 4. 学習したパターンを取得
+  const learnedPatterns = await getLearnedPatterns(db);
+  
+  // 5. プロンプトを構築してAI予想を生成
+  const systemPrompt = PREDICTION_SYSTEM_PROMPT + addSamplePredictions(samplePredictions) + formatLearnedPatterns(learnedPatterns);
   const userPrompt = formatRaceDataForPrompt(raceInfo, analyzedHorses, settings);
   
   console.log('[AI Chat] Calling OpenAI with enhanced prompt...');
@@ -650,4 +653,73 @@ async function handleGeneralQuestion(
   
   const answer = await answerQuestion(message, context, apiKey);
   return answer;
+}
+
+/**
+ * 学習したパターンを取得
+ */
+async function getLearnedPatterns(db: ReturnType<typeof getDb>): Promise<Array<{
+  category: string;
+  subcategory: string;
+  count: number;
+  sentiment: string;
+  suggestedRule: string;
+}>> {
+  try {
+    const patterns = await db.prepare(`
+      SELECT category, subcategory, count, sentiment, suggested_rule
+      FROM prediction_patterns
+      WHERE count >= 3
+      ORDER BY count DESC
+      LIMIT 10
+    `).all<{
+      category: string;
+      subcategory: string;
+      count: number;
+      sentiment: string;
+      suggested_rule: string;
+    }>();
+    
+    return patterns.map(p => ({
+      category: p.category,
+      subcategory: p.subcategory,
+      count: p.count,
+      sentiment: p.sentiment,
+      suggestedRule: p.suggested_rule,
+    }));
+  } catch (e) {
+    console.log('[AI Chat] No prediction_patterns table or error:', e);
+    return [];
+  }
+}
+
+/**
+ * 学習したパターンをプロンプト用にフォーマット
+ */
+function formatLearnedPatterns(patterns: Array<{
+  category: string;
+  subcategory: string;
+  count: number;
+  sentiment: string;
+  suggestedRule: string;
+}>): string {
+  if (patterns.length === 0) {
+    return '';
+  }
+  
+  let text = `
+
+## 学習済み予想パターン（過去の予想から抽出）
+
+以下は過去の予想で頻繁に使われているパターンです。これらを参考に予想文を生成してください。
+
+`;
+
+  for (const pattern of patterns) {
+    const icon = pattern.sentiment === 'positive' ? '✅' : 
+                 pattern.sentiment === 'negative' ? '⚠️' : '📝';
+    text += `- ${icon} **${pattern.subcategory}** (${pattern.count}回使用): ${pattern.suggestedRule}\n`;
+  }
+
+  return text;
 }

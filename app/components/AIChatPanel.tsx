@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 
 interface Message {
   id: string;
@@ -23,9 +23,14 @@ interface AIChatPanelProps {
   onClose: () => void;
   raceContext?: RaceContext | null;
   isPremium: boolean;
+  activeFeatures?: Set<string>;
+  onToggleFeature?: (featureId: string, isLocked: boolean) => void;
 }
 
-export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }: AIChatPanelProps) {
+const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChatPanel(
+  { isOpen, onClose, raceContext, isPremium, activeFeatures, onToggleFeature },
+  ref
+) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -257,6 +262,12 @@ export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }:
           font-size: 14px;
           outline: none;
           transition: border-color 0.2s;
+          color: #000000;
+          background: #ffffff;
+        }
+
+        .chat-input::placeholder {
+          color: #9ca3af;
         }
 
         .chat-input:focus {
@@ -265,6 +276,7 @@ export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }:
 
         .chat-input:disabled {
           background: #f3f4f6;
+          color: #6b7280;
         }
 
         .chat-send {
@@ -361,9 +373,80 @@ export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }:
           border-color: #1e3a5f;
           color: #1e3a5f;
         }
+
+        .feature-toggles {
+          display: flex;
+          gap: 8px;
+          padding: 8px 12px;
+          background: #f8fafc;
+          border-bottom: 1px solid #e5e7eb;
+          flex-wrap: wrap;
+        }
+
+        .feature-toggle {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 10px;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          border: 1px solid transparent;
+        }
+
+        .feature-toggle.active {
+          background: #ecfdf5;
+          color: #065f46;
+          border-color: #10b981;
+        }
+
+        .feature-toggle.inactive {
+          background: #f3f4f6;
+          color: #6b7280;
+        }
+
+        .feature-toggle.locked {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .feature-toggle:hover:not(.locked) {
+          border-color: #d1d5db;
+        }
+
+        .toggle-switch {
+          width: 28px;
+          height: 16px;
+          background: #d1d5db;
+          border-radius: 8px;
+          position: relative;
+          transition: background 0.2s;
+        }
+
+        .toggle-switch.active {
+          background: #10b981;
+        }
+
+        .toggle-switch::after {
+          content: '';
+          position: absolute;
+          width: 12px;
+          height: 12px;
+          background: white;
+          border-radius: 50%;
+          top: 2px;
+          left: 2px;
+          transition: transform 0.2s;
+        }
+
+        .toggle-switch.active::after {
+          transform: translateX(12px);
+        }
       `}</style>
 
-      <div className="chat-panel">
+      <div ref={ref} className="chat-panel">
         <div className="chat-header">
           <div>
             <div className="chat-header-title">
@@ -380,6 +463,28 @@ export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }:
             ×
           </button>
         </div>
+
+        {/* 機能トグル */}
+        {isPremium && activeFeatures && onToggleFeature && (
+          <div className="feature-toggles">
+            <div 
+              className={`feature-toggle ${activeFeatures.has('saga-ai') ? 'active' : 'inactive'}`}
+              onClick={() => onToggleFeature('saga-ai', false)}
+            >
+              <span>🧠</span>
+              <span>おれAI</span>
+              <div className={`toggle-switch ${activeFeatures.has('saga-ai') ? 'active' : ''}`} />
+            </div>
+            <div 
+              className={`feature-toggle ${activeFeatures.has('race-pace') ? 'active' : 'inactive'}`}
+              onClick={() => onToggleFeature('race-pace', false)}
+            >
+              <span>🏇</span>
+              <span>展開予想</span>
+              <div className={`toggle-switch ${activeFeatures.has('race-pace') ? 'active' : ''}`} />
+            </div>
+          </div>
+        )}
 
         {!isPremium ? (
           <div className="premium-required">
@@ -455,4 +560,6 @@ export default function AIChatPanel({ isOpen, onClose, raceContext, isPremium }:
       </div>
     </>
   );
-}
+});
+
+export default AIChatPanel;
