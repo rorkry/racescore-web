@@ -5,15 +5,56 @@ interface DbSubscription {
   status: string;
 }
 
+// グローバル設定のキャッシュ（1分間有効）
+let globalPremiumCache: { value: boolean; timestamp: number } | null = null;
+const CACHE_TTL = 60 * 1000; // 1分
+
+/**
+ * 全ユーザーにプレミアム機能が有効化されているかを確認
+ */
+async function isPremiumForAll(): Promise<boolean> {
+  // キャッシュが有効ならそれを返す
+  if (globalPremiumCache && Date.now() - globalPremiumCache.timestamp < CACHE_TTL) {
+    return globalPremiumCache.value;
+  }
+  
+  try {
+    const db = getDb();
+    const setting = await db.prepare(
+      "SELECT value FROM app_settings WHERE key = 'premium_for_all'"
+    ).get<{ value: string }>();
+    
+    const value = setting?.value === 'true';
+    globalPremiumCache = { value, timestamp: Date.now() };
+    return value;
+  } catch {
+    // テーブルがない場合やエラー時は false
+    return false;
+  }
+}
+
+/**
+ * グローバル設定キャッシュをクリア（設定変更時に呼び出す）
+ */
+export function clearPremiumCache() {
+  globalPremiumCache = null;
+}
+
 /**
  * ユーザーがプレミアム会員かどうかを判定
+ * - 全員プレミアム設定がONなら true
  * - 管理者は自動的にプレミアム扱い
  * - subscriptionsテーブルでplan='premium'かつstatus='active'ならプレミアム
  */
 export async function isPremiumUser(userId: string): Promise<boolean> {
+  // 1. グローバル設定で全員プレミアムがONなら true
+  if (await isPremiumForAll()) {
+    return true;
+  }
+  
   const db = getDb();
   
-  // 管理者は自動的にプレミアム扱い
+  // 2. 管理者は自動的にプレミアム扱い
   const user = await db.prepare(
     'SELECT role FROM users WHERE id = $1'
   ).get<{ role: string }>(userId);
@@ -22,7 +63,7 @@ export async function isPremiumUser(userId: string): Promise<boolean> {
     return true;
   }
 
-  // サブスクリプション確認
+  // 3. サブスクリプション確認
   const subscription = await db.prepare(
     'SELECT plan, status FROM subscriptions WHERE user_id = $1'
   ).get<DbSubscription>(userId);
@@ -34,6 +75,11 @@ export async function isPremiumUser(userId: string): Promise<boolean> {
  * メールアドレスからユーザーIDを取得してプレミアム判定
  */
 export async function isPremiumUserByEmail(email: string): Promise<boolean> {
+  // 1. グローバル設定で全員プレミアムがONなら true
+  if (await isPremiumForAll()) {
+    return true;
+  }
+  
   const db = getDb();
   
   const user = await db.prepare(
@@ -44,12 +90,12 @@ export async function isPremiumUserByEmail(email: string): Promise<boolean> {
     return false;
   }
   
-  // 管理者は自動的にプレミアム扱い
+  // 2. 管理者は自動的にプレミアム扱い
   if (user.role === 'admin') {
     return true;
   }
   
-  // サブスクリプション確認（isPremiumUserを呼ばず直接確認）
+  // 3. サブスクリプション確認
   const subscription = await db.prepare(
     'SELECT plan, status FROM subscriptions WHERE user_id = $1'
   ).get<DbSubscription>(user.id);

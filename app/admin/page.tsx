@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '../components/Providers';
 
@@ -10,8 +10,60 @@ export default function AdminPage() {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const router = useRouter();
+  
+  // 設定管理
+  const [premiumForAll, setPremiumForAll] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const isAdmin = (session?.user as any)?.role === 'admin';
+  
+  // 設定を取得
+  useEffect(() => {
+    if (!isAdmin) return;
+    
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/admin/settings');
+        if (res.ok) {
+          const data = await res.json();
+          setPremiumForAll(data.settings?.premium_for_all === 'true');
+        }
+      } catch (e) {
+        console.error('Failed to fetch settings:', e);
+      } finally {
+        setSettingsLoading(false);
+      }
+    };
+    fetchSettings();
+  }, [isAdmin]);
+  
+  // プレミアム設定を保存
+  const handlePremiumToggle = async () => {
+    setSettingsSaving(true);
+    try {
+      const newValue = !premiumForAll;
+      const res = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'premium_for_all', value: String(newValue) }),
+      });
+      
+      if (res.ok) {
+        setPremiumForAll(newValue);
+        setMessage(newValue 
+          ? '✅ 全ユーザーにプレミアム機能を有効化しました' 
+          : '✅ プレミアム機能を通常モードに戻しました'
+        );
+      } else {
+        setMessage('❌ 設定の保存に失敗しました');
+      }
+    } catch (e) {
+      setMessage('❌ 設定の保存に失敗しました');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   // ローディング中
   if (status === 'loading') {
@@ -117,9 +169,57 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-8">
+      <div className="max-w-4xl mx-auto p-8 space-y-8">
+        {/* プレミアム機能設定 */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-2xl font-bold mb-6 text-gray-900">CSVファイルアップロード</h2>
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">🎁 プレミアム機能設定</h2>
+          
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+            <div>
+              <h3 className="font-bold text-gray-900">全ユーザーにプレミアム機能を開放</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                ONにすると、全ユーザーがプレミアム機能（おれAI、展開予想カード等）を利用できます
+              </p>
+            </div>
+            
+            <button
+              onClick={handlePremiumToggle}
+              disabled={settingsLoading || settingsSaving}
+              className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 disabled:opacity-50 ${
+                premiumForAll ? 'bg-yellow-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`inline-block size-6 transform rounded-full bg-white shadow-lg transition-transform ${
+                  premiumForAll ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          
+          <div className="mt-4 flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
+              premiumForAll 
+                ? 'bg-yellow-100 text-yellow-800' 
+                : 'bg-gray-100 text-gray-600'
+            }`}>
+              {settingsLoading ? (
+                <>
+                  <span className="size-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+                  読み込み中...
+                </>
+              ) : premiumForAll ? (
+                <>🔓 全ユーザー開放中</>
+              ) : (
+                <>🔒 プレミアム会員のみ</>
+              )}
+            </span>
+          </div>
+        </div>
+        
+        {/* CSVアップロード */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">📁 CSVファイルアップロード</h2>
 
           <div className="space-y-4">
             <div>

@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: getHistoricalLapDataからwork_1sカラム参照を削除(DBに存在しない)"
+git commit -m "feat: 管理画面に全ユーザープレミアム有効化トグル追加"
 
 echo.
 echo === Pushing to origin ===

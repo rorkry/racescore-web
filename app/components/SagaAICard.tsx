@@ -68,8 +68,6 @@ interface Props {
   onHorseAction?: (horseName: string, horseNumber: string) => void;
   // お気に入り登録済みの馬名リスト
   favoriteHorses?: string[];
-  // データ取得完了時のコールバック
-  onDataLoaded?: (data: SagaAIResponse) => void;
 }
 
 const RATING_COLORS: Record<string, string> = {
@@ -170,7 +168,7 @@ function adjustRating(
   return RATING_ORDER[newIndex];
 }
 
-export default function SagaAICard({ year, date, place, raceNumber, trackCondition: propTrackCondition = '良', cachedData, onHorseClick, onHorseAction, favoriteHorses = [], onDataLoaded }: Props) {
+export default function SagaAICard({ year, date, place, raceNumber, trackCondition: propTrackCondition = '良', cachedData, onHorseClick, onHorseAction, favoriteHorses = [] }: Props) {
   // キャッシュデータがあれば初期値として使用
   const [analyses, setAnalyses] = useState<SagaAnalysis[]>(cachedData?.analyses || []);
   const [aiAnalyses, setAiAnalyses] = useState<OpenAISagaResult[] | null>(null);
@@ -263,22 +261,13 @@ export default function SagaAICard({ year, date, place, raceNumber, trackConditi
       setAnalyses(data.analyses || []);
       setSummary(data.summary || '');
       setAiEnabled(data.aiEnabled || false);
-      
-      // 親コンポーネントにデータ取得を通知
-      if (onDataLoaded && data.analyses) {
-        onDataLoaded({
-          analyses: data.analyses,
-          summary: data.summary || '',
-          aiEnabled: data.aiEnabled || false,
-        });
-      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
       setIsRefetching(false);
     }
-  }, [year, date, place, raceNumber, trackCondition, onDataLoaded]);
+  }, [year, date, place, raceNumber, trackCondition]);
   
   // バイアス変更ハンドラー（即座に再評価）
   const handleBiasChange = useCallback((newBias: 'none' | 'uchi' | 'soto' | 'mae' | 'ushiro') => {

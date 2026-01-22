@@ -44,3 +44,5 @@ node_modules/
 *.db
 *.db-*
 
+# duplicate subdirectory
+/racescore-web/

@@ -180,7 +180,6 @@ export default function RaceCardPage() {
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
   const [favoriteHorseMemos, setFavoriteHorseMemos] = useState<Map<string, string>>(new Map()); // 馬名 -> メモ
-  const [isPremium, setIsPremium] = useState(false); // プレミアム会員かどうか
 
   // セッション状態
   const { status: sessionStatus } = useSession();
@@ -190,7 +189,6 @@ export default function RaceCardPage() {
     if (sessionStatus !== 'authenticated') {
       setFavoriteHorses([]);
       setFavoriteHorseMemos(new Map());
-      setIsPremium(false);
       return;
     }
     try {
@@ -209,9 +207,6 @@ export default function RaceCardPage() {
           }
         });
         setFavoriteHorseMemos(memoMap);
-        
-        // プレミアム状態を保存
-        setIsPremium(!!data.isPremium);
       }
     } catch (err) {
       console.warn('[FavoriteHorses] 取得エラー:', err);
@@ -1447,10 +1442,6 @@ export default function RaceCardPage() {
                     setHorseActionTarget({ name: horseName, number: horseNumber });
                   }}
                   favoriteHorses={favoriteHorses}
-                  onDataLoaded={(data) => {
-                    // SagaAICardがデータを取得したらstateに反映
-                    setCurrentSagaAIData(data);
-                  }}
                 />
               </div>
             )}
@@ -1685,7 +1676,7 @@ export default function RaceCardPage() {
               } : undefined}
               timeEvaluation={sagaAnalysis?.timeEvaluation}
               lapEvaluation={sagaAnalysis?.lapEvaluation}
-              isPremium={isPremium}
+              isPremium={showSagaAI}
             />
           );
         })()}

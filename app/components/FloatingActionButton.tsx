@@ -77,10 +77,21 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // プレミアム状態を取得
+  // プレミアム状態を取得（グローバル設定 + 個人のプレミアム状態）
   useEffect(() => {
     const checkPremium = async () => {
       try {
+        // 1. グローバル設定を確認（全員プレミアム開放中か）
+        const globalRes = await fetch('/api/settings/global');
+        if (globalRes.ok) {
+          const globalData = await globalRes.json();
+          if (globalData.premiumForAll) {
+            setIsPremium(true);
+            return; // 全員開放中なら個人確認不要
+          }
+        }
+        
+        // 2. 個人のプレミアム状態を確認
         const res = await fetch('/api/user/favorites');
         if (res.ok) {
           const data = await res.json();
