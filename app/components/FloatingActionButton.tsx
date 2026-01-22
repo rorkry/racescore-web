@@ -121,7 +121,6 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   const pathname = usePathname();
   
   const [isOpen, setIsOpen] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
@@ -220,55 +219,57 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   // URLパラメータからraceContextを取得（/cardページの場合）
   const [raceContext, setRaceContext] = useState<RaceContext | null>(propRaceContext || null);
   
+  // URLパラメータを定期的にチェック（SPAでのルーティング対応）
   useEffect(() => {
-    if (propRaceContext) {
-      setRaceContext(propRaceContext);
-      return;
-    }
-    
-    // /card ページでない場合はnull
-    if (!pathname?.startsWith('/card')) {
-      setRaceContext(null);
-      return;
-    }
-    
-    // window.locationからURLパラメータを取得（クライアントサイドのみ）
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const year = params.get('year');
-      const date = params.get('date');
-      const place = params.get('place');
-      const raceNo = params.get('race');
-      
-      if (year && date && place && raceNo) {
-        setRaceContext({
-          year: parseInt(year, 10),
-          date,
-          place,
-          raceNumber: parseInt(raceNo, 10),
-        });
-      } else {
-        setRaceContext(null);
+    const updateRaceContext = () => {
+      if (propRaceContext) {
+        setRaceContext(propRaceContext);
+        return;
       }
-    }
+      
+      // /card ページでない場合はnull
+      if (!pathname?.startsWith('/card')) {
+        setRaceContext(null);
+        return;
+      }
+      
+      // window.locationからURLパラメータを取得（クライアントサイドのみ）
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const year = params.get('year');
+        const date = params.get('date');
+        const place = params.get('place');
+        const raceNo = params.get('race');
+        
+        console.log('[FAB] Parsing URL params:', { year, date, place, raceNo });
+        
+        if (year && date && place && raceNo) {
+          const ctx = {
+            year: parseInt(year, 10),
+            date,
+            place,
+            raceNumber: parseInt(raceNo, 10),
+          };
+          console.log('[FAB] Setting raceContext:', ctx);
+          setRaceContext(ctx);
+        } else {
+          setRaceContext(null);
+        }
+      }
+    };
+    
+    // 初回実行
+    updateRaceContext();
+    
+    // URLが変わった場合にも更新（pushStateイベントを監視）
+    const handlePopState = () => updateRaceContext();
+    window.addEventListener('popstate', handlePopState);
+    
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [propRaceContext, pathname]);
 
-  // AIチャットを開く
-  const openAIChat = useCallback(() => {
-    setIsChatOpen(true);
-    setIsOpen(false);
-  }, []);
-
-  // デフォルトメニュー項目
+  // デフォルトメニュー項目（トグルのみ、AIチャットは常時表示）
   const defaultMenuItems: MenuItem[] = [
-    {
-      id: 'ai-chat',
-      label: 'AI予想チャット',
-      icon: '💬',
-      description: isPremium ? 'AIと会話して予想' : 'プレミアム限定',
-      isActive: isChatOpen,
-      locked: !isPremium,
-    },
     {
       id: 'race-pace',
       label: '展開予想カード',
@@ -513,13 +514,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
             <div
               key={item.id}
               className={`fab-menu-item ${item.isActive ? 'active' : ''} ${item.locked ? 'locked' : ''}`}
-              onClick={() => {
-                if (item.id === 'ai-chat') {
-                  if (!item.locked) openAIChat();
-                } else {
-                  toggleFeature(item.id, !!item.locked);
-                }
-              }}
+              onClick={() => toggleFeature(item.id, !!item.locked)}
             >
               <span className="fab-menu-item-icon">{item.locked ? '🔒' : item.icon}</span>
               <div className="fab-menu-item-content">
@@ -568,10 +563,10 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
         </button>
       </div>
 
-      {/* AIチャットパネル */}
+      {/* AIチャットパネル - FABメニューを開くと常時表示 */}
       <AIChatPanel
-        isOpen={isChatOpen}
-        onClose={() => setIsChatOpen(false)}
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
         raceContext={raceContext}
         isPremium={isPremium}
       />

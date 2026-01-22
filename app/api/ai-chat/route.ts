@@ -2,7 +2,7 @@
  * AIチャット APIエンドポイント
  * 
  * POST /api/ai-chat
- * - 「予想」コマンド: レース予想を生成
+ * - 「予想」コマンド: レース予想を生成（ルールエンジン統合）
  * - 一般質問: 競馬に関する質問に回答
  */
 
@@ -10,9 +10,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { isPremiumUser } from '@/lib/premium';
-import { generatePrediction, answerQuestion } from '@/lib/ai-chat/openai-client';
-import { evaluateGap } from '@/lib/ai-chat/gap-evaluation';
-import type { RaceDataForAI, HorseDataForAI, PastRaceForAI } from '@/lib/ai-chat/types';
+import { answerQuestion } from '@/lib/ai-chat/openai-client';
+import { 
+  applyAllRules, 
+  calculateTotalScore, 
+  determineRecommendation,
+  estimatePopularity,
+  calculateBlessed,
+  type HorseAnalysisData,
+  type RaceConditionSettings,
+} from '@/lib/ai-chat/prediction-rules';
+import { PREDICTION_SYSTEM_PROMPT, formatRaceDataForPrompt, addSamplePredictions } from '@/lib/ai-chat/system-prompt';
+import { 
+  getRaceMemos, 
+  getBabaMemo, 
+  analyzeMemosLocally,
+  analyzeCornerPosition,
+  type MemoAnalysisResult,
+} from '@/lib/ai-chat/memo-analyzer';
 import { toHalfWidth } from '@/utils/parse-helpers';
 
 // レート制限（1分間に10回まで）
@@ -83,10 +98,18 @@ export async function POST(request: NextRequest) {
     // 「予想」コマンドの検出
     const isPredictionRequest = message.includes('予想') || message.includes('よそう');
     
+    console.log('[AI Chat] Request:', { message, isPredictionRequest, raceContext });
+    
     if (isPredictionRequest && raceContext) {
       // レース予想を生成
-      const response = await handlePredictionRequest(raceContext, apiKey);
+      console.log('[AI Chat] Starting prediction generation for:', raceContext);
+      const response = await handlePredictionRequest(raceContext, apiKey, userId);
       return NextResponse.json(response);
+    } else if (isPredictionRequest && !raceContext) {
+      console.log('[AI Chat] Prediction requested but no raceContext');
+      return NextResponse.json({ 
+        answer: 'レースカードを開いた状態で「予想」と入力してください。\n現在表示中のレースの予想を生成します。' 
+      });
     } else {
       // 一般質問に回答
       const response = await handleGeneralQuestion(message, raceContext, apiKey);
@@ -103,7 +126,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * 予想リクエストを処理
+ * 予想リクエストを処理（ルールエンジン + メモ解析 統合版）
  */
 async function handlePredictionRequest(
   raceContext: {
@@ -114,12 +137,54 @@ async function handlePredictionRequest(
     baba?: string;
     pace?: string;
   },
-  apiKey: string
+  apiKey: string,
+  userId?: string
 ) {
   const db = getDb();
   const { year, date, place, raceNumber, baba, pace } = raceContext;
   
   console.log('[AI Chat] Prediction request:', raceContext);
+  
+  // ユーザー設定を変換
+  let settings: RaceConditionSettings = {
+    trackBias: baba as any,
+    paceExpectation: pace as any,
+  };
+  
+  // メモ解析結果
+  let memoAnalysis: MemoAnalysisResult = {
+    horseAdjustments: [],
+    additionalNotes: [],
+  };
+  
+  // ユーザーのメモを取得・解析
+  if (userId) {
+    try {
+      // レースキーを構築（例: 2026/0118/京都/2）
+      const raceKey = `${year}/${date}/${place}/${raceNumber}`;
+      
+      // レースメモと馬場メモを取得
+      const [raceMemos, babaMemo] = await Promise.all([
+        getRaceMemos(userId, raceKey),
+        getBabaMemo(userId, date, place),
+      ]);
+      
+      console.log('[AI Chat] Found memos:', { raceMemos: raceMemos.length, hasBabaMemo: !!babaMemo });
+      
+      // メモを解析
+      if (raceMemos.length > 0 || babaMemo) {
+        memoAnalysis = analyzeMemosLocally(raceMemos, babaMemo);
+        
+        // メモからの馬場バイアスを設定に反映（ユーザー設定がない場合）
+        if (!settings.trackBias && memoAnalysis.trackBias) {
+          settings.trackBias = memoAnalysis.trackBias;
+          console.log('[AI Chat] Applied track bias from memo:', memoAnalysis.trackBias);
+        }
+      }
+    } catch (e) {
+      console.error('[AI Chat] Memo fetch error:', e);
+    }
+  }
   
   // 1. wakujunから出走馬を取得
   const horses = await db.prepare(`
@@ -128,129 +193,312 @@ async function handlePredictionRequest(
     ORDER BY umaban::INTEGER
   `).all<any>(year, date, `%${place}%`, raceNumber);
   
+  console.log('[AI Chat] Wakujun query:', { year, date, place: `%${place}%`, raceNumber });
+  console.log('[AI Chat] Found horses:', horses?.length || 0);
+  
   if (!horses || horses.length === 0) {
+    const sampleData = await db.prepare(`
+      SELECT DISTINCT year, date, place, race_no FROM wakujun LIMIT 5
+    `).all<any>();
+    console.log('[AI Chat] Sample wakujun data:', sampleData);
+    
     return { 
       error: 'No race data',
-      message: 'レースデータが見つかりません'
+      message: `レースデータが見つかりません（${year}/${date} ${place} ${raceNumber}R）`
     };
   }
   
-  // 2. 各馬の過去走とStrideデータを取得
-  const raceData: RaceDataForAI = {
+  // レース情報
+  const raceInfo = {
     place,
     raceNumber,
     distance: parseInt(horses[0]?.kyori || '0', 10),
-    surface: horses[0]?.track_type?.includes('芝') ? '芝' : 'ダ',
-    trackCondition: '良', // TODO: 馬場状態を取得
-    horses: [],
+    surface: (horses[0]?.track_type?.includes('芝') ? '芝' : 'ダ') as '芝' | 'ダ',
+    trackCondition: '良',
+    className: horses[0]?.class_name || '',
   };
+  
+  // 2. 各馬の過去走とStrideデータを取得、ルールエンジンを適用
+  const analyzedHorses: Array<{
+    number: number;
+    name: string;
+    jockey: string;
+    waku: number;
+    estimatedPopularity: number;
+    lapRating: string;
+    timeRating: string;
+    potential: number | null;
+    makikaeshi: number | null;
+    pastRaces: any[];
+    matchedRules: Array<{ type: string; reason: string }>;
+    totalScore: number;
+    recommendation: string;
+  }> = [];
   
   for (const horse of horses) {
     const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
     const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
+    const waku = parseInt(toHalfWidth(horse.waku || '0'), 10);
     
-    // 過去走を取得
-    const pastRaces = await db.prepare(`
+    // 過去走を取得（5走分）
+    const pastRacesRaw = await db.prepare(`
       SELECT * FROM umadata
       WHERE TRIM(horse_name) = $1
          OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-      LIMIT 3
+      LIMIT 5
     `).all<any>(horseName);
     
-    // 過去走データを整形
-    const formatPastRace = (race: any): PastRaceForAI | null => {
-      if (!race) return null;
-      return {
+    // 各過去走のindicesとrace_levelを取得
+    const pastRaces: HorseAnalysisData['pastRaces'] = [];
+    let latestLapRating = 'UNKNOWN';
+    let latestTimeRating = 'UNKNOWN';
+    let latestPotential: number | null = null;
+    let latestMakikaeshi: number | null = null;
+    
+    for (let i = 0; i < pastRacesRaw.length; i++) {
+      const race = pastRacesRaw[i];
+      const raceId = race.race_id || '';
+      const umaban = String(race.umaban || horseNumber).padStart(2, '0');
+      const fullRaceId = `${raceId}${umaban}`;
+      
+      // indices取得
+      let indices: any = {};
+      try {
+        indices = await db.prepare(`
+          SELECT "T2F", "L4F", potential, makikaeshi
+          FROM indices WHERE race_id = $1
+        `).get<any>(fullRaceId) || {};
+      } catch (e) {
+        // エラーは無視
+      }
+      
+      // race_level取得
+      let raceLevel: string | null = null;
+      try {
+        const levelData = await db.prepare(`
+          SELECT level_label FROM race_levels WHERE race_id = $1
+        `).get<{ level_label: string }>(raceId.substring(0, 16));
+        raceLevel = levelData?.level_label || null;
+      } catch (e) {
+        // エラーは無視
+      }
+      
+      // 最新走のデータを保存
+      if (i === 0) {
+        latestPotential = indices.potential ?? null;
+        latestMakikaeshi = indices.makikaeshi ?? null;
+        // TODO: ラップ評価、時計評価をSagaBrainから取得
+        // 暫定でindicesの値から推定
+        latestLapRating = indices.L4F ? (indices.L4F < 46 ? 'A' : indices.L4F < 48 ? 'B' : 'C') : 'UNKNOWN';
+        latestTimeRating = indices.T2F ? (indices.T2F < 24 ? 'A' : indices.T2F < 25 ? 'B' : 'C') : 'UNKNOWN';
+      }
+      
+      const distanceStr = race.distance || '';
+      const distanceNum = parseInt(distanceStr.match(/\d+/)?.[0] || '0', 10);
+      
+      pastRaces.push({
         date: race.date || '',
         place: race.place || '',
-        distance: parseInt(race.distance?.match(/\d+/)?.[0] || '0', 10),
-        surface: race.distance?.includes('芝') ? '芝' : 'ダ',
+        distance: distanceNum,
+        surface: distanceStr.includes('芝') ? '芝' : 'ダ',
         finishPosition: parseInt(toHalfWidth(race.finish_position || '99'), 10),
+        popularity: parseInt(toHalfWidth(race.popularity || '0'), 10),
         margin: race.margin || '',
         trackCondition: race.track_condition || '良',
-        popularity: parseInt(toHalfWidth(race.popularity || '0'), 10),
-      };
-    };
+        raceLevel,
+        lapRating: i === 0 ? latestLapRating : null,
+        timeRating: i === 0 ? latestTimeRating : null,
+        corner4: parseInt(toHalfWidth(race.corner_4 || race.corner_4_position || '0'), 10) || null,
+        totalHorses: parseInt(race.field_size || race.number_of_horses || '16', 10),
+        className: race.class_name || '',
+      });
+    }
     
-    const last1 = formatPastRace(pastRaces[0]);
-    const last2 = formatPastRace(pastRaces[1]);
-    const last3 = formatPastRace(pastRaces[2]);
+    // 想定人気を計算
+    const estimatedPop = estimatePopularity(pastRaces);
     
-    // indices から T2F, L4F, potential, makikaeshi を取得
-    let strideData: any = {};
-    if (pastRaces[0]?.race_id) {
-      const umaban = String(horseNumber).padStart(2, '0');
-      const fullRaceId = `${pastRaces[0].race_id}${umaban}`;
+    // メモからの恵まれ/不利判定をチェック
+    let blessedManual: 'blessed' | 'unlucky' | 'neutral' | undefined;
+    const memoAdjustment = memoAnalysis.horseAdjustments.find(
+      a => a.horseNumber === horseNumber || a.horseName === horseName
+    );
+    if (memoAdjustment) {
+      blessedManual = memoAdjustment.type;
+      console.log(`[AI Chat] Memo adjustment for ${horseName}: ${memoAdjustment.type} - ${memoAdjustment.reason}`);
+    }
+    
+    // 4角位置からの恵まれ/不利判定（過去走）
+    const additionalRules: Array<{ type: string; reason: string }> = [];
+    if (pastRaces.length > 0 && settings.trackBias) {
+      const lastRace = pastRaces[0];
+      const cornerAnalysis = analyzeCornerPosition(
+        lastRace.corner4,
+        lastRace.totalHorses,
+        settings.trackBias,
+        lastRace.finishPosition,
+        lastRace.margin
+      );
       
-      const indexData = await db.prepare(`
-        SELECT "T2F", "L4F", potential, makikaeshi
-        FROM indices WHERE race_id = $1
-      `).get<any>(fullRaceId);
-      
-      if (indexData) {
-        strideData = indexData;
+      if (cornerAnalysis.type !== 'neutral') {
+        // 恵まれ/不利判定をルールとして追加
+        additionalRules.push({
+          type: cornerAnalysis.type === 'blessed' ? 'NEGATIVE' : 'POSITIVE',
+          reason: cornerAnalysis.reason,
+        });
+        
+        // 手動設定がなければ自動判定を適用
+        if (!blessedManual) {
+          blessedManual = cornerAnalysis.type;
+        }
       }
     }
     
-    // race_levels からレースレベルを取得
-    let raceLevel: string | undefined;
-    if (pastRaces[0]?.race_id) {
-      const levelData = await db.prepare(`
-        SELECT level_label FROM race_levels WHERE race_id = $1
-      `).get<{ level_label: string }>(pastRaces[0].race_id);
-      raceLevel = levelData?.level_label;
+    // メモからのレースレベルオーバーライドを適用
+    // 過去走のレースレベルを上書き（該当レースの場合）
+    if (memoAnalysis.raceLevelOverride && pastRaces.length > 0) {
+      // メモは通常「直近参加したレース」についてなので、前走のレベルを上書き
+      pastRaces[0].raceLevel = memoAnalysis.raceLevelOverride;
+      additionalRules.push({
+        type: 'POSITIVE',
+        reason: memoAnalysis.raceLevelNote || `メモによりレースレベル${memoAnalysis.raceLevelOverride}に調整`,
+      });
     }
     
-    // ギャップ判定
-    const gap = last1 ? evaluateGap({
-      horseName,
-      horseNumber,
-      lastFinish: last1.finishPosition,
-      margin: parseFloat(last1.margin) || 0,
-      popularity: last1.popularity,
-      comebackIndex: strideData.makikaeshi,
-      potentialIndex: strideData.potential,
-      raceLevel,
-    }) : undefined;
+    // HorseAnalysisDataを構築
+    const horseAnalysis: HorseAnalysisData = {
+      number: horseNumber,
+      name: horseName,
+      lapRating: latestLapRating as any,
+      timeRating: latestTimeRating as any,
+      potential: latestPotential,
+      makikaeshi: latestMakikaeshi,
+      pastRaces,
+      waku,
+      jockey: horse.kishu || '',
+      trainer: horse.chokyoshi || '',
+      weight: null,
+      weightChange: null,
+      blessedAuto: calculateBlessed(latestMakikaeshi),
+      blessedManual,
+      estimatedPopularity: estimatedPop,
+    };
     
-    const horseData: HorseDataForAI = {
+    // ルールエンジンを適用
+    let matchedRules = applyAllRules(horseAnalysis, settings);
+    
+    // メモ・4角位置からの追加ルールをマージ
+    matchedRules = [...matchedRules, ...additionalRules.map(r => ({
+      ruleId: 'memo_' + Math.random().toString(36).substr(2, 9),
+      ruleName: 'メモ/位置取り分析',
+      type: r.type as any,
+      reason: r.reason,
+      confidence: 'high' as const,
+      scoreAdjust: r.type === 'POSITIVE' ? 5 : -5,
+    }))];
+    
+    const totalScore = calculateTotalScore(matchedRules);
+    const recommendation = determineRecommendation(totalScore, estimatedPop);
+    
+    analyzedHorses.push({
       number: horseNumber,
       name: horseName,
       jockey: horse.kishu || '',
-      trainer: '', // wakujunにtrainerがない場合
-      last1,
-      last2,
-      last3,
-      potential: strideData.potential,
-      makikaeshi: strideData.makikaeshi,
-      raceLevel,
-      gap: gap?.type !== '妥当' ? gap : undefined, // 妥当は表示しない
-    };
+      waku,
+      estimatedPopularity: estimatedPop,
+      lapRating: latestLapRating,
+      timeRating: latestTimeRating,
+      potential: latestPotential,
+      makikaeshi: latestMakikaeshi,
+      pastRaces: pastRaces.map(pr => ({
+        place: pr.place,
+        distance: pr.distance,
+        surface: pr.surface,
+        finishPosition: pr.finishPosition,
+        margin: pr.margin,
+        raceLevel: pr.raceLevel,
+        trackCondition: pr.trackCondition,
+      })),
+      matchedRules: matchedRules.map(r => ({ type: r.type, reason: r.reason })),
+      totalScore,
+      recommendation,
+    });
     
-    raceData.horses.push(horseData);
+    console.log(`[AI Chat] Horse ${horseNumber} ${horseName}: score=${totalScore}, rec=${recommendation}, rules=${matchedRules.length}`);
   }
   
-  // 3. 過去予想からサンプルを取得（同じコースの予想を優先）
-  const samplePredictions = await getSamplePredictions(db, place, raceData.surface, raceData.distance);
+  // 3. 過去予想からサンプルを取得
+  const samplePredictions = await getSamplePredictions(db, place, raceInfo.surface, raceInfo.distance);
   
-  // 4. AI予想を生成
-  const result = await generatePrediction(raceData, samplePredictions, {
-    baba,
-    pace,
-    apiKey,
-  });
+  // 4. プロンプトを構築してAI予想を生成
+  const systemPrompt = PREDICTION_SYSTEM_PROMPT + addSamplePredictions(samplePredictions);
+  const userPrompt = formatRaceDataForPrompt(raceInfo, analyzedHorses, settings);
+  
+  console.log('[AI Chat] Calling OpenAI with enhanced prompt...');
+  
+  const result = await generatePredictionWithRules(systemPrompt, userPrompt, apiKey);
+  
+  // 過大評価・過小評価の馬を抽出
+  const overvalued = analyzedHorses
+    .filter(h => h.matchedRules.some(r => r.type === 'NEGATIVE'))
+    .map(h => h.name);
+  const undervalued = analyzedHorses
+    .filter(h => h.matchedRules.some(r => r.type === 'POSITIVE' && h.estimatedPopularity >= 5))
+    .map(h => h.name);
   
   return {
-    prediction: result.prediction,
-    analysis: result.analysis,
+    prediction: result,
+    analysis: {
+      overvalued,
+      undervalued,
+      horseScores: analyzedHorses.map(h => ({
+        number: h.number,
+        name: h.name,
+        score: h.totalScore,
+        recommendation: h.recommendation,
+      })),
+    },
     raceInfo: {
       place,
       raceNumber,
-      distance: raceData.distance,
-      surface: raceData.surface,
+      distance: raceInfo.distance,
+      surface: raceInfo.surface,
     },
   };
+}
+
+/**
+ * ルールエンジン統合版の予想生成
+ */
+async function generatePredictionWithRules(
+  systemPrompt: string,
+  userPrompt: string,
+  apiKey: string
+): Promise<string> {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 2500,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(`OpenAI API Error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content || '予想を生成できませんでした。';
 }
 
 /**

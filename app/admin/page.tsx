@@ -9,6 +9,11 @@ export default function AdminPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // 予想JSONアップロード
+  const [predictionFile, setPredictionFile] = useState<File | null>(null);
+  const [predictionUploading, setPredictionUploading] = useState(false);
+  const [predictionMessage, setPredictionMessage] = useState('');
   const router = useRouter();
   
   // 設定管理
@@ -107,6 +112,52 @@ export default function AdminPage() {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
       setMessage('');
+    }
+  };
+
+  // 予想JSONファイル選択
+  const handlePredictionFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setPredictionFile(e.target.files[0]);
+      setPredictionMessage('');
+    }
+  };
+
+  // 予想JSONアップロード
+  const handlePredictionUpload = async () => {
+    if (!predictionFile) {
+      setPredictionMessage('ファイルを選択してください');
+      return;
+    }
+
+    setPredictionUploading(true);
+    setPredictionMessage('アップロード中...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', predictionFile);
+
+      const response = await fetch('/api/admin/import-predictions', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setPredictionMessage(
+          `✅ アップロード成功: ${result.imported}件インポート / ${result.skipped}件スキップ / ${result.errors}件エラー`
+        );
+        setPredictionFile(null);
+        const fileInput = document.getElementById('prediction-file-input') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+      } else {
+        setPredictionMessage(`❌ エラー: ${result.error || result.message}`);
+      }
+    } catch (error: any) {
+      setPredictionMessage(`❌ アップロードエラー: ${error.message}`);
+    } finally {
+      setPredictionUploading(false);
     }
   };
 
@@ -274,6 +325,72 @@ export default function AdminPage() {
               <li>「アップロード」ボタンをクリック</li>
               <li>アップロードが完了したら、トップページで確認</li>
             </ol>
+          </div>
+        </div>
+
+        {/* 予想JSONアップロード */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">🧠 AI予想学習データ</h2>
+          <p className="text-gray-600 mb-4">
+            Discord予想チャンネルのエクスポートJSON（DiscordChatExporter形式）をアップロードすると、
+            AIがあなたの予想スタイルを学習します。
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2 text-gray-700">
+                Discord予想データ（.json）
+              </label>
+              <input
+                id="prediction-file-input"
+                type="file"
+                accept=".json"
+                onChange={handlePredictionFileChange}
+                disabled={predictionUploading}
+                className="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-purple-50 file:text-purple-700
+                  hover:file:bg-purple-100
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            {predictionFile && (
+              <div className="text-sm text-gray-600">
+                選択されたファイル: <span className="font-medium">{predictionFile.name}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handlePredictionUpload}
+              disabled={!predictionFile || predictionUploading}
+              className="w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg
+                disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {predictionUploading ? 'インポート中...' : 'AI学習データをインポート'}
+            </button>
+
+            {predictionMessage && (
+              <div className={`p-4 rounded-lg ${
+                predictionMessage.startsWith('✅') ? 'bg-green-100 text-green-800' : 
+                predictionMessage.startsWith('❌') ? 'bg-red-100 text-red-800' : 
+                'bg-blue-100 text-blue-800'
+              }`}>
+                {predictionMessage}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h3 className="font-bold mb-2 text-purple-900">📚 AIの学習について</h3>
+            <ul className="list-disc list-inside space-y-1 text-sm text-purple-800">
+              <li>予想文から「競馬場」「レース番号」「本命/対抗/穴」「買い目」を抽出</li>
+              <li>AIは予想生成時に類似レースの過去予想を参考にします</li>
+              <li>文体・表現・ロジックを真似して予想文を書きます</li>
+              <li>より多くのデータがあると精度が向上します</li>
+            </ul>
           </div>
         </div>
       </div>
