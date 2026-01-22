@@ -215,14 +215,19 @@ async function handlePredictionRequest(
     };
   }
   
-  // レース情報
+  // レース情報（distanceは「芝2000」のような形式なので数値のみ抽出）
+  const distanceStr = horses[0]?.distance || '';
+  const distanceMatch = distanceStr.match(/(\d+)/);
+  const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 0;
+  const surface = distanceStr.includes('芝') ? '芝' : 'ダ';
+  
   const raceInfo = {
     place,
     raceNumber,
-    distance: parseInt(horses[0]?.kyori || '0', 10),
-    surface: (horses[0]?.track_type?.includes('芝') ? '芝' : 'ダ') as '芝' | 'ダ',
+    distance,
+    surface: surface as '芝' | 'ダ',
     trackCondition: '良',
-    className: horses[0]?.class_name || '',
+    className: horses[0]?.class_name_1 || horses[0]?.class_name || '',
   };
   
   // SagaBrainインスタンスを作成
@@ -654,15 +659,123 @@ async function handleGeneralQuestion(
   raceContext: any | undefined,
   apiKey: string
 ): Promise<string> {
+  const db = getDb();
+  
+  // レースコンテキストがある場合は、そのレースの全データを取得してAIに渡す
+  let raceDataContext = '';
+  
+  if (raceContext) {
+    const { year, date, place, raceNumber } = raceContext;
+    console.log('[AI Chat] General question with raceContext:', raceContext);
+    
+    // wakujunから出走馬を取得
+    const horses = await db.prepare(`
+      SELECT * FROM wakujun
+      WHERE year = $1 AND date = $2 AND place LIKE $3 AND race_number = $4
+      ORDER BY umaban::INTEGER
+    `).all<any>(year, date, `%${place}%`, raceNumber);
+    
+    if (horses && horses.length > 0) {
+      // 距離・コース情報
+      const distanceStr = horses[0]?.distance || '';
+      const distanceMatch = distanceStr.match(/(\d+)/);
+      const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 0;
+      const surface = distanceStr.includes('芝') ? '芝' : 'ダ';
+      const className = horses[0]?.class_name_1 || horses[0]?.class_name || '';
+      
+      raceDataContext = `
+【今回のレース】
+${place} ${raceNumber}R ${surface}${distance}m ${className}
+
+【出走馬データ】
+`;
+      
+      for (const horse of horses) {
+        const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
+        const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
+        const jockey = horse.kishu || '';
+        
+        // 過去走を取得（5走分）
+        const pastRaces = await db.prepare(`
+          SELECT race_id, umaban, date, place, distance, class_name, 
+                 finish_position, finish_time, margin, track_condition,
+                 last_3f, popularity, lap_time, corner_4, corner_4_position,
+                 field_size, number_of_horses
+          FROM umadata
+          WHERE TRIM(horse_name) = $1
+             OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
+          ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+          LIMIT 5
+        `).all<any>(horseName);
+        
+        raceDataContext += `\n**${horseNumber}番 ${horseName}** (${jockey})\n`;
+        
+        // 各過去走の詳細とindicesを取得
+        for (let i = 0; i < pastRaces.length; i++) {
+          const pr = pastRaces[i];
+          const prPlace = pr.place || '';
+          const prDist = pr.distance || '';
+          const prFinish = pr.finish_position || '';
+          const prMargin = pr.margin || '';
+          const prTrack = pr.track_condition || '';
+          const prLast3F = pr.last_3f || '';
+          const prPop = pr.popularity || '';
+          const prCorner4 = pr.corner_4_position || pr.corner_4 || '';
+          const prTotalHorses = pr.field_size || pr.number_of_horses || '';
+          const prClassName = pr.class_name || '';
+          
+          // 指数を取得
+          const umabanPadded = (pr.umaban || '').toString().padStart(2, '0');
+          const fullRaceId = pr.race_id + umabanPadded;
+          
+          const indices = await db.prepare(`
+            SELECT "L4F", "T2F", potential, makikaeshi
+            FROM indices
+            WHERE race_id = $1
+          `).get<any>(fullRaceId);
+          
+          // レースレベルを取得
+          const raceLevel = await db.prepare(`
+            SELECT level FROM race_levels WHERE race_id = $1
+          `).get<any>(pr.race_id);
+          
+          const runLabel = i === 0 ? '前走' : `${i + 1}走前`;
+          raceDataContext += `  ${runLabel}: ${prPlace}${prDist} ${prClassName} ${prFinish}着 ${prMargin} (${prTrack})\n`;
+          raceDataContext += `    上がり3F=${prLast3F}, 人気=${prPop}, 4角=${prCorner4}/${prTotalHorses}頭\n`;
+          
+          if (indices) {
+            raceDataContext += `    【指数】L4F=${indices.L4F?.toFixed(1) || 'N/A'}, T2F=${indices.T2F?.toFixed(1) || 'N/A'}, `;
+            raceDataContext += `ポテンシャル=${indices.potential?.toFixed(1) || 'N/A'}, 巻き返し=${indices.makikaeshi?.toFixed(1) || 'N/A'}\n`;
+          }
+          if (raceLevel) {
+            raceDataContext += `    【レースレベル】${raceLevel.level}\n`;
+          }
+        }
+        
+        if (pastRaces.length === 0) {
+          raceDataContext += `  （過去走データなし）\n`;
+        }
+      }
+      
+      raceDataContext += `
+【指数の説明】
+- L4F: 後半4ハロンのラップ評価。高いほど優秀なラップ
+- T2F: 前半2ハロンの評価
+- ポテンシャル: 過去走から算出した能力値
+- 巻き返し: 前走で不利があった度合い。高いほど巻き返し期待
+- レースレベル: A=ハイレベル, B=やや高い, C=標準, D=低い
+`;
+    }
+  }
+  
   // コンテキスト情報を構築
   let context = '';
-  
   if (raceContext) {
     context = `現在表示中のレース: ${raceContext.place} ${raceContext.raceNumber}R\n`;
   }
+  context += raceDataContext;
   
-  // TODO: コース特性データをコンテキストに追加
-  // TODO: 種牡馬データをコンテキストに追加
+  console.log('[AI Chat] General question context length:', context.length);
   
   const answer = await answerQuestion(message, context, apiKey);
   return answer;
