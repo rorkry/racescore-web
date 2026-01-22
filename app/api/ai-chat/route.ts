@@ -34,6 +34,7 @@ import {
   type PastRaceInfo,
   type SagaAnalysis,
 } from '@/lib/saga-ai/saga-brain';
+import { getFineTunedModel } from '@/lib/ai-chat/fine-tuning';
 import { toHalfWidth } from '@/utils/parse-helpers';
 
 // レート制限（1分間に10回まで）
@@ -570,6 +571,18 @@ async function generatePredictionWithRules(
   userPrompt: string,
   apiKey: string
 ): Promise<string> {
+  // ファインチューニング済みモデルがあれば使用
+  let model = 'gpt-4o-mini';
+  try {
+    const fineTunedModel = await getFineTunedModel();
+    if (fineTunedModel) {
+      model = fineTunedModel;
+      console.log(`[AI Chat] Using fine-tuned model: ${model}`);
+    }
+  } catch (e) {
+    console.log('[AI Chat] Fine-tuned model check failed, using default model');
+  }
+  
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -577,7 +590,7 @@ async function generatePredictionWithRules(
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },

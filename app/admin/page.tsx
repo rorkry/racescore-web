@@ -20,6 +20,24 @@ export default function AdminPage() {
   const [premiumForAll, setPremiumForAll] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  
+  // ファインチューニング
+  const [ftStatus, setFtStatus] = useState<{
+    isFineTuned: boolean;
+    currentModel: string | null;
+    lastJobId: string | null;
+  } | null>(null);
+  const [ftLoading, setFtLoading] = useState(false);
+  const [ftMessage, setFtMessage] = useState('');
+  const [ftStats, setFtStats] = useState<{
+    total: number;
+    cost: { trainingCost: number; perRequestCost: number };
+  } | null>(null);
+  const [ftJobStatus, setFtJobStatus] = useState<{
+    id: string;
+    status: string;
+    fine_tuned_model: string | null;
+  } | null>(null);
 
   const isAdmin = (session?.user as any)?.role === 'admin';
   
@@ -41,6 +59,20 @@ export default function AdminPage() {
       }
     };
     fetchSettings();
+    
+    // ファインチューニング状態を取得
+    const fetchFtStatus = async () => {
+      try {
+        const res = await fetch('/api/admin/fine-tune');
+        if (res.ok) {
+          const data = await res.json();
+          setFtStatus(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch fine-tune status:', e);
+      }
+    };
+    fetchFtStatus();
   }, [isAdmin]);
   
   // プレミアム設定を保存
@@ -199,6 +231,123 @@ export default function AdminPage() {
     }
   };
 
+  // ファインチューニング: データ準備
+  const handleFtPrepare = async () => {
+    setFtLoading(true);
+    setFtMessage('学習データを準備中...');
+    try {
+      const res = await fetch('/api/admin/fine-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'prepare' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFtStats({ total: data.stats.total, cost: data.cost });
+        setFtMessage(`✅ ${data.stats.total}件の学習データを準備完了`);
+      } else {
+        setFtMessage(`❌ エラー: ${data.message || data.error}`);
+      }
+    } catch (e: any) {
+      setFtMessage(`❌ エラー: ${e.message}`);
+    } finally {
+      setFtLoading(false);
+    }
+  };
+
+  // ファインチューニング: アップロード＆開始
+  const handleFtStart = async () => {
+    if (!confirm('ファインチューニングを開始しますか？\n推定コスト: $' + (ftStats?.cost.trainingCost || 0).toFixed(2))) {
+      return;
+    }
+    
+    setFtLoading(true);
+    setFtMessage('ファイルをアップロード中...');
+    try {
+      // 1. ファイルアップロード
+      const uploadRes = await fetch('/api/admin/fine-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'upload' }),
+      });
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(uploadData.message || uploadData.error);
+      
+      setFtMessage('ファインチューニングジョブを開始中...');
+      
+      // 2. ジョブ開始
+      const startRes = await fetch('/api/admin/fine-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start', fileId: uploadData.fileId }),
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.message || startData.error);
+      
+      setFtJobStatus(startData.job);
+      setFtMessage(`✅ ファインチューニング開始！ ジョブID: ${startData.job.id}`);
+      
+    } catch (e: any) {
+      setFtMessage(`❌ エラー: ${e.message}`);
+    } finally {
+      setFtLoading(false);
+    }
+  };
+
+  // ファインチューニング: 状態確認
+  const handleFtCheckStatus = async () => {
+    setFtLoading(true);
+    setFtMessage('状態を確認中...');
+    try {
+      const res = await fetch('/api/admin/fine-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'status' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFtJobStatus(data.job);
+        if (data.job.status === 'succeeded') {
+          setFtMessage(`✅ 完了！ モデル: ${data.job.fine_tuned_model}`);
+          setFtStatus(prev => prev ? { ...prev, isFineTuned: true, currentModel: data.job.fine_tuned_model } : null);
+        } else if (data.job.status === 'failed') {
+          setFtMessage(`❌ 失敗: ${data.job.error?.message || '不明なエラー'}`);
+        } else {
+          setFtMessage(`⏳ 状態: ${data.job.status}`);
+        }
+      } else {
+        setFtMessage(`❌ エラー: ${data.message || data.error}`);
+      }
+    } catch (e: any) {
+      setFtMessage(`❌ エラー: ${e.message}`);
+    } finally {
+      setFtLoading(false);
+    }
+  };
+
+  // ファインチューニング: モデル解除
+  const handleFtClearModel = async () => {
+    if (!confirm('ファインチューニング済みモデルを解除し、通常モデルに戻しますか？')) {
+      return;
+    }
+    setFtLoading(true);
+    try {
+      const res = await fetch('/api/admin/fine-tune', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set-model', modelId: '' }),
+      });
+      if (res.ok) {
+        setFtStatus(prev => prev ? { ...prev, isFineTuned: false, currentModel: null } : null);
+        setFtMessage('✅ 通常モデルに戻しました');
+      }
+    } catch (e: any) {
+      setFtMessage(`❌ エラー: ${e.message}`);
+    } finally {
+      setFtLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ヘッダー */}
@@ -266,6 +415,121 @@ export default function AdminPage() {
               )}
             </span>
           </div>
+        </div>
+
+        {/* ファインチューニング */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">🧠 AIファインチューニング</h2>
+          
+          {/* 現在の状態 */}
+          <div className={`p-4 rounded-lg mb-6 ${
+            ftStatus?.isFineTuned 
+              ? 'bg-green-50 border border-green-200' 
+              : 'bg-gray-50 border border-gray-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900">
+                  {ftStatus?.isFineTuned ? '✅ カスタムモデル使用中' : '📦 標準モデル使用中'}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {ftStatus?.isFineTuned 
+                    ? `モデル: ${ftStatus.currentModel}` 
+                    : 'gpt-4o-mini（ファインチューニングなし）'}
+                </p>
+              </div>
+              {ftStatus?.isFineTuned && (
+                <button
+                  onClick={handleFtClearModel}
+                  disabled={ftLoading}
+                  className="text-sm text-red-600 hover:text-red-700 underline"
+                >
+                  標準に戻す
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* ステップ1: データ準備 */}
+          <div className="space-y-4">
+            <div className="border-l-4 border-blue-500 pl-4">
+              <h3 className="font-bold text-gray-900">Step 1: 学習データ準備</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                インポート済みの予想データを学習用に整形します
+              </p>
+              <button
+                onClick={handleFtPrepare}
+                disabled={ftLoading}
+                className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm disabled:opacity-50"
+              >
+                {ftLoading ? '処理中...' : 'データを準備'}
+              </button>
+              
+              {ftStats && (
+                <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm">
+                  <p>📊 学習データ: <strong>{ftStats.total}件</strong></p>
+                  <p>💰 推定学習コスト: <strong>${ftStats.cost.trainingCost.toFixed(2)}</strong>（約{Math.round(ftStats.cost.trainingCost * 150)}円）</p>
+                  <p>📈 推論コスト: <strong>${ftStats.cost.perRequestCost.toFixed(4)}/回</strong></p>
+                </div>
+              )}
+            </div>
+            
+            {/* ステップ2: ファインチューニング開始 */}
+            <div className="border-l-4 border-green-500 pl-4">
+              <h3 className="font-bold text-gray-900">Step 2: ファインチューニング開始</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                OpenAI APIでカスタムモデルを作成します（数分〜数時間）
+              </p>
+              <button
+                onClick={handleFtStart}
+                disabled={ftLoading || !ftStats}
+                className="mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm disabled:opacity-50"
+              >
+                {ftLoading ? '処理中...' : 'ファインチューニング開始'}
+              </button>
+            </div>
+            
+            {/* ステップ3: 状態確認 */}
+            <div className="border-l-4 border-yellow-500 pl-4">
+              <h3 className="font-bold text-gray-900">Step 3: 状態確認</h3>
+              <p className="text-sm text-gray-600 mt-1">
+                ファインチューニングジョブの進捗を確認します
+              </p>
+              <button
+                onClick={handleFtCheckStatus}
+                disabled={ftLoading}
+                className="mt-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm disabled:opacity-50"
+              >
+                {ftLoading ? '確認中...' : '状態を確認'}
+              </button>
+              
+              {ftJobStatus && (
+                <div className={`mt-3 p-3 rounded-lg text-sm ${
+                  ftJobStatus.status === 'succeeded' ? 'bg-green-50' :
+                  ftJobStatus.status === 'failed' ? 'bg-red-50' :
+                  'bg-yellow-50'
+                }`}>
+                  <p>ジョブID: {ftJobStatus.id}</p>
+                  <p>状態: <strong>{ftJobStatus.status}</strong></p>
+                  {ftJobStatus.fine_tuned_model && (
+                    <p>モデル: <strong>{ftJobStatus.fine_tuned_model}</strong></p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* メッセージ */}
+          {ftMessage && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${
+              ftMessage.startsWith('✅') ? 'bg-green-100 text-green-800' :
+              ftMessage.startsWith('❌') ? 'bg-red-100 text-red-800' :
+              ftMessage.startsWith('⏳') ? 'bg-yellow-100 text-yellow-800' :
+              'bg-blue-100 text-blue-800'
+            }`}>
+              {ftMessage}
+            </div>
+          )}
         </div>
         
         {/* CSVアップロード */}
