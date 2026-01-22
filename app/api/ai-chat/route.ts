@@ -196,7 +196,7 @@ async function handlePredictionRequest(
   // 1. wakujunから出走馬を取得
   const horses = await db.prepare(`
     SELECT * FROM wakujun
-    WHERE year = $1 AND date = $2 AND place LIKE $3 AND race_no = $4
+    WHERE year = $1 AND date = $2 AND place LIKE $3 AND race_number = $4
     ORDER BY umaban::INTEGER
   `).all<any>(year, date, `%${place}%`, raceNumber);
   
@@ -205,7 +205,7 @@ async function handlePredictionRequest(
   
   if (!horses || horses.length === 0) {
     const sampleData = await db.prepare(`
-      SELECT DISTINCT year, date, place, race_no FROM wakujun LIMIT 5
+      SELECT DISTINCT year, date, place, race_number FROM wakujun LIMIT 5
     `).all<any>();
     console.log('[AI Chat] Sample wakujun data:', sampleData);
     
