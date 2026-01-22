@@ -717,7 +717,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
         const pastRaces = await db.prepare(`
           SELECT race_id, umaban, date, place, distance, class_name, 
                  finish_position, finish_time, margin, track_condition,
-                 last_3f, popularity, lap_time, corner_4, corner_4_position,
+                 last_3f, popularity, lap_time, corner_4,
                  field_size, number_of_horses
           FROM umadata
           WHERE TRIM(horse_name) = $1
@@ -738,7 +738,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
           const prTrack = pr.track_condition || '';
           const prLast3F = pr.last_3f || '';
           const prPop = pr.popularity || '';
-          const prCorner4 = pr.corner_4_position || pr.corner_4 || '';
+          const prCorner4 = pr.corner_4 || '';
           const prTotalHorses = pr.field_size || pr.number_of_horses || '';
           const prClassName = pr.class_name || '';
           
