@@ -335,7 +335,7 @@ async function handlePredictionRequest(
         lapRating: i === 0 ? latestLapRating : null,
         timeRating: i === 0 ? latestTimeRating : null,
         corner4: parseInt(toHalfWidth(race.corner_4 || race.corner_4_position || '0'), 10) || null,
-        totalHorses: parseInt(race.field_size || race.number_of_horses || '16', 10),
+        totalHorses: parseInt(race.field_size || '16', 10),
         className: race.class_name || '',
       });
     }
@@ -717,8 +717,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
         const pastRaces = await db.prepare(`
           SELECT race_id, umaban, date, place, distance, class_name, 
                  finish_position, finish_time, margin, track_condition,
-                 last_3f, popularity, lap_time, corner_4,
-                 field_size, number_of_horses
+                 last_3f, popularity, lap_time, corner_4, field_size
           FROM umadata
           WHERE TRIM(horse_name) = $1
              OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
@@ -739,7 +738,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
           const prLast3F = pr.last_3f || '';
           const prPop = pr.popularity || '';
           const prCorner4 = pr.corner_4 || '';
-          const prTotalHorses = pr.field_size || pr.number_of_horses || '';
+          const prTotalHorses = pr.field_size || '';
           const prClassName = pr.class_name || '';
           
           // 指数を取得
