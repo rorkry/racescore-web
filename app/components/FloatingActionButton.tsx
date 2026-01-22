@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams, usePathname } from 'next/navigation';
+import AIChatPanel from './AIChatPanel';
 
 interface MenuItem {
   id: string;
@@ -72,8 +74,18 @@ export function useFeatureAccess(featureId: string): boolean {
   return isActive;
 }
 
+interface RaceContext {
+  year: number;
+  date: string;
+  place: string;
+  raceNumber: number;
+  baba?: string;
+  pace?: string;
+}
+
 interface FloatingActionButtonProps {
   menuItems?: MenuItem[];
+  raceContext?: RaceContext | null;
 }
 
 const STORAGE_KEY = 'stride_active_features';
@@ -105,8 +117,12 @@ function saveFeatures(features: Set<string>) {
   }
 }
 
-export default function FloatingActionButton({ menuItems = [] }: FloatingActionButtonProps) {
+export default function FloatingActionButton({ menuItems = [], raceContext: propRaceContext }: FloatingActionButtonProps) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  
   const [isOpen, setIsOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
@@ -202,8 +218,45 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
     setIsOpen(false);
   }, [activeFeatures]);
 
+  // URLパラメータからraceContextを取得（/cardページの場合）
+  const raceContext = React.useMemo<RaceContext | null>(() => {
+    if (propRaceContext) return propRaceContext;
+    
+    // /card ページでない場合はnull
+    if (!pathname?.startsWith('/card')) return null;
+    
+    // URLパラメータから取得
+    const year = searchParams?.get('year');
+    const date = searchParams?.get('date');
+    const place = searchParams?.get('place');
+    const raceNo = searchParams?.get('race');
+    
+    if (!year || !date || !place || !raceNo) return null;
+    
+    return {
+      year: parseInt(year, 10),
+      date,
+      place,
+      raceNumber: parseInt(raceNo, 10),
+    };
+  }, [propRaceContext, pathname, searchParams]);
+
+  // AIチャットを開く
+  const openAIChat = useCallback(() => {
+    setIsChatOpen(true);
+    setIsOpen(false);
+  }, []);
+
   // デフォルトメニュー項目
   const defaultMenuItems: MenuItem[] = [
+    {
+      id: 'ai-chat',
+      label: 'AI予想チャット',
+      icon: '💬',
+      description: isPremium ? 'AIと会話して予想' : 'プレミアム限定',
+      isActive: isChatOpen,
+      locked: !isPremium,
+    },
     {
       id: 'race-pace',
       label: '展開予想カード',
@@ -448,7 +501,13 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
             <div
               key={item.id}
               className={`fab-menu-item ${item.isActive ? 'active' : ''} ${item.locked ? 'locked' : ''}`}
-              onClick={() => toggleFeature(item.id, !!item.locked)}
+              onClick={() => {
+                if (item.id === 'ai-chat') {
+                  if (!item.locked) openAIChat();
+                } else {
+                  toggleFeature(item.id, !!item.locked);
+                }
+              }}
             >
               <span className="fab-menu-item-icon">{item.locked ? '🔒' : item.icon}</span>
               <div className="fab-menu-item-content">
@@ -496,6 +555,14 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
           )}
         </button>
       </div>
+
+      {/* AIチャットパネル */}
+      <AIChatPanel
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        raceContext={raceContext}
+        isPremium={isPremium}
+      />
     </>
   );
 }

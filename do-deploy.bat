@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: 馬分析ページAI対応 + race_levels expires_at型キャスト修正"
+git commit -m "feat: AIチャット予想機能追加（GPT-4o-mini）"
 
 echo.
 echo === Pushing to origin ===

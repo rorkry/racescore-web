@@ -385,6 +385,29 @@ async function initDb(database: DatabaseWrapper) {
     )
   `);
 
+  // AI予想用テーブル（過去のDiscord予想を保存）
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS ai_predictions (
+      id TEXT PRIMARY KEY,
+      discord_message_id TEXT UNIQUE,
+      timestamp TEXT NOT NULL,
+      author TEXT,
+      race_course TEXT,
+      race_number INTEGER,
+      race_name TEXT,
+      distance INTEGER,
+      surface TEXT,
+      honmei TEXT,
+      taikou TEXT,
+      ana TEXT,
+      bets_json TEXT,
+      full_text TEXT NOT NULL,
+      reaction_count INTEGER DEFAULT 0,
+      hit INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
   // インデックス作成
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)`);
@@ -402,6 +425,8 @@ async function initDb(database: DatabaseWrapper) {
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_key)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_race_levels_expires ON race_levels(expires_at)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_predictions_course ON ai_predictions(race_course)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_predictions_reaction ON ai_predictions(reaction_count DESC)`);
 
   console.log('PostgreSQL database initialized');
 }
