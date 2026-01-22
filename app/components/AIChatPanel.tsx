@@ -259,7 +259,21 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           z-index: 1;
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .chat-header-close-wrapper {
+          position: absolute;
+          right: 0;
+          top: 50%;
+          transform: translateY(-50%);
+        }
+
+        .chat-header-center {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
         }
 
         .chat-header-title {
@@ -267,34 +281,27 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           font-weight: 800;
           color: #ffffff;
           text-shadow: 
-            /* 内側の強いグロー */
-            0 0 5px #fff,
-            0 0 10px #fff,
-            /* シアンのネオン */
-            0 0 20px #00e6ff,
-            0 0 35px #00e6ff,
-            0 0 50px #00e6ff,
-            /* 外側のにじみ */
-            0 0 75px rgba(0, 230, 255, 0.5);
+            0 0 2px #fff,
+            0 0 8px #00e6ff,
+            0 0 15px #00e6ff,
+            0 0 25px rgba(0, 230, 255, 0.4);
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 12px;
           letter-spacing: 0.05em;
         }
 
         .chat-header-title .brain-icon {
-          font-size: 28px;
+          font-size: 26px;
           filter: 
-            drop-shadow(0 0 5px #ff00c8)
-            drop-shadow(0 0 10px #ff00c8)
-            drop-shadow(0 0 20px #ff00c8)
-            drop-shadow(0 0 30px rgba(255, 0, 200, 0.5));
+            drop-shadow(0 0 3px #ff00c8)
+            drop-shadow(0 0 6px #ff00c8);
           animation: brainGlow 2s ease-in-out infinite alternate;
         }
 
         @keyframes brainGlow {
-          0% { filter: drop-shadow(0 0 5px #ff00c8) drop-shadow(0 0 10px #ff00c8) drop-shadow(0 0 20px #ff00c8); }
-          100% { filter: drop-shadow(0 0 8px #ffdc00) drop-shadow(0 0 15px #ffdc00) drop-shadow(0 0 25px #ffdc00); }
+          0% { filter: drop-shadow(0 0 3px #ff00c8) drop-shadow(0 0 6px #ff00c8); }
+          100% { filter: drop-shadow(0 0 4px #ffdc00) drop-shadow(0 0 8px #ffdc00); }
         }
 
         .chat-header-subtitle {
@@ -304,8 +311,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           font-weight: 600;
           text-shadow: 
             0 0 5px #00e6ff,
-            0 0 10px #00e6ff,
-            0 0 20px rgba(0, 230, 255, 0.5);
+            0 0 10px rgba(0, 230, 255, 0.5);
           letter-spacing: 0.1em;
         }
 
@@ -599,7 +605,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
       <div ref={ref} className="chat-panel">
         <div className="chat-header">
           <div className="chat-header-content">
-            <div>
+            <div className="chat-header-center">
               <div className="chat-header-title">
                 <span className="brain-icon">🧠</span>
                 <span>競馬の脳みそ</span>
@@ -610,9 +616,11 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
                 </div>
               )}
             </div>
-            <button className="chat-close" onClick={onClose} aria-label="閉じる">
-              ×
-            </button>
+            <div className="chat-header-close-wrapper">
+              <button className="chat-close" onClick={onClose} aria-label="閉じる">
+                ×
+              </button>
+            </div>
           </div>
         </div>
 
