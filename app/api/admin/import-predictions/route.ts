@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // パーサー関数群（parse-predictions.tsと同じロジック）
 
@@ -223,7 +223,7 @@ export async function POST(request: NextRequest) {
             reaction_count = $15,
             hit = $16
         `).run(
-          uuidv4(),
+          randomUUID(),
           msg.id,
           msg.timestamp,
           msg.author?.nickname || msg.author?.name || 'Unknown',
