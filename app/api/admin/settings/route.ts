@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { clearPremiumCache } from '@/lib/premium';
 
 // app_settingsテーブルを作成（存在しない場合）
 async function ensureSettingsTable(db: ReturnType<typeof getDb>) {
@@ -92,6 +93,12 @@ export async function POST(request: NextRequest) {
       VALUES ($1, $2, CURRENT_TIMESTAMP)
       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP
     `).run(key, value || '');
+    
+    // プレミアム関連の設定が変更されたらキャッシュをクリア
+    if (key === 'premium_for_all') {
+      clearPremiumCache();
+      console.log(`[settings] Premium cache cleared`);
+    }
     
     console.log(`[settings] Updated: ${key} = ${value}`);
     

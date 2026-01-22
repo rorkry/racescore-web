@@ -83,9 +83,12 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
       try {
         // 1. グローバル設定を確認（全員プレミアム開放中か）
         const globalRes = await fetch('/api/settings/global');
+        console.log('[FAB] Global settings response status:', globalRes.status);
         if (globalRes.ok) {
           const globalData = await globalRes.json();
+          console.log('[FAB] Global settings data:', globalData);
           if (globalData.premiumForAll) {
+            console.log('[FAB] Premium for all is ON, setting isPremium=true');
             setIsPremium(true);
             return; // 全員開放中なら個人確認不要
           }
@@ -93,12 +96,15 @@ export default function FloatingActionButton({ menuItems = [] }: FloatingActionB
         
         // 2. 個人のプレミアム状態を確認
         const res = await fetch('/api/user/favorites');
+        console.log('[FAB] User favorites response status:', res.status);
         if (res.ok) {
           const data = await res.json();
+          console.log('[FAB] User premium status:', data.isPremium);
           setIsPremium(!!data.isPremium);
         }
         // 401（未ログイン）やその他エラーはisPremium=falseのまま
-      } catch {
+      } catch (e) {
+        console.error('[FAB] Error checking premium:', e);
         // ネットワークエラー時もプレミアムでないとみなす
       }
     };

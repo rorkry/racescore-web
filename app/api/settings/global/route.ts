@@ -9,13 +9,29 @@ export async function GET() {
     // premium_for_all 設定を取得
     let premiumForAll = false;
     try {
-      const setting = await db.prepare(
-        "SELECT value FROM app_settings WHERE key = 'premium_for_all'"
-      ).get<{ value: string }>();
-      premiumForAll = setting?.value === 'true';
-    } catch {
+      // テーブルが存在するか確認
+      const tableExists = await db.prepare(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'app_settings'
+        ) as exists
+      `).get<{ exists: boolean }>();
+      
+      console.log('[global-settings] Table exists:', tableExists?.exists);
+      
+      if (tableExists?.exists) {
+        const setting = await db.prepare(
+          "SELECT value FROM app_settings WHERE key = 'premium_for_all'"
+        ).get<{ value: string }>();
+        premiumForAll = setting?.value === 'true';
+        console.log('[global-settings] Setting value:', setting?.value, 'parsed:', premiumForAll);
+      }
+    } catch (e) {
+      console.log('[global-settings] app_settings check failed:', e);
       // テーブルがない場合は false
     }
+    
+    console.log('[global-settings] Returning premiumForAll:', premiumForAll);
     
     return NextResponse.json({
       premiumForAll,

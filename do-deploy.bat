@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "feat: 管理画面に全ユーザープレミアム有効化トグル追加"
+git commit -m "fix: isPremiumをAPI応答に追加、グローバル設定を全APIで統一"
 
 echo.
 echo === Pushing to origin ===

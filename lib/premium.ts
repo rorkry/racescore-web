@@ -20,15 +20,33 @@ async function isPremiumForAll(): Promise<boolean> {
   
   try {
     const db = getDb();
+    
+    // テーブルが存在するか確認してから取得
+    const tableExists = await db.prepare(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'app_settings'
+      ) as exists
+    `).get<{ exists: boolean }>();
+    
+    if (!tableExists?.exists) {
+      console.log('[premium] app_settings table does not exist, returning false');
+      globalPremiumCache = { value: false, timestamp: Date.now() };
+      return false;
+    }
+    
     const setting = await db.prepare(
       "SELECT value FROM app_settings WHERE key = 'premium_for_all'"
     ).get<{ value: string }>();
     
     const value = setting?.value === 'true';
+    console.log(`[premium] isPremiumForAll: ${value}`);
     globalPremiumCache = { value, timestamp: Date.now() };
     return value;
-  } catch {
+  } catch (e) {
     // テーブルがない場合やエラー時は false
+    console.error('[premium] Error checking isPremiumForAll:', e);
+    globalPremiumCache = { value: false, timestamp: Date.now() };
     return false;
   }
 }
