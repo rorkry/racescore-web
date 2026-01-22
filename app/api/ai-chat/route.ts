@@ -215,11 +215,16 @@ async function handlePredictionRequest(
     };
   }
   
-  // レース情報（distanceは「芝2000」のような形式なので数値のみ抽出）
+  // レース情報
+  // wakujunテーブル: distance="2200", track_type="芝" or "ダ" or "ダート"
   const distanceStr = horses[0]?.distance || '';
+  const trackType = horses[0]?.track_type || '';
   const distanceMatch = distanceStr.match(/(\d+)/);
   const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 0;
-  const surface = distanceStr.includes('芝') ? '芝' : 'ダ';
+  // track_typeから芝/ダを判定、なければdistanceStrをチェック
+  const surface = trackType.includes('芝') ? '芝' : 
+                  trackType.includes('ダ') ? 'ダ' :
+                  distanceStr.includes('芝') ? '芝' : 'ダ';
   
   const raceInfo = {
     place,
@@ -692,10 +697,15 @@ async function handleGeneralQuestion(
     
     if (horses && horses.length > 0) {
       // 距離・コース情報
+      // wakujunテーブル: distance="2200", track_type="芝" or "ダ" or "ダート"
       const distanceStr = horses[0]?.distance || '';
+      const trackType = horses[0]?.track_type || '';
       const distanceMatch = distanceStr.match(/(\d+)/);
       const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 0;
-      const surface = distanceStr.includes('芝') ? '芝' : 'ダ';
+      // track_typeから芝/ダを判定
+      const surface = trackType.includes('芝') ? '芝' : 
+                      trackType.includes('ダ') ? 'ダ' :
+                      distanceStr.includes('芝') ? '芝' : 'ダ';
       const className = horses[0]?.class_name_1 || horses[0]?.class_name || '';
       
       raceDataContext = `
