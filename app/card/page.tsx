@@ -171,6 +171,26 @@ export default function RaceCardPage() {
   const showRacePace = useFeatureAccess('race-pace');
   const showSagaAI = useFeatureAccess('saga-ai');
 
+  // グローバルにレース情報を共有（AIチャット用）
+  useEffect(() => {
+    if (typeof window !== 'undefined' && selectedVenue && selectedRace) {
+      window.__currentRaceContext = {
+        year: selectedYear,
+        date,
+        place: selectedVenue,
+        raceNumber: parseInt(selectedRace, 10),
+      };
+      console.log('[RaceCard] Updated global raceContext:', window.__currentRaceContext);
+    }
+    
+    // クリーンアップ: ページを離れる時にnullに
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.__currentRaceContext = null;
+      }
+    };
+  }, [selectedYear, date, selectedVenue, selectedRace]);
+
   const [selectedHorseDetail, setSelectedHorseDetail] = useState<Horse | null>(null);
   const [horseActionTarget, setHorseActionTarget] = useState<{ name: string; number: string } | null>(null);
   const [showBabaMemo, setShowBabaMemo] = useState(false);

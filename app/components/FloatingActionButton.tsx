@@ -25,6 +25,12 @@ export interface FeatureToggleEvent {
 declare global {
   interface Window {
     __activeFeatures?: Set<string>;
+    __currentRaceContext?: {
+      year: number;
+      date: string;
+      place: string;
+      raceNumber: number;
+    } | null;
   }
 }
 
@@ -221,28 +227,28 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   // URLパラメータからraceContextを取得（/cardページの場合）
   const [raceContext, setRaceContext] = useState<RaceContext | null>(propRaceContext || null);
   
-  // URLパラメータからraceContextを取得する関数
+  // raceContextを取得する関数（グローバル変数 or URLパラメータ）
   const updateRaceContext = useCallback(() => {
     if (propRaceContext) {
+      console.log('[FAB] Using propRaceContext:', propRaceContext);
       setRaceContext(propRaceContext);
       return;
     }
     
-    // /card ページでない場合はnull
-    if (!pathname?.startsWith('/card')) {
-      setRaceContext(null);
-      return;
-    }
-    
-    // window.locationからURLパラメータを取得（クライアントサイドのみ）
     if (typeof window !== 'undefined') {
+      // 1. まずグローバル変数をチェック（レースカードページが設定）
+      if (window.__currentRaceContext) {
+        console.log('[FAB] Using global raceContext:', window.__currentRaceContext);
+        setRaceContext(window.__currentRaceContext);
+        return;
+      }
+      
+      // 2. URLパラメータをチェック（フォールバック）
       const params = new URLSearchParams(window.location.search);
       const year = params.get('year');
       const date = params.get('date');
       const place = params.get('place');
       const raceNo = params.get('race');
-      
-      console.log('[FAB] Parsing URL params:', { year, date, place, raceNo, pathname });
       
       if (year && date && place && raceNo) {
         const ctx = {
@@ -251,14 +257,15 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
           place,
           raceNumber: parseInt(raceNo, 10),
         };
-        console.log('[FAB] Setting raceContext:', ctx);
+        console.log('[FAB] Using URL params:', ctx);
         setRaceContext(ctx);
-      } else {
-        console.log('[FAB] Missing URL params, setting raceContext to null');
-        setRaceContext(null);
+        return;
       }
+      
+      console.log('[FAB] No raceContext available');
+      setRaceContext(null);
     }
-  }, [propRaceContext, pathname]);
+  }, [propRaceContext]);
   
   // URLパラメータを定期的にチェック（SPAでのルーティング対応）
   useEffect(() => {
