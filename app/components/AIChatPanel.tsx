@@ -683,19 +683,19 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
                   className="quick-action" 
                   onClick={() => setInput('予想')}
                 >
-                  🎯 予想を生成
+                  🎯 予想
+                </button>
+                <button 
+                  className="quick-action" 
+                  onClick={() => setInput('展開予想')}
+                >
+                  🏃 展開予想
                 </button>
                 <button 
                   className="quick-action" 
                   onClick={() => setInput('このコースの特徴は？')}
                 >
-                  📊 コース特徴
-                </button>
-                <button 
-                  className="quick-action" 
-                  onClick={() => setInput('巻き返し指数が高いのは？')}
-                >
-                  📈 巻き返し
+                  📊 コース
                 </button>
               </div>
             )}

@@ -102,12 +102,22 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // 「予想」コマンドの検出
-    const isPredictionRequest = message.includes('予想') || message.includes('よそう');
+    // コマンドの検出
+    const isExpansionRequest = message.includes('展開予想') || message.includes('展開');
+    const isPredictionRequest = !isExpansionRequest && (message.includes('予想') || message.includes('よそう'));
     
-    console.log('[AI Chat] Request:', { message, isPredictionRequest, raceContext });
+    console.log('[AI Chat] Request:', { message, isPredictionRequest, isExpansionRequest, raceContext });
     
-    if (isPredictionRequest && raceContext) {
+    if (isExpansionRequest && raceContext) {
+      // 展開予想を生成
+      console.log('[AI Chat] Starting expansion prediction for:', raceContext);
+      const response = await handleExpansionRequest(raceContext, apiKey);
+      return NextResponse.json({ answer: response });
+    } else if (isExpansionRequest && !raceContext) {
+      return NextResponse.json({ 
+        answer: 'レースカードを開いた状態で「展開予想」と入力してください。' 
+      });
+    } else if (isPredictionRequest && raceContext) {
       // レース予想を生成
       console.log('[AI Chat] Starting prediction generation for:', raceContext);
       const response = await handlePredictionRequest(raceContext, apiKey, userId);
@@ -786,10 +796,10 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
       
       raceDataContext += `
 【指数の説明】
-- L4F: 後半4ハロンのラップ評価。高いほど優秀なラップ
-- T2F: 前半2ハロンの評価
-- ポテンシャル: 過去走から算出した能力値
-- 巻き返し: 前走で不利があった度合い。高いほど巻き返し期待
+- L4F: 後半4Fの速度指数。**数字が低いほど速い**（45以下なら高評価）
+- T2F: 前半2Fの速度指数。**数字が低いほど速い**（22.5以下なら速力あり＝先行力）
+- ポテンシャル: 過去走から算出した能力値（高いほど能力が高い）
+- 巻き返し: 前走で不利があった度合い（3.0以上なら巻き返し期待）
 - レースレベル: A=ハイレベル, B=やや高い, C=標準, D=低い
 `;
     }
@@ -974,4 +984,167 @@ function formatLearnedPatterns(patterns: Array<{
   }
 
   return text;
+}
+
+/**
+ * 展開予想を生成
+ */
+async function handleExpansionRequest(
+  raceContext: {
+    year: number;
+    date: string;
+    place: string;
+    raceNumber: number;
+  },
+  apiKey: string
+): Promise<string> {
+  const db = getDb();
+  const { year, date, place, raceNumber } = raceContext;
+  
+  // wakujunから出走馬を取得
+  const horses = await db.prepare(`
+    SELECT * FROM wakujun
+    WHERE year = $1 AND date = $2 AND place LIKE $3 AND race_number = $4
+    ORDER BY umaban::INTEGER
+  `).all<any>(year, date, `%${place}%`, raceNumber);
+  
+  if (!horses || horses.length === 0) {
+    return `レースデータが見つかりません（${place} ${raceNumber}R）`;
+  }
+  
+  // 距離・コース情報
+  const distanceStr = horses[0]?.distance || '';
+  const trackType = horses[0]?.track_type || '';
+  const distanceMatch = distanceStr.match(/(\d+)/);
+  const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 0;
+  const surface = trackType.includes('芝') ? '芝' : 
+                  trackType.includes('ダ') ? 'ダ' :
+                  distanceStr.includes('芝') ? '芝' : 'ダ';
+  
+  // 各馬のT2F指数と前走通過順位を取得
+  const horseExpansionData: Array<{
+    number: number;
+    name: string;
+    t2f: number | null;
+    firstCorner: string | null;
+    runningStyle: string;
+  }> = [];
+  
+  let frontRunnersCount = 0;  // T2F 22.5以下の馬数
+  let earlyPositionCount = 0; // 前走3番手以内の馬数
+  
+  for (const horse of horses) {
+    const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
+    const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
+    
+    // 過去走を取得（最新1走のみ）
+    const pastRace = await db.prepare(`
+      SELECT race_id, umaban, corner_4
+      FROM umadata
+      WHERE TRIM(horse_name) = $1
+         OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+      LIMIT 1
+    `).get<any>(horseName);
+    
+    let t2f: number | null = null;
+    let firstCorner: string | null = null;
+    let runningStyle = '不明';
+    
+    if (pastRace) {
+      // 指数を取得
+      const umabanPadded = (pastRace.umaban || '').toString().padStart(2, '0');
+      const fullRaceId = pastRace.race_id + umabanPadded;
+      
+      const indices = await db.prepare(`
+        SELECT "T2F" FROM indices WHERE race_id = $1
+      `).get<any>(fullRaceId);
+      
+      if (indices) {
+        t2f = indices.T2F;
+        // T2Fが22.5以下なら先行力あり
+        if (t2f !== null && t2f <= 22.5) {
+          frontRunnersCount++;
+          runningStyle = '先行';
+        } else if (t2f !== null && t2f <= 24) {
+          runningStyle = '中団';
+        } else {
+          runningStyle = '後方';
+        }
+      }
+      
+      // 前走通過順（corner_4を使用、最初のコーナー情報がないため4角を参考）
+      firstCorner = pastRace.corner_4 || null;
+      if (firstCorner) {
+        const pos = parseInt(firstCorner, 10);
+        if (!isNaN(pos) && pos <= 3) {
+          earlyPositionCount++;
+        }
+      }
+    }
+    
+    horseExpansionData.push({
+      number: horseNumber,
+      name: horseName,
+      t2f,
+      firstCorner,
+      runningStyle,
+    });
+  }
+  
+  // 展開予想を生成
+  const totalHorses = horses.length;
+  const frontRunnerRatio = frontRunnersCount / totalHorses;
+  const earlyPositionRatio = earlyPositionCount / totalHorses;
+  
+  let paceExpectation = '';
+  let expansionAnalysis = '';
+  
+  if (frontRunnerRatio >= 0.4 || earlyPositionRatio >= 0.4) {
+    paceExpectation = 'ハイペース';
+    expansionAnalysis = `先行力のある馬（T2F 22.5以下）が${frontRunnersCount}頭、前走3番手以内が${earlyPositionCount}頭と多く、ペースが流れそう。差し馬に展開が向きやすい。`;
+  } else if (frontRunnerRatio <= 0.15 && earlyPositionRatio <= 0.2) {
+    paceExpectation = 'スローペース';
+    expansionAnalysis = `先行力のある馬が少なく（${frontRunnersCount}頭）、スローペースの前残りに注意。逃げ・先行馬に展開利。`;
+  } else {
+    paceExpectation = 'ミドルペース';
+    expansionAnalysis = `先行馬は${frontRunnersCount}頭で平均的。平均ペースで流れそう。`;
+  }
+  
+  // 出力を構築
+  let result = `【${place} ${raceNumber}R ${surface}${distance}m 展開予想】\n\n`;
+  result += `**ペース予想: ${paceExpectation}**\n`;
+  result += `${expansionAnalysis}\n\n`;
+  
+  result += `【先行力データ】\n`;
+  result += `- T2F 22.5以下（速力あり）: ${frontRunnersCount}頭 / ${totalHorses}頭\n`;
+  result += `- 前走4角3番手以内: ${earlyPositionCount}頭 / ${totalHorses}頭\n\n`;
+  
+  // 先行馬リスト
+  const frontRunners = horseExpansionData.filter(h => h.t2f !== null && h.t2f <= 22.5);
+  if (frontRunners.length > 0) {
+    result += `【先行力のある馬】\n`;
+    for (const h of frontRunners) {
+      result += `${h.number}番 ${h.name} (T2F=${h.t2f?.toFixed(1)})\n`;
+    }
+    result += '\n';
+  }
+  
+  // 展開利が見込める馬
+  if (paceExpectation === 'ハイペース') {
+    const closers = horseExpansionData.filter(h => h.runningStyle === '後方' || h.runningStyle === '中団');
+    if (closers.length > 0) {
+      result += `【展開利が見込める馬（差し・追込）】\n`;
+      for (const h of closers.slice(0, 5)) {
+        result += `${h.number}番 ${h.name}\n`;
+      }
+    }
+  } else if (paceExpectation === 'スローペース') {
+    result += `【展開利が見込める馬（逃げ・先行）】\n`;
+    for (const h of frontRunners.slice(0, 5)) {
+      result += `${h.number}番 ${h.name}\n`;
+    }
+  }
+  
+  return result;
 }
