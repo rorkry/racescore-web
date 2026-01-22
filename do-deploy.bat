@@ -11,7 +11,7 @@ git add -A
 
 echo.
 echo === Committing ===
-git commit -m "fix: umadata CSV 47列対応 + プレミアム機能トグル状態をログアウトまで維持"
+git commit -m "fix: 馬分析ページAI対応 + race_levels expires_at型キャスト修正"
 
 echo.
 echo === Pushing to origin ===

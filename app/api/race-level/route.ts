@@ -57,7 +57,7 @@ async function getCachedLevel(raceId: string): Promise<RaceLevelResult | null> {
   const db = getDb();
   const cached = await db.prepare(`
     SELECT * FROM race_levels 
-    WHERE race_id = ? AND (expires_at IS NULL OR expires_at > NOW())
+    WHERE race_id = ? AND (expires_at IS NULL OR expires_at::timestamp > NOW())
   `).get<CachedRaceLevel>(raceId);
   
   if (!cached) return null;

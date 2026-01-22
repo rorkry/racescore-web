@@ -5,6 +5,7 @@ import { useSession } from '../../components/Providers';
 import Link from 'next/link';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
 import HorseDetailModal from '../../components/HorseDetailModal';
+import { useFeatureAccess } from '../../components/FloatingActionButton';
 
 interface FavoriteHorse {
   id: string;
@@ -73,6 +74,9 @@ export default function HorseAnalysisPage() {
   const [limit, setLimit] = useState(20);
   const [notifyLimit, setNotifyLimit] = useState(10);
   const [notifyCount, setNotifyCount] = useState(0);
+  
+  // おれAIトグル状態
+  const showSagaAI = useFeatureAccess('saga-ai');
   
   // 検索関連
   const [searchQuery, setSearchQuery] = useState('');
@@ -165,8 +169,13 @@ export default function HorseAnalysisPage() {
     setLoadingHorseDetail(true);
     setShowSuggestions(false);
     
+    console.log('[horses] openHorseDetail:', { horseName, showSagaAI });
+    
     try {
-      const res = await fetch(`/api/horses/detail?name=${encodeURIComponent(horseName)}`);
+      // おれAIトグルがONの場合はenableSagaAI=trueを送る
+      const url = `/api/horses/detail?name=${encodeURIComponent(horseName)}${showSagaAI ? '&enableSagaAI=true' : ''}`;
+      console.log('[horses] Fetching:', url);
+      const res = await fetch(url);
       if (res.ok) {
         const data: HorseDetail = await res.json();
         

@@ -180,7 +180,7 @@ async function getRaceLevelsFromCache(db: DbWrapper, raceIds: string[]): Promise
       SELECT race_id, level, level_label, total_horses_run, good_run_count, win_count, ai_comment
       FROM race_levels
       WHERE race_id IN (${placeholders})
-        AND (expires_at IS NULL OR expires_at > NOW())
+        AND (expires_at IS NULL OR expires_at::timestamp > NOW())
     `, uniqueIds);
 
     for (const row of rows) {
