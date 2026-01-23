@@ -4,33 +4,27 @@ chcp 65001 > nul
 echo ============================================
 echo racescore-web デプロイスクリプト
 echo ============================================
-echo.
 
-REM racescore-webディレクトリ内で直接実行
+REM このバッチファイルがあるディレクトリに移動
 cd /d "%~dp0"
 
 echo 現在のディレクトリ: %CD%
 echo.
 
-REM 親ディレクトリの.gitを確認
+REM 親ディレクトリの.gitを強制削除
 if exist "C:\競馬データ\.git" (
-    echo [警告] C:\競馬データ\.git が存在します。
-    echo これが原因でサブモジュール扱いになっています。
-    echo 削除しますか？ (Y/N)
-    set /p CONFIRM=
-    if /i "%CONFIRM%"=="Y" (
-        rmdir /s /q "C:\競馬データ\.git"
-        echo 削除しました。
-    )
+    echo [検出] C:\競馬データ\.git を削除します...
+    rmdir /s /q "C:\競馬データ\.git"
+    echo 削除完了
+    echo.
 )
 
-echo.
 echo === Git Status ===
 git status
 echo.
 
-echo === Adding files ===
-git add .
+echo === Adding ALL files ===
+git add -A
 echo.
 
 echo === Committing ===
