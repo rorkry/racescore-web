@@ -39,6 +39,13 @@ export default function AdminPage() {
     status: string;
     fine_tuned_model: string | null;
   } | null>(null);
+  const [ftAllJobs, setFtAllJobs] = useState<Array<{
+    id: string;
+    status: string;
+    model: string;
+    fine_tuned_model: string | null;
+    created_at: string;
+  }>>([]);
   const [ftLimit, setFtLimit] = useState<string>('all'); // 'all', '500', '1000', '2000', '5000'
 
   const isAdmin = (session?.user as any)?.role === 'admin';
@@ -70,24 +77,31 @@ export default function AdminPage() {
           const data = await res.json();
           setFtStatus(data);
           
-          // 保存されているジョブIDがあれば状態を取得
-          if (data.lastJobId) {
-            const jobRes = await fetch('/api/admin/fine-tune', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'status', jobId: data.lastJobId }),
-            });
-            if (jobRes.ok) {
-              const jobData = await jobRes.json();
-              setFtJobStatus(jobData.job);
-              
-              // 進行中のジョブがあればメッセージ表示
-              if (jobData.job.status === 'queued' || jobData.job.status === 'running') {
-                setFtMessage(`🔄 ファインチューニング進行中... (${jobData.job.status})`);
-              } else if (jobData.job.status === 'succeeded') {
-                setFtMessage(`✅ ファインチューニング完了！モデル: ${jobData.job.fine_tuned_model}`);
-              } else if (jobData.job.status === 'failed') {
-                setFtMessage(`❌ ファインチューニング失敗: ${jobData.job.error?.message || '不明なエラー'}`);
+          // 全ジョブ一覧を取得
+          const listRes = await fetch('/api/admin/fine-tune', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'list' }),
+          });
+          if (listRes.ok) {
+            const listData = await listRes.json();
+            setFtAllJobs(listData.jobs || []);
+            
+            // 進行中のジョブがあるかチェック
+            const runningJobs = (listData.jobs || []).filter(
+              (j: any) => j.status === 'queued' || j.status === 'running' || j.status === 'validating_files'
+            );
+            if (runningJobs.length > 0) {
+              setFtJobStatus(runningJobs[0]);
+              setFtMessage(`🔄 ファインチューニング進行中... (${runningJobs[0].status}) - ${runningJobs.length}件のジョブが実行中`);
+            } else {
+              // 最新の完了ジョブを表示
+              const latestJob = listData.jobs?.[0];
+              if (latestJob) {
+                setFtJobStatus(latestJob);
+                if (latestJob.status === 'succeeded') {
+                  setFtMessage(`✅ 最新のファインチューニング完了！モデル: ${latestJob.fine_tuned_model}`);
+                }
               }
             }
           }
@@ -101,27 +115,38 @@ export default function AdminPage() {
   
   // 進行中のジョブを定期的にポーリング（30秒ごと）
   useEffect(() => {
-    if (!ftJobStatus) return;
-    if (ftJobStatus.status !== 'queued' && ftJobStatus.status !== 'running') return;
+    const runningJobs = ftAllJobs.filter(
+      j => j.status === 'queued' || j.status === 'running' || j.status === 'validating_files'
+    );
+    if (runningJobs.length === 0) return;
     
     const interval = setInterval(async () => {
       try {
-        const res = await fetch('/api/admin/fine-tune', {
+        // 全ジョブ一覧を再取得
+        const listRes = await fetch('/api/admin/fine-tune', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'status', jobId: ftJobStatus.id }),
+          body: JSON.stringify({ action: 'list' }),
         });
-        if (res.ok) {
-          const data = await res.json();
-          setFtJobStatus(data.job);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          setFtAllJobs(listData.jobs || []);
           
-          if (data.job.status === 'succeeded') {
-            setFtMessage(`✅ ファインチューニング完了！モデル: ${data.job.fine_tuned_model}`);
-            setFtStatus(prev => prev ? { ...prev, isFineTuned: true, currentModel: data.job.fine_tuned_model } : null);
-          } else if (data.job.status === 'failed') {
-            setFtMessage(`❌ ファインチューニング失敗: ${data.job.error?.message || '不明なエラー'}`);
+          const newRunningJobs = (listData.jobs || []).filter(
+            (j: any) => j.status === 'queued' || j.status === 'running' || j.status === 'validating_files'
+          );
+          
+          if (newRunningJobs.length > 0) {
+            setFtJobStatus(newRunningJobs[0]);
+            setFtMessage(`🔄 ファインチューニング進行中... (${newRunningJobs[0].status}) - ${newRunningJobs.length}件`);
           } else {
-            setFtMessage(`🔄 ファインチューニング進行中... (${data.job.status})`);
+            // 完了したジョブを探す
+            const succeededJob = listData.jobs?.find((j: any) => j.status === 'succeeded' && j.fine_tuned_model);
+            if (succeededJob) {
+              setFtJobStatus(succeededJob);
+              setFtMessage(`✅ ファインチューニング完了！モデル: ${succeededJob.fine_tuned_model}`);
+              setFtStatus(prev => prev ? { ...prev, isFineTuned: true, currentModel: succeededJob.fine_tuned_model } : null);
+            }
           }
         }
       } catch (e) {
@@ -130,7 +155,7 @@ export default function AdminPage() {
     }, 30000); // 30秒ごと
     
     return () => clearInterval(interval);
-  }, [ftJobStatus?.id, ftJobStatus?.status]);
+  }, [ftAllJobs]);
   
   // プレミアム設定を保存
   const handlePremiumToggle = async () => {
@@ -316,7 +341,20 @@ export default function AdminPage() {
 
   // ファインチューニング: アップロード＆開始
   const handleFtStart = async () => {
-    if (!confirm('ファインチューニングを開始しますか？\n推定コスト: $' + (ftStats?.cost.trainingCost || 0).toFixed(2))) {
+    // 進行中のジョブがあるかチェック
+    const runningJobs = ftAllJobs.filter(
+      j => j.status === 'queued' || j.status === 'running' || j.status === 'validating_files'
+    );
+    
+    let confirmMessage = 'ファインチューニングを開始しますか？\n推定コスト: $' + (ftStats?.cost.trainingCost || 0).toFixed(2);
+    
+    if (runningJobs.length > 0) {
+      confirmMessage = `⚠️ 注意: ${runningJobs.length}件のジョブが進行中です！\n\n` +
+        runningJobs.map(j => `・${j.id} (${j.status})`).join('\n') +
+        '\n\n新しいジョブを追加で開始しますか？\n推定コスト: $' + (ftStats?.cost.trainingCost || 0).toFixed(2);
+    }
+    
+    if (!confirm(confirmMessage)) {
       return;
     }
     
@@ -590,7 +628,7 @@ export default function AdminPage() {
                   'bg-yellow-50 border border-yellow-200'
                 }`}>
                   <div className="flex items-center gap-2">
-                    {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running') && (
+                    {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running' || ftJobStatus.status === 'validating_files') && (
                       <div className="size-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
                     )}
                     {ftJobStatus.status === 'succeeded' && (
@@ -600,6 +638,7 @@ export default function AdminPage() {
                       <span className="text-red-600">❌</span>
                     )}
                     <span className="font-bold">
+                      {ftJobStatus.status === 'validating_files' && 'ファイル検証中...'}
                       {ftJobStatus.status === 'queued' && '待機中...'}
                       {ftJobStatus.status === 'running' && '学習中...'}
                       {ftJobStatus.status === 'succeeded' && '完了！'}
@@ -610,7 +649,7 @@ export default function AdminPage() {
                   {ftJobStatus.fine_tuned_model && (
                     <p className="mt-1 text-green-700">モデル: <strong>{ftJobStatus.fine_tuned_model}</strong></p>
                   )}
-                  {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running') && (
+                  {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running' || ftJobStatus.status === 'validating_files') && (
                     <p className="mt-2 text-xs text-yellow-700">
                       🔄 30秒ごとに自動更新中（画面を離れても学習は継続します）
                     </p>
@@ -618,6 +657,44 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
+            
+            {/* ジョブ一覧 */}
+            {ftAllJobs.length > 0 && (
+              <div className="border-l-4 border-purple-500 pl-4">
+                <h3 className="font-bold text-gray-900">📋 ジョブ履歴（直近10件）</h3>
+                <div className="mt-2 space-y-2">
+                  {ftAllJobs.slice(0, 10).map((job) => (
+                    <div 
+                      key={job.id}
+                      className={`p-2 rounded text-xs ${
+                        job.status === 'succeeded' ? 'bg-green-50' :
+                        job.status === 'failed' ? 'bg-red-50' :
+                        job.status === 'cancelled' ? 'bg-gray-50' :
+                        'bg-yellow-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono">{job.id.slice(0, 20)}...</span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          job.status === 'succeeded' ? 'bg-green-200 text-green-800' :
+                          job.status === 'failed' ? 'bg-red-200 text-red-800' :
+                          job.status === 'cancelled' ? 'bg-gray-200 text-gray-800' :
+                          'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {job.status}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-gray-500">
+                        {new Date(job.created_at).toLocaleString('ja-JP')}
+                        {job.fine_tuned_model && (
+                          <span className="ml-2 text-green-700">→ {job.fine_tuned_model.slice(-20)}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           
           {/* メッセージ */}
