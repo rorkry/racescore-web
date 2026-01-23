@@ -501,12 +501,19 @@ export class SagaBrain {
       
       // 基本情報コメント（次1走目の好走数を使用、延べではない）
       const goodCount = level.firstRunGoodCount ?? 0;  // 次1走目の好走数
-      const totalInfo = level.totalHorsesRun > 0 
-        ? `（${level.totalHorsesRun}頭中${goodCount}頭好走）` 
-        : '';
+      const totalHorses = level.totalHorsesRun ?? 0;
       
       // B以上 = ハイレベル
       const isHighLevel = baseLevel === 'S' || baseLevel === 'A' || baseLevel === 'B';
+      
+      // レベルと好走数の整合性チェック
+      // B以上なのに好走0頭は論理的にあり得ない（キャッシュ不整合の可能性）
+      const hasLogicalConsistency = !(isHighLevel && goodCount === 0 && totalHorses > 2);
+      
+      // 整合性がある場合のみ詳細を表示
+      const totalInfo = (totalHorses > 0 && hasLogicalConsistency)
+        ? `（${totalHorses}頭中${goodCount}頭好走）` 
+        : '';
       // C以下 = 低レベル側
       const isLowLevel = baseLevel === 'C' || baseLevel === 'D' || baseLevel === 'LOW';
       
