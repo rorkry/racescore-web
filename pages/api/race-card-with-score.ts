@@ -498,28 +498,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // スコア計算（全馬データを渡して展開連動スコアも計算）
       let score = 0;
       try {
-        // デバッグモード: 最初の3頭のみ詳細ログ出力（Railwayレート制限対策）
-        const isDebugSample = horseIndex < 3;
+        // デバッグモード: 最初の1頭のみ詳細ログ出力（Railwayレート制限対策）
+        const isDebugSample = horseIndex === 0;
         const scoreResult = computeKisoScore({ past: pastRaces, entry: entryRow }, allHorseData, isDebugSample);
         
         if (isDebugSample && typeof scoreResult !== 'number') {
-          // デバッグ情報がある場合のみログ出力
+          // デバッグ情報がある場合のみログ出力（簡略版）
           const breakdown = scoreResult;
           const horseName = GET(horse, 'umamei');
-          console.log(`[kiso-score] ${horseName} (${horseIndex + 1}頭目):`, {
-            total: breakdown.total,
-            newLogic: {
-              positionImprovement: breakdown.positionImprovement,
-              paceSync: breakdown.paceSync,
-              courseFit: breakdown.courseFit,
-            },
-            details: {
-              lastPosition: breakdown.details.lastPosition,
-              avgPastPosition: breakdown.details.avgPastPosition,
-              forwardRate: breakdown.details.forwardRate,
-              isTurfStartDirt: breakdown.details.isTurfStartDirt,
-            }
-          });
+          const hasNewLogic = breakdown.positionImprovement > 0 || breakdown.paceSync > 0 || breakdown.courseFit > 0;
+          
+          // 新ロジックが加点されている場合のみログ出力
+          if (hasNewLogic) {
+            console.log(`[kiso-score] ${horseName}: total=${breakdown.total.toFixed(1)}, ` +
+              `pos=${breakdown.positionImprovement.toFixed(1)}, ` +
+              `pace=${breakdown.paceSync.toFixed(1)}, ` +
+              `course=${breakdown.courseFit.toFixed(1)}`);
+          }
           score = breakdown.total;
         } else {
           score = typeof scoreResult === 'number' ? scoreResult : scoreResult.total;
