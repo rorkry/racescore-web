@@ -39,6 +39,17 @@ import {
 import { getFineTunedModel } from '@/lib/ai-chat/fine-tuning';
 import { toHalfWidth } from '@/utils/parse-helpers';
 
+// 性別を抽出（seibetsu または gender_age から）
+function extractGender(horse: any): '牡' | '牝' | 'セ' | undefined {
+  const seibetsu = horse.seibetsu || '';
+  const genderAge = horse.gender_age || horse.nenrei_display || '';
+  
+  if (seibetsu.includes('牝') || genderAge.includes('牝')) return '牝';
+  if (seibetsu.includes('牡') || genderAge.includes('牡')) return '牡';
+  if (seibetsu.includes('セ') || genderAge.includes('セ')) return 'セ';
+  return undefined;
+}
+
 // 時計比較用レース取得（同日・前後1日の同条件1着馬）
 async function getTimeComparisonRaces(
   db: any,
@@ -326,13 +337,18 @@ async function handlePredictionRequest(
                   trackType.includes('ダ') ? 'ダ' :
                   distanceStr.includes('芝') ? '芝' : 'ダ';
   
+  const className = horses[0]?.class_name_1 || horses[0]?.class_name || '';
+  // 牝馬限定戦判定（クラス名に「牝」「フィリーズ」を含む場合）
+  const isFilliesOnlyRace = className.includes('牝') || className.includes('フィリーズ');
+  
   const raceInfo = {
     place,
     raceNumber,
     distance,
     surface: surface as '芝' | 'ダ',
     trackCondition: '良',
-    className: horses[0]?.class_name_1 || horses[0]?.class_name || '',
+    className,
+    isFilliesOnlyRace,
   };
   
   // SagaBrainインスタンスを作成
@@ -373,6 +389,7 @@ async function handlePredictionRequest(
     const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
     const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
     const waku = parseInt(toHalfWidth(horse.waku || '0'), 10);
+    const gender = extractGender(horse);  // 性別を取得
     
     // 過去走を取得（5走分）- 当日以降のレースは除外
     const pastRacesRaw = await db.prepare(`
@@ -671,6 +688,9 @@ async function handlePredictionRequest(
           makikaeshi: latestMakikaeshi || undefined,
         },
         timeComparisonData,
+        // 牝馬限定戦判定用
+        isFilliesOnlyRace: raceInfo.isFilliesOnlyRace,
+        gender,
       };
       
       sagaAnalysisResult = sagaBrain.analyzeHorse(sagaInput);
@@ -725,63 +745,145 @@ async function handlePredictionRequest(
       }
       
       // L4F絶対値による評価（芝/ダート・距離・年齢別）
-      if (pastRaces.length > 0 && pastRaces[0].L4F) {
-        const lastRace = pastRaces[0];
-        const l4f = lastRace.L4F;
-        const surface = lastRace.surface;
-        const distance = lastRace.distance;
-        const className = lastRace.className || '';
-        const is2yo = className.includes('2歳') || className.includes('新馬');
+      // L4F評価対象: 芝1600-2400m、ダート1400-1800m
+      // 過去走と今回のレースの馬場（芝/ダート）が一致する場合のみ評価
+      const currentSurface = raceInfo.surface;
+      const currentDistance = raceInfo.distance;
+      
+      // 今回のレースがL4F評価対象距離かをチェック
+      const isCurrentRaceL4FTarget = 
+        (currentSurface === '芝' && currentDistance >= 1600 && currentDistance <= 2400) ||
+        (currentSurface === 'ダ' && currentDistance >= 1400 && currentDistance <= 1800);
+      
+      if (isCurrentRaceL4FTarget && pastRaces.length > 0) {
+        // 過去走から今回と同じ馬場のL4Fを探す
+        const relevantPastRace = pastRaces.find(pr => 
+          pr.L4F && pr.surface === currentSurface
+        );
         
-        // 2歳戦の評価基準
-        if (is2yo) {
-          if (surface === '芝' && distance >= 1600 && distance <= 2000) {
-            if (l4f <= 45.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
-              });
-            } else if (l4f <= 46.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
-              });
-            }
-          } else if (surface === 'ダ' && distance >= 1600 && distance <= 1800) {
-            if (l4f <= 49.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
-              });
-            } else if (l4f <= 50.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
-              });
-            } else if (l4f < 51.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒はやや評価`,
-              });
+        if (relevantPastRace) {
+          const l4f = relevantPastRace.L4F;
+          const pastSurface = relevantPastRace.surface;
+          const pastDistance = relevantPastRace.distance;
+          const className = relevantPastRace.className || '';
+          const is2yo = className.includes('2歳') || className.includes('新馬');
+          
+          // 過去走の距離もL4F評価対象範囲かチェック
+          const isPastRaceL4FTarget = 
+            (pastSurface === '芝' && pastDistance >= 1600 && pastDistance <= 2400) ||
+            (pastSurface === 'ダ' && pastDistance >= 1400 && pastDistance <= 1800);
+          
+          if (isPastRaceL4FTarget) {
+            // 2歳戦の評価基準
+            if (is2yo) {
+              if (pastSurface === '芝' && pastDistance >= 1600 && pastDistance <= 2000) {
+                if (l4f <= 45.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
+                  });
+                } else if (l4f <= 46.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+                  });
+                }
+              } else if (pastSurface === 'ダ' && pastDistance >= 1600 && pastDistance <= 1800) {
+                if (l4f <= 49.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
+                  });
+                } else if (l4f <= 50.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+                  });
+                } else if (l4f < 51.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒はやや評価`,
+                  });
+                }
+              }
+            } else {
+              // 古馬戦の評価基準
+              if (pastSurface === '芝' && pastDistance >= 1600 && pastDistance <= 2400) {
+                if (l4f <= 46.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+                  });
+                }
+              } else if (pastSurface === 'ダ' && pastDistance >= 1400 && pastDistance <= 1800) {
+                if (l4f <= 50.0) {
+                  additionalRules.push({
+                    type: 'POSITIVE',
+                    reason: `ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+                  });
+                }
+              }
             }
           }
-        } else {
-          // 古馬戦の評価基準
-          if (surface === '芝' && distance >= 1600 && distance <= 2000) {
-            if (l4f <= 46.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
-              });
+        }
+      }
+      
+      // 牝馬限定戦の評価（ダート牡馬混合で善戦→牝馬限定戦替わり）
+      if (raceInfo.isFilliesOnlyRace && gender === '牝' && pastRaces.length > 0) {
+        let dirtMixedWins = 0;
+        let dirtMixedTop3 = 0;
+        let mixedGenderWins = 0;
+        let mixedGenderTop3 = 0;
+        let mixedGenderRaces = 0;
+        
+        for (const race of pastRaces) {
+          const className = race.className || '';
+          // 牝馬限定戦ではない（牡馬混合）場合
+          const isFilliesRace = className.includes('牝') || className.includes('フィリーズ');
+          if (!isFilliesRace) {
+            mixedGenderRaces++;
+            const finish = race.finishPosition;
+            if (finish > 0 && finish <= 3) {
+              mixedGenderTop3++;
+              if (race.surface === 'ダ') {
+                dirtMixedTop3++;
+              }
             }
-          } else if (surface === 'ダ' && distance >= 1600 && distance <= 1800) {
-            if (l4f <= 50.0) {
-              additionalRules.push({
-                type: 'POSITIVE',
-                reason: `ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
-              });
+            if (finish === 1) {
+              mixedGenderWins++;
+              if (race.surface === 'ダ') {
+                dirtMixedWins++;
+              }
             }
           }
+        }
+        
+        // 評価ルールを追加
+        if (dirtMixedWins >= 1 && raceInfo.surface === 'ダ') {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: `【牝馬限定戦】ダート牡馬混合で${dirtMixedWins}勝の実績！牝馬限定なら楽なはず`,
+          });
+        } else if (mixedGenderWins >= 1) {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: `【牝馬限定戦】牡馬混合で${mixedGenderWins}勝経験。牝馬限定で楽になる`,
+          });
+        } else if (dirtMixedTop3 >= 2 && raceInfo.surface === 'ダ') {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: `【牝馬限定戦】ダート牡馬混合で${dirtMixedTop3}回好走。牝馬限定なら期待`,
+          });
+        } else if (mixedGenderTop3 >= 2) {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: `【牝馬限定戦】牡馬混合で${mixedGenderTop3}回好走。牝馬限定で評価上げ`,
+          });
+        } else if (mixedGenderTop3 >= 1) {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: `【牝馬限定戦】牡馬混合でも好走経験あり`,
+          });
         }
       }
       
