@@ -236,7 +236,11 @@ function parseDateString(dateStr: string): Date | null {
  */
 async function saveRaceLevelToCache(db: DbWrapper, raceId: string, result: RaceLevelResult, raceDate?: string): Promise<void> {
   try {
-    const cacheDays = raceDate ? getCacheExpiryDays(raceDate) : 7;
+    // UNKNOWN判定の場合はキャッシュ期間を短くする（データが増えたら再計算）
+    let cacheDays = raceDate ? getCacheExpiryDays(raceDate) : 7;
+    if (result.level === 'UNKNOWN') {
+      cacheDays = Math.min(cacheDays, 1);  // UNKNOWNは最大1日
+    }
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + cacheDays);
 
@@ -370,6 +374,26 @@ async function calculateRaceLevelOnDemand(db: DbWrapper, raceId: string, raceDat
           className: race.class_name,
         };
       });
+
+    // デバッグログ: レースレベル判定前の状態
+    const firstRunCount = nextRaceResults.filter(r => r.isFirstRun).length;
+    if (firstRunCount <= 1 && nextRaceResults.length > 0) {
+      console.log('[saga-ai] レースレベル判定デバッグ:', {
+        raceId,
+        raceDateNum,
+        allHorsesCount: allHorses.length,
+        nextRacesQueryCount: nextRaces.length,
+        nextRaceResultsCount: nextRaceResults.length,
+        firstRunCount,
+        uniqueHorses: horseFirstRunMap.size,
+        sampleHorses: allHorses.slice(0, 3).map(h => h.horse_name),
+        sampleNextRaces: nextRaces.slice(0, 5).map(r => ({
+          horse: r.horse_name,
+          finish: r.finish_position,
+          date: r.date
+        }))
+      });
+    }
 
     // レースレベルを判定
     const result = analyzeRaceLevel(nextRaceResults);

@@ -103,7 +103,8 @@ const WINNERS_THRESHOLDS = {
 };
 
 // 母数の閾値
-const MIN_SAMPLE_FOR_JUDGMENT = 2;  // レベル判定に必要な最小母数
+const MIN_SAMPLE_FOR_JUDGMENT = 2;  // レベル判定に必要な最小母数（次1走目の馬数）
+const MIN_TOTAL_RUNS_FOR_JUDGMENT = 3; // 延べ出走数での判定用閾値（次1走目が1頭でも延べでカバー）
 
 // ========================================
 // メイン判定関数
@@ -210,61 +211,84 @@ export function analyzeRaceLevel(
   
   // --- レベル判定 ---
   
+  // 判定に使う好走率を決定
+  // 優先順位: 次1走目の好走率 > 延べ好走率
   const rateForJudgment = result.firstRunGoodRate;
+  const totalRunRate = result.goodRunRate;  // 延べ好走率（フォールバック用）
   
-  // 母数1頭のみの特殊処理
-  if (firstRunCount === 1) {
+  // 判定可能な条件を緩和
+  // - 次1走目が2頭以上: 通常判定
+  // - 次1走目が1頭でも、延べ出走が3回以上: 延べ好走率で参考判定
+  // - 次1走目が1頭のみ、延べも少ない: UNKNOWN
+  
+  const canJudgeByFirstRun = firstRunCount >= MIN_SAMPLE_FOR_JUDGMENT;
+  const canJudgeByTotalRuns = result.totalRuns >= MIN_TOTAL_RUNS_FOR_JUDGMENT;
+  
+  // 使用する好走率と判定モードを決定
+  let useRate = rateForJudgment;
+  let isEstimatedLevel = false;  // 推定判定フラグ
+  
+  if (!canJudgeByFirstRun && canJudgeByTotalRuns) {
+    // 次1走目のデータが少ないが、延べ出走は多い → 延べ好走率で推定
+    useRate = totalRunRate;
+    isEstimatedLevel = true;
+  }
+  
+  // 母数1頭のみかつ延べも少ない → 特殊処理
+  if (firstRunCount <= 1 && !canJudgeByTotalRuns) {
     result.isDataInsufficient = true;
     result.level = 'UNKNOWN';
     
     // 1頭が好走 or 勝ち上がり → UNKNOWN+（ハイレベルの可能性）
-    if (result.firstRunGoodCount >= 1) {
+    if (result.firstRunGoodCount >= 1 || result.goodRunCount >= 1) {
       result.isUnknownWithPotential = true;
       result.levelLabel = 'UNKNOWN+';
       const winnerInfo = result.winCount >= 1 ? '勝ち上がり' : '好走（3着以内）';
-      result.commentData.details.push(`まだ1頭のみ出走だが${winnerInfo}。ハイレベルだった可能性あり`);
+      result.commentData.details.push(`まだ次走データが少ないが${winnerInfo}あり。ハイレベルの可能性`);
     } else {
       result.levelLabel = 'UNKNOWN';
-      result.commentData.details.push('出走1頭のみで判定不可');
+      result.commentData.details.push('次走データが少なく判定不可');
     }
   }
-  // 母数2頭以上で判定可能
-  else if (firstRunCount >= MIN_SAMPLE_FOR_JUDGMENT) {
+  // 判定可能（次1走目2頭以上、または延べ3回以上）
+  else if (canJudgeByFirstRun || canJudgeByTotalRuns) {
+    const levelSuffix = isEstimatedLevel ? '※' : '';  // 推定の場合は※を付ける
+    
     // S判定: 80%以上
-    if (rateForJudgment >= RATE_THRESHOLDS.S) {
+    if (useRate >= RATE_THRESHOLDS.S) {
       result.level = 'S';
-      result.levelLabel = 'S' + result.plusLabel;
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%の超ハイレベル戦`);
+      result.levelLabel = 'S' + result.plusLabel + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%の超ハイレベル戦${isEstimatedLevel ? '（推定）' : ''}`);
     }
     // A判定: 60%以上
-    else if (rateForJudgment >= RATE_THRESHOLDS.A) {
+    else if (useRate >= RATE_THRESHOLDS.A) {
       result.level = 'A';
-      result.levelLabel = 'A' + result.plusLabel;
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%のハイレベル戦`);
+      result.levelLabel = 'A' + result.plusLabel + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%のハイレベル戦${isEstimatedLevel ? '（推定）' : ''}`);
     }
     // B判定: 40%以上
-    else if (rateForJudgment >= RATE_THRESHOLDS.B) {
+    else if (useRate >= RATE_THRESHOLDS.B) {
       result.level = 'B';
-      result.levelLabel = 'B' + result.plusLabel;
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%でやや高いレベル`);
+      result.levelLabel = 'B' + result.plusLabel + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%でやや高いレベル${isEstimatedLevel ? '（推定）' : ''}`);
     }
     // C判定: 30%以上
-    else if (rateForJudgment >= RATE_THRESHOLDS.C) {
+    else if (useRate >= RATE_THRESHOLDS.C) {
       result.level = 'C';
-      result.levelLabel = 'C' + result.plusLabel;
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%で標準レベル`);
+      result.levelLabel = 'C' + result.plusLabel + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%で標準レベル${isEstimatedLevel ? '（推定）' : ''}`);
     }
     // D判定: 20%以上
-    else if (rateForJudgment >= RATE_THRESHOLDS.D) {
+    else if (useRate >= RATE_THRESHOLDS.D) {
       result.level = 'D';
-      result.levelLabel = 'D' + result.plusLabel;
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%でやや低いレベル`);
+      result.levelLabel = 'D' + result.plusLabel + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%でやや低いレベル${isEstimatedLevel ? '（推定）' : ''}`);
     }
     // LOW判定: 20%未満
     else {
       result.level = 'LOW';
-      result.levelLabel = 'LOW';
-      result.commentData.details.push(`好走率${Math.round(rateForJudgment)}%の低レベル戦`);
+      result.levelLabel = 'LOW' + levelSuffix;
+      result.commentData.details.push(`好走率${Math.round(useRate)}%の低レベル戦${isEstimatedLevel ? '（推定）' : ''}`);
     }
   }
   // 母数0頭（ありえないが念のため）
