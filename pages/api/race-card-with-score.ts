@@ -497,25 +497,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const horsesWithScore = horsesBaseData.map(({ horse, pastRacesWithIndices, pastRaces, entryRow, horseIndex }) => {
       // スコア計算（全馬データを渡して展開連動スコアも計算）
       let score = 0;
+      let scoreBreakdown: KisoScoreBreakdown | null = null;
       try {
-        // デバッグモード: 最初の1頭のみ詳細ログ出力（Railwayレート制限対策）
-        const isDebugSample = horseIndex === 0;
+        // デバッグモード: 最初の3頭のみ詳細情報を取得
+        const isDebugSample = horseIndex < 3;
         const scoreResult = computeKisoScore({ past: pastRaces, entry: entryRow }, allHorseData, isDebugSample);
         
         if (isDebugSample && typeof scoreResult !== 'number') {
-          // デバッグ情報がある場合のみログ出力（簡略版）
-          const breakdown = scoreResult;
-          const horseName = GET(horse, 'umamei');
-          const hasNewLogic = breakdown.positionImprovement > 0 || breakdown.paceSync > 0 || breakdown.courseFit > 0;
-          
-          // 新ロジックが加点されている場合のみログ出力
-          if (hasNewLogic) {
-            console.log(`[kiso-score] ${horseName}: total=${breakdown.total.toFixed(1)}, ` +
-              `pos=${breakdown.positionImprovement.toFixed(1)}, ` +
-              `pace=${breakdown.paceSync.toFixed(1)}, ` +
-              `course=${breakdown.courseFit.toFixed(1)}`);
-          }
-          score = breakdown.total;
+          scoreBreakdown = scoreResult;
+          score = scoreResult.total;
         } else {
           score = typeof scoreResult === 'number' ? scoreResult : scoreResult.total;
         }
@@ -557,7 +547,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         hasData: pastRaces.length > 0,
         score: score,
         indices: indices,
-        indexRaceId: indexRaceId
+        indexRaceId: indexRaceId,
+        // デバッグ用: 最初の3頭のみスコア内訳を含める
+        scoreBreakdown: scoreBreakdown ? {
+          pos: scoreBreakdown.positionImprovement,
+          pace: scoreBreakdown.paceSync,
+          course: scoreBreakdown.courseFit,
+          penalty: scoreBreakdown.penalty,
+          lastPos: scoreBreakdown.details.lastPosition,
+          avgPos: scoreBreakdown.details.avgPastPosition,
+          fwdRate: scoreBreakdown.details.forwardRate,
+        } : null
       };
     });
 

@@ -275,19 +275,24 @@ async function handlePredictionRequest(
     };
   }> = [];
   
+  // 予想対象日付（YYYYMMDD形式）- 当日以降のレースは除外する
+  const targetDateInt = parseInt(`${year}${date}`, 10);
+  console.log('[AI Chat] Filtering races before:', targetDateInt);
+  
   for (const horse of horses) {
     const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
     const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
     const waku = parseInt(toHalfWidth(horse.waku || '0'), 10);
     
-    // 過去走を取得（5走分）
+    // 過去走を取得（5走分）- 当日以降のレースは除外
     const pastRacesRaw = await db.prepare(`
       SELECT * FROM umadata
-      WHERE TRIM(horse_name) = $1
-         OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
+      WHERE (TRIM(horse_name) = $1
+         OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
+        AND SUBSTRING(race_id, 1, 8)::INTEGER < $2
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
       LIMIT 5
-    `).all<any>(horseName);
+    `).all<any>(horseName, targetDateInt);
     
     // 各過去走のindicesとrace_levelを取得
     const pastRaces: HorseAnalysisData['pastRaces'] = [];
@@ -725,6 +730,9 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
 【出走馬データ】
 `;
       
+      // 予想対象日付（YYYYMMDD形式）- 当日以降のレースは除外する
+      const targetDateInt = parseInt(`${year}${date}`, 10);
+      
       for (const horse of horses) {
         const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
         const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
@@ -733,17 +741,18 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
         
         horseList.push({ name: horseName, number: horseNumber, waku, jockey });
         
-        // 過去走を取得（5走分）
+        // 過去走を取得（5走分）- 当日以降のレースは除外
         const pastRaces = await db.prepare(`
           SELECT race_id, umaban, date, place, distance, class_name, 
                  finish_position, finish_time, margin, track_condition,
                  last_3f, popularity, lap_time, corner_4, field_size
           FROM umadata
-          WHERE TRIM(horse_name) = $1
-             OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
+          WHERE (TRIM(horse_name) = $1
+             OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
+            AND SUBSTRING(race_id, 1, 8)::INTEGER < $2
           ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
           LIMIT 5
-        `).all<any>(horseName);
+        `).all<any>(horseName, targetDateInt);
         
         raceDataContext += `\n**${horseNumber}番 ${horseName}** (${waku}枠, ${jockey})\n`;
         
@@ -1033,19 +1042,23 @@ async function handleExpansionRequest(
   let frontRunnersCount = 0;  // T2F 22.5以下の馬数
   let earlyPositionCount = 0; // 前走3番手以内の馬数
   
+  // 予想対象日付（YYYYMMDD形式）- 当日以降のレースは除外する
+  const targetDateInt = parseInt(`${year}${date}`, 10);
+  
   for (const horse of horses) {
     const horseName = (horse.umamei || '').trim().replace(/^[\$\*]+/, '');
     const horseNumber = parseInt(toHalfWidth(horse.umaban || '0'), 10);
     
-    // 過去走を取得（最新1走のみ）
+    // 過去走を取得（最新1走のみ）- 当日以降のレースは除外
     const pastRace = await db.prepare(`
       SELECT race_id, umaban, corner_4
       FROM umadata
-      WHERE TRIM(horse_name) = $1
-         OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1
+      WHERE (TRIM(horse_name) = $1
+         OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
+        AND SUBSTRING(race_id, 1, 8)::INTEGER < $2
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
       LIMIT 1
-    `).get<any>(horseName);
+    `).get<any>(horseName, targetDateInt);
     
     let t2f: number | null = null;
     let firstCorner: string | null = null;
