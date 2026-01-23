@@ -873,7 +873,9 @@ export function analyzeRaceLap(
       // コメント生成（日本語として自然な表現に）
       const parts: string[] = [];
       if (ranWide) {
-        parts.push(`4角${horse.corner4Wide}番手の競馬で`);
+        // corner4Wide は内外の位置（0=最内, 4=大外）であり、通過順位ではない
+        const wideLabel = horse.corner4Wide >= 4 ? '大外' : horse.corner4Wide >= 3 ? '外目' : '中団外';
+        parts.push(`4角で${wideLabel}を回る競馬で`);
       }
       if (wasAffected) {
         parts.push(`${getStyleName(horse.runningStyle)}には不利な展開ながら`);
