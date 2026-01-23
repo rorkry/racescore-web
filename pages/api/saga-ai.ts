@@ -161,6 +161,7 @@ interface CachedRaceLevel {
   level_label: string;
   total_horses_run: number;
   good_run_count: number;
+  first_run_good_count: number;  // 次1走目の好走数
   win_count: number;
   ai_comment: string | null;
 }
@@ -177,7 +178,7 @@ async function getRaceLevelsFromCache(db: DbWrapper, raceIds: string[]): Promise
     const placeholders = uniqueIds.map((_, i) => `$${i + 1}`).join(',');
     
     const rows = await db.query<CachedRaceLevel>(`
-      SELECT race_id, level, level_label, total_horses_run, good_run_count, win_count, ai_comment
+      SELECT race_id, level, level_label, total_horses_run, good_run_count, first_run_good_count, win_count, ai_comment
       FROM race_levels
       WHERE race_id IN (${placeholders})
         AND (expires_at IS NULL OR expires_at::timestamp > NOW())

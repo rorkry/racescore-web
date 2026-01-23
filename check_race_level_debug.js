@@ -423,6 +423,51 @@ async function investigate() {
       console.log(`   ${s.level}: ${s.cnt}件, 平均好走率${Math.round(s.avg_rate || 0)}%, 平均${Math.round(s.avg_horses || 0)}頭`);
     }
 
+    // [18] 問題のレース（C+なのに0頭好走）を調査
+    console.log('\n[18] 問題のレースレベル調査（レベルC+以上なのに0頭好走）');
+    const problematicRaces = await pool.query(`
+      SELECT race_id, level, level_label, total_horses_run, first_run_good_count, good_run_count, ai_comment
+      FROM race_levels
+      WHERE (level IN ('S', 'A', 'B', 'C') OR level_label LIKE '%+%')
+        AND first_run_good_count = 0
+        AND total_horses_run > 2
+      ORDER BY calculated_at DESC
+      LIMIT 10
+    `);
+    console.log(`   問題レコード数: ${problematicRaces.rows.length}件`);
+    for (const r of problematicRaces.rows) {
+      console.log(`   ${r.race_id}: ${r.level_label} (${r.total_horses_run}頭中${r.first_run_good_count}頭)`);
+      console.log(`     ai_comment: ${r.ai_comment?.substring(0, 80)}...`);
+    }
+
+    // [19] 特定のレース（15頭中0頭好走のC+）を詳細調査
+    // タイキラフターの前走race_idを探す
+    console.log('\n[19] タイキラフターの前走調査');
+    const taikiPastRaces = await pool.query(`
+      SELECT race_id, date, place, distance, finish_position, class_name
+      FROM umadata 
+      WHERE horse_name = 'タイキラフター'
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+      LIMIT 5
+    `);
+    if (taikiPastRaces.rows.length > 0) {
+      for (const r of taikiPastRaces.rows) {
+        console.log(`   ${r.date} ${r.place} ${r.distance} ${r.finish_position}着 race_id=${r.race_id}`);
+        
+        // このレースのrace_levelsを確認
+        const levelData = await pool.query(`
+          SELECT level, level_label, total_horses_run, first_run_good_count, ai_comment
+          FROM race_levels WHERE race_id = $1
+        `, [r.race_id]);
+        if (levelData.rows.length > 0) {
+          const lv = levelData.rows[0];
+          console.log(`     → ${lv.level_label} (${lv.total_horses_run}頭中${lv.first_run_good_count}頭好走)`);
+        } else {
+          console.log('     → race_levelsにデータなし');
+        }
+      }
+    }
+
     console.log('\n===========================================');
     console.log('調査完了');
     console.log('===========================================');

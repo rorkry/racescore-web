@@ -7,7 +7,7 @@ echo Git Commit and Push
 echo ============================================
 
 git add -A
-git commit -m "fix: レースレベルと好走数の整合性チェック追加、重複データ問題修正"
+git commit -m "fix: レースレベル好走数が0になる問題を修正 - SELECT文にfirst_run_good_countを追加"
 git push origin main
 
 echo ============================================
