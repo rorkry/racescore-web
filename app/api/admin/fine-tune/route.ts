@@ -39,17 +39,20 @@ export async function POST(request: NextRequest) {
     }
     
     const body = await request.json();
-    const { action, jobId, modelId } = body;
+    const { action, jobId, modelId, limit } = body;
     
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 });
     }
     
+    // 学習データ取得件数（指定がなければ全件）
+    const dataLimit = limit ? parseInt(limit, 10) : undefined;
+    
     switch (action) {
       case 'prepare': {
         // 学習データを準備
-        const { data, stats } = await prepareFineTuningData();
+        const { data, stats } = await prepareFineTuningData(dataLimit);
         const cost = estimateCost(data);
         
         return NextResponse.json({
@@ -65,10 +68,10 @@ export async function POST(request: NextRequest) {
       
       case 'upload': {
         // 学習データをJSONLに変換してアップロード
-        const { data } = await prepareFineTuningData();
+        const { data, stats } = await prepareFineTuningData(dataLimit);
         const jsonl = exportToJsonl(data);
         
-        console.log(`[Fine-tune] Uploading ${data.length} examples (${jsonl.length} bytes)`);
+        console.log(`[Fine-tune] Using ${data.length} of ${stats.dbTotal} available examples (${jsonl.length} bytes)`);
         
         const fileResult = await uploadFineTuningFile(apiKey, jsonl);
         

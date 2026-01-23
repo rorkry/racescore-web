@@ -31,6 +31,7 @@ export default function AdminPage() {
   const [ftMessage, setFtMessage] = useState('');
   const [ftStats, setFtStats] = useState<{
     total: number;
+    dbTotal: number;
     cost: { trainingCost: number; perRequestCost: number };
   } | null>(null);
   const [ftJobStatus, setFtJobStatus] = useState<{
@@ -38,6 +39,7 @@ export default function AdminPage() {
     status: string;
     fine_tuned_model: string | null;
   } | null>(null);
+  const [ftLimit, setFtLimit] = useState<string>('all'); // 'all', '500', '1000', '2000', '5000'
 
   const isAdmin = (session?.user as any)?.role === 'admin';
   
@@ -236,15 +238,17 @@ export default function AdminPage() {
     setFtLoading(true);
     setFtMessage('学習データを準備中...');
     try {
+      const limit = ftLimit === 'all' ? undefined : ftLimit;
       const res = await fetch('/api/admin/fine-tune', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'prepare' }),
+        body: JSON.stringify({ action: 'prepare', limit }),
       });
       const data = await res.json();
       if (res.ok) {
-        setFtStats({ total: data.stats.total, cost: data.cost });
-        setFtMessage(`✅ ${data.stats.total}件の学習データを準備完了`);
+        setFtStats({ total: data.stats.total, dbTotal: data.stats.dbTotal, cost: data.cost });
+        const limitText = ftLimit === 'all' ? '全件' : `${ftLimit}件（上限指定）`;
+        setFtMessage(`✅ ${data.stats.total}件の学習データを準備完了（DB全体: ${data.stats.dbTotal}件）`);
       } else {
         setFtMessage(`❌ エラー: ${data.message || data.error}`);
       }
@@ -264,11 +268,13 @@ export default function AdminPage() {
     setFtLoading(true);
     setFtMessage('ファイルをアップロード中...');
     try {
+      const limit = ftLimit === 'all' ? undefined : ftLimit;
+      
       // 1. ファイルアップロード
       const uploadRes = await fetch('/api/admin/fine-tune', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'upload' }),
+        body: JSON.stringify({ action: 'upload', limit }),
       });
       const uploadData = await uploadRes.json();
       if (!uploadRes.ok) throw new Error(uploadData.message || uploadData.error);
@@ -457,6 +463,25 @@ export default function AdminPage() {
               <p className="text-sm text-gray-600 mt-1">
                 インポート済みの予想データを学習用に整形します
               </p>
+              
+              {/* 件数選択 */}
+              <div className="mt-3 flex items-center gap-3">
+                <label className="text-sm text-gray-700">取得件数:</label>
+                <select
+                  value={ftLimit}
+                  onChange={(e) => setFtLimit(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">全件（制限なし）</option>
+                  <option value="500">500件</option>
+                  <option value="1000">1,000件</option>
+                  <option value="2000">2,000件</option>
+                  <option value="3000">3,000件</option>
+                  <option value="5000">5,000件</option>
+                </select>
+                <span className="text-xs text-gray-500">※リアクション数が多い順</span>
+              </div>
+              
               <button
                 onClick={handleFtPrepare}
                 disabled={ftLoading}
@@ -467,7 +492,7 @@ export default function AdminPage() {
               
               {ftStats && (
                 <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm">
-                  <p>📊 学習データ: <strong>{ftStats.total}件</strong></p>
+                  <p>📊 学習データ: <strong>{ftStats.total}件</strong> / DB全体: {ftStats.dbTotal}件</p>
                   <p>💰 推定学習コスト: <strong>${ftStats.cost.trainingCost.toFixed(2)}</strong>（約{Math.round(ftStats.cost.trainingCost * 150)}円）</p>
                   <p>📈 推論コスト: <strong>${ftStats.cost.perRequestCost.toFixed(4)}/回</strong></p>
                 </div>

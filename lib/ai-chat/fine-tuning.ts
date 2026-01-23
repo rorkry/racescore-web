@@ -38,18 +38,28 @@ const FINE_TUNING_SYSTEM_PROMPT = `あなたは競馬予想のエキスパート
 
 /**
  * DBから学習データを取得してJSONL形式に変換
+ * @param limit - 取得件数上限（デフォルト: 無制限）
  */
-export async function prepareFineTuningData(): Promise<{
+export async function prepareFineTuningData(limit?: number): Promise<{
   data: FineTuningExample[];
   stats: {
     total: number;
     withHonmei: number;
     avgLength: number;
+    dbTotal: number;
   };
 }> {
   const db = getDb();
   
-  // 予想データを取得（本命が設定されているもの優先）
+  // 全件数を取得
+  const countResult = await db.prepare(`
+    SELECT COUNT(*) as count FROM ai_predictions
+    WHERE full_text IS NOT NULL AND LENGTH(full_text) > 100
+  `).get<{ count: number }>();
+  const dbTotal = countResult?.count || 0;
+  
+  // 予想データを取得（本命が設定されているもの優先、リアクション数順）
+  const limitClause = limit ? `LIMIT ${limit}` : '';
   const predictions = await db.prepare(`
     SELECT 
       id,
@@ -64,7 +74,7 @@ export async function prepareFineTuningData(): Promise<{
     WHERE full_text IS NOT NULL 
       AND LENGTH(full_text) > 100
     ORDER BY reaction_count DESC
-    LIMIT 1000
+    ${limitClause}
   `).all<{
     id: string;
     race_course: string | null;
@@ -107,6 +117,7 @@ export async function prepareFineTuningData(): Promise<{
       total: examples.length,
       withHonmei,
       avgLength: examples.length > 0 ? Math.round(totalLength / examples.length) : 0,
+      dbTotal,
     },
   };
 }
