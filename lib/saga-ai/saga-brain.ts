@@ -541,7 +541,7 @@ export class SagaBrain {
             analysis.score -= 3; // -2〜3点
           }
         }
-      } else if (levelLabel.includes('+')) {
+      } else if (levelLabel && levelLabel.includes('+')) {
         // UNKNOWN+の特殊処理
         levelComments.push('前走はまだ次走データ1頭のみだがその馬が好走。ハイレベルの可能性あり');
         analysis.score += 1;

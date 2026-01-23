@@ -33,9 +33,99 @@ import {
   type HorseAnalysisInput, 
   type PastRaceInfo,
   type SagaAnalysis,
+  type PastRaceTimeComparison,
+  type TimeComparisonRace,
 } from '@/lib/saga-ai/saga-brain';
 import { getFineTunedModel } from '@/lib/ai-chat/fine-tuning';
 import { toHalfWidth } from '@/utils/parse-helpers';
+
+// 時計比較用レース取得（同日・前後1日の同条件1着馬）
+async function getTimeComparisonRaces(
+  db: any,
+  pastRaceDate: string,
+  pastRacePlace: string,
+  pastRaceDistance: string,
+): Promise<TimeComparisonRace[]> {
+  if (!pastRaceDate || !pastRacePlace || !pastRaceDistance) {
+    return [];
+  }
+
+  try {
+    const cleanedDate = pastRaceDate.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+    const dateParts = cleanedDate.split('.');
+    if (dateParts.length !== 3) return [];
+
+    const [year, month, day] = dateParts.map(Number);
+    const raceDate = new Date(year, month - 1, day);
+
+    const prevDate = new Date(raceDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const nextDate = new Date(raceDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+
+    const formatDateSpaced = (d: Date) =>
+      `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, ' ')}.${String(d.getDate()).padStart(2, ' ')}`;
+    const formatDatePadded = (d: Date) =>
+      `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+
+    const dateRange = [
+      formatDateSpaced(prevDate),
+      formatDateSpaced(raceDate),
+      formatDateSpaced(nextDate),
+      formatDatePadded(prevDate),
+      formatDatePadded(raceDate),
+      formatDatePadded(nextDate),
+    ];
+
+    const normalizedPlace = pastRacePlace.replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
+
+    const query = `
+      SELECT 
+        date, place, distance, class_name, finish_time, track_condition, 
+        horse_name, age, race_id
+      FROM umadata
+      WHERE date IN ($1, $2, $3, $4, $5, $6)
+        AND place LIKE $7
+        AND distance = $8
+        AND finish_position = '１'
+      ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+    `;
+
+    const rows = await db.prepare(query).all<any>(
+      dateRange[0], dateRange[1], dateRange[2],
+      dateRange[3], dateRange[4], dateRange[5],
+      `%${normalizedPlace}%`,
+      pastRaceDistance
+    );
+
+    if (!rows || rows.length === 0) return [];
+
+    return rows.map((row: any) => {
+      const age = parseInt(toHalfWidth(row.age || '0'), 10);
+      const className = row.class_name || '';
+      const isGradedRace = /G[123]|Ｇ[１２３]|重賞|JG[123]|ＪＧ[１２３]/i.test(className);
+      const isYoungHorse = age === 2 || age === 3;
+      const raceId = row.race_id || '';
+      const raceNumber = raceId ? raceId.slice(-2).replace(/^0/, '') : '';
+
+      return {
+        date: row.date || '',
+        place: row.place || '',
+        distance: row.distance || '',
+        className: row.class_name || '',
+        finishTime: parseInt(toHalfWidth(row.finish_time || '0'), 10),
+        trackCondition: row.track_condition || '良',
+        horseName: row.horse_name || '',
+        horseAge: age,
+        isAgeRestricted: isGradedRace && isYoungHorse,
+        raceNumber,
+      };
+    });
+  } catch (e) {
+    console.error('[AI Chat] Error getting time comparison races:', e);
+    return [];
+  }
+}
 
 // レート制限（1分間に10回まで）
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
@@ -318,13 +408,36 @@ async function handlePredictionRequest(
         // エラーは無視
       }
       
-      // race_level取得
+      // race_level取得（詳細情報含む）
       let raceLevel: string | null = null;
+      let raceLevelDetail: {
+        level: string;
+        levelLabel: string;
+        plusCount: number;
+        totalHorsesRun: number;
+        goodRunCount: number;
+      } | null = null;
       try {
         const levelData = await db.prepare(`
-          SELECT level_label FROM race_levels WHERE race_id = $1
-        `).get<{ level_label: string }>(raceId.substring(0, 16));
-        raceLevel = levelData?.level_label || null;
+          SELECT level, level_label, plus_count, total_horses_run, good_run_count 
+          FROM race_levels WHERE race_id = $1
+        `).get<{
+          level: string;
+          level_label: string;
+          plus_count: number;
+          total_horses_run: number;
+          good_run_count: number;
+        }>(raceId.substring(0, 16));
+        if (levelData) {
+          raceLevel = levelData.level_label || levelData.level;
+          raceLevelDetail = {
+            level: levelData.level || 'UNKNOWN',
+            levelLabel: levelData.level_label || levelData.level || 'UNKNOWN',
+            plusCount: levelData.plus_count || 0,
+            totalHorsesRun: levelData.total_horses_run || 0,
+            goodRunCount: levelData.good_run_count || 0,
+          };
+        }
       } catch (e) {
         // エラーは無視
       }
@@ -352,11 +465,18 @@ async function handlePredictionRequest(
         margin: race.margin || '',
         trackCondition: race.track_condition || '良',
         raceLevel,
+        raceLevelDetail,
         lapRating: i === 0 ? latestLapRating : null,
         timeRating: i === 0 ? latestTimeRating : null,
         corner4: parseInt(toHalfWidth(race.corner_4 || race.corner_4_position || '0'), 10) || null,
         totalHorses: parseInt(race.field_size || '16', 10),
         className: race.class_name || '',
+        // T2F/L4F（ラップ評価用）
+        T2F: indices.T2F ?? null,
+        L4F: indices.L4F ?? null,
+        // 走破タイム（時計評価用）
+        finishTime: race.finish_time || null,
+        lapTime: race.lap_time || null,
       });
     }
     
@@ -447,29 +567,90 @@ async function handlePredictionRequest(
     
     // === SagaBrain分析を実行 ===
     let sagaAnalysisResult: SagaAnalysis | undefined;
+    let timeComparisonData: PastRaceTimeComparison[] = [];
     try {
       // PastRaceInfoの形式に変換
-      const sagaPastRaces: PastRaceInfo[] = pastRaces.map(pr => ({
-        date: pr.date,
-        place: pr.place,
-        surface: pr.surface as '芝' | 'ダ',
-        distance: pr.distance,
-        finishPosition: pr.finishPosition,
-        popularity: pr.popularity,
-        margin: pr.margin,
-        trackCondition: pr.trackCondition,
-        T2F: pr.lapRating ? undefined : undefined, // 実際の値はindicesから
-        L4F: pr.lapRating ? undefined : undefined,
-        potential: latestPotential || undefined,
-        makikaeshi: latestMakikaeshi || undefined,
-        corner4: pr.corner4 || undefined,
-        totalHorses: pr.totalHorses,
-        className: pr.className,
-        raceLevel: pr.raceLevel ? {
-          level: pr.raceLevel as 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN',
-          labelSimple: pr.raceLevel,
-        } : undefined,
-      }));
+      const sagaPastRaces: PastRaceInfo[] = pastRaces.map(pr => {
+        // finish_time を数値に変換（"1:34.5" → 1345）
+        let finishTimeNum: number | undefined;
+        if (pr.finishTime) {
+          const match = pr.finishTime.match(/^(\d+):(\d+)\.(\d+)$/);
+          if (match) {
+            const min = parseInt(match[1], 10);
+            const sec = parseInt(match[2], 10);
+            const dec = parseInt(match[3], 10);
+            finishTimeNum = min * 1000 + sec * 10 + dec;
+          }
+        }
+        
+        return {
+          date: pr.date,
+          place: pr.place,
+          surface: pr.surface as '芝' | 'ダ',
+          distance: pr.distance,
+          finishPosition: pr.finishPosition,
+          popularity: pr.popularity,
+          margin: pr.margin,
+          trackCondition: pr.trackCondition,
+          T2F: pr.T2F || undefined,
+          L4F: pr.L4F || undefined,
+          finishTime: finishTimeNum,
+          lapString: pr.lapTime || undefined,
+          potential: latestPotential || undefined,
+          makikaeshi: latestMakikaeshi || undefined,
+          corner4: pr.corner4 || undefined,
+          totalHorses: pr.totalHorses,
+          className: pr.className,
+          raceLevel: pr.raceLevelDetail ? {
+            level: pr.raceLevelDetail.level as 'S' | 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN',
+            levelLabel: pr.raceLevelDetail.levelLabel,
+            plusCount: pr.raceLevelDetail.plusCount,
+            totalHorsesRun: pr.raceLevelDetail.totalHorsesRun,
+            goodRunCount: pr.raceLevelDetail.goodRunCount,
+            firstRunGoodCount: pr.raceLevelDetail.goodRunCount,
+          } : pr.raceLevel ? {
+            level: pr.raceLevel as 'S' | 'A' | 'B' | 'C' | 'D' | 'LOW' | 'UNKNOWN',
+            levelLabel: pr.raceLevel,
+          } : undefined,
+        };
+      });
+      
+      // 時計比較データを取得（過去5走分）
+      timeComparisonData = [];
+      const maxComparisonRaces = Math.min(5, pastRaces.length);
+      
+      for (let i = 0; i < maxComparisonRaces; i++) {
+        const pr = pastRaces[i];
+        if (pr.date && pr.place && pr.distance && pr.finishTime) {
+          const distanceStr = `${pr.surface}${pr.distance}`;
+          const comparisonRaces = await getTimeComparisonRaces(
+            db,
+            pr.date,
+            pr.place,
+            distanceStr
+          );
+          
+          if (comparisonRaces.length > 0) {
+            // finishTimeを数値に変換
+            let finishTimeNum = 0;
+            if (pr.finishTime) {
+              const match = pr.finishTime.match(/^(\d+):(\d+)\.(\d+)$/);
+              if (match) {
+                finishTimeNum = parseInt(match[1], 10) * 1000 + parseInt(match[2], 10) * 10 + parseInt(match[3], 10);
+              }
+            }
+            
+            timeComparisonData.push({
+              pastRaceIndex: i,
+              pastRaceDate: pr.date,
+              pastRaceClass: pr.className || '',
+              pastRaceTime: finishTimeNum,
+              pastRaceCondition: pr.trackCondition || '良',
+              comparisonRaces,
+            });
+          }
+        }
+      }
       
       const sagaInput: HorseAnalysisInput = {
         horseName,
@@ -485,6 +666,7 @@ async function handlePredictionRequest(
           potential: latestPotential || undefined,
           makikaeshi: latestMakikaeshi || undefined,
         },
+        timeComparisonData,
       };
       
       sagaAnalysisResult = sagaBrain.analyzeHorse(sagaInput);
@@ -501,6 +683,101 @@ async function handlePredictionRequest(
         const timeMatch = sagaAnalysisResult.timeEvaluation.match(/([SABCD]|LOW)/);
         if (timeMatch) {
           pastRaces[0].timeRating = timeMatch[1];
+        }
+      }
+      
+      // 歴代比較で上位の場合は高評価ルールを追加
+      if (sagaAnalysisResult.tags) {
+        // 「'19以降上位」タグがあれば最優先で高評価
+        if (sagaAnalysisResult.tags.some(t => t.includes("'19以降上位") || t.includes('歴代上位'))) {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: '歴代ラップ比較で上位 → 同条件での優秀なラップを記録',
+          });
+        }
+        // 「加速ラップ馬」「非減速ラップ馬」も高評価
+        if (sagaAnalysisResult.tags.some(t => t.includes('加速ラップ') || t.includes('非減速ラップ'))) {
+          additionalRules.push({
+            type: 'POSITIVE',
+            reason: 'ラップ内容優秀 → 後半の持続力/加速力あり',
+          });
+        }
+      }
+      
+      // ラップ評価のコメントに「○位/△レース中」があれば高評価
+      if (sagaAnalysisResult.lapEvaluation) {
+        const rankMatch = sagaAnalysisResult.lapEvaluation.match(/(\d+)位\/(\d+)レース中/);
+        if (rankMatch) {
+          const rank = parseInt(rankMatch[1], 10);
+          const total = parseInt(rankMatch[2], 10);
+          // 上位10%または3位以内なら高評価
+          if (rank <= 3 || (total >= 10 && rank <= total * 0.1)) {
+            additionalRules.push({
+              type: 'POSITIVE',
+              reason: `歴代${rank}位/${total}レース中の優秀ラップ`,
+            });
+          }
+        }
+      }
+      
+      // L4F絶対値による評価（芝/ダート・距離・年齢別）
+      if (pastRaces.length > 0 && pastRaces[0].L4F) {
+        const lastRace = pastRaces[0];
+        const l4f = lastRace.L4F;
+        const surface = lastRace.surface;
+        const distance = lastRace.distance;
+        const className = lastRace.className || '';
+        const is2yo = className.includes('2歳') || className.includes('新馬');
+        
+        // 2歳戦の評価基準
+        if (is2yo) {
+          if (surface === '芝' && distance >= 1600 && distance <= 2000) {
+            if (l4f <= 45.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
+              });
+            } else if (l4f <= 46.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `2歳芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+              });
+            }
+          } else if (surface === 'ダ' && distance >= 1600 && distance <= 1800) {
+            if (l4f <= 49.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は超高評価`,
+              });
+            } else if (l4f <= 50.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+              });
+            } else if (l4f < 51.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `2歳ダ中距離でL4F ${l4f.toFixed(1)}秒はやや評価`,
+              });
+            }
+          }
+        } else {
+          // 古馬戦の評価基準
+          if (surface === '芝' && distance >= 1600 && distance <= 2000) {
+            if (l4f <= 46.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `芝中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+              });
+            }
+          } else if (surface === 'ダ' && distance >= 1600 && distance <= 1800) {
+            if (l4f <= 50.0) {
+              additionalRules.push({
+                type: 'POSITIVE',
+                reason: `ダ中距離でL4F ${l4f.toFixed(1)}秒は高評価`,
+              });
+            }
+          }
         }
       }
       
@@ -526,6 +803,8 @@ async function handlePredictionRequest(
         margin: pr.margin,
         raceLevel: pr.raceLevel,
         trackCondition: pr.trackCondition,
+        L4F: pr.L4F,
+        T2F: pr.T2F,
       })),
       matchedRules: matchedRules.map(r => ({ type: r.type, reason: r.reason })),
       totalScore,
@@ -542,7 +821,7 @@ async function handlePredictionRequest(
       } : undefined,
     });
     
-    console.log(`[AI Chat] Horse ${horseNumber} ${horseName}: score=${totalScore}, rec=${recommendation}, rules=${matchedRules.length}, sagaScore=${sagaAnalysisResult?.score || 'N/A'}`);
+    console.log(`[AI Chat] Horse ${horseNumber} ${horseName}: score=${totalScore}, rec=${recommendation}, rules=${matchedRules.length}, sagaScore=${sagaAnalysisResult?.score || 'N/A'}, timeComp=${timeComparisonData?.length || 0}, hasTimeEval=${!!sagaAnalysisResult?.timeEvaluation}`);
   }
   
   // 3. 過去予想からサンプルを取得
@@ -559,13 +838,32 @@ async function handlePredictionRequest(
   
   const result = await generatePredictionWithRules(systemPrompt, userPrompt, apiKey);
   
-  // 過大評価・過小評価の馬を抽出
-  const overvalued = analyzedHorses
-    .filter(h => h.matchedRules.some(r => r.type === 'NEGATIVE'))
-    .map(h => h.name);
-  const undervalued = analyzedHorses
-    .filter(h => h.matchedRules.some(r => r.type === 'POSITIVE' && h.estimatedPopularity >= 5))
-    .map(h => h.name);
+  // 過大評価・過小評価の馬を抽出（最も顕著な1頭ずつ）
+  // 過大評価: 人気上位(1-4人気)でNEGATIVEルールが多い馬
+  const overvaluedCandidates = analyzedHorses
+    .filter(h => h.estimatedPopularity <= 4 && h.matchedRules.some(r => r.type === 'NEGATIVE'))
+    .map(h => ({
+      name: h.name,
+      popularity: h.estimatedPopularity,
+      negativeCount: h.matchedRules.filter(r => r.type === 'NEGATIVE').length,
+      score: h.totalScore,
+    }))
+    .sort((a, b) => b.negativeCount - a.negativeCount || a.popularity - b.popularity);
+  
+  // 過小評価: 人気下位(5番人気以下)でPOSITIVEルールが多い馬
+  const undervaluedCandidates = analyzedHorses
+    .filter(h => h.estimatedPopularity >= 5 && h.matchedRules.some(r => r.type === 'POSITIVE'))
+    .map(h => ({
+      name: h.name,
+      popularity: h.estimatedPopularity,
+      positiveCount: h.matchedRules.filter(r => r.type === 'POSITIVE').length,
+      score: h.totalScore,
+    }))
+    .sort((a, b) => b.positiveCount - a.positiveCount || b.score - a.score);
+  
+  // 最も顕著な1頭のみ
+  const overvalued = overvaluedCandidates.length > 0 ? [overvaluedCandidates[0].name] : [];
+  const undervalued = undervaluedCandidates.length > 0 ? [undervaluedCandidates[0].name] : [];
   
   return {
     prediction: result,

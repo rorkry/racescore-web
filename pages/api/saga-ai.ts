@@ -713,6 +713,14 @@ async function getHistoricalLapData(
     // クラス名を正規化
     const normalizedClass = normalizeClassForQuery(className);
 
+    // 年齢カテゴリを判定（2歳新馬 / 2・3歳 / 古馬）
+    const ageCategory = getAgeCategoryFromClass(className);
+    const ageCondition = getAgeConditionForQuery(ageCategory);
+    
+    // 馬場状態条件（3グループ：良 / 稍重 / 重+不良）
+    const trackConditionGroup = getTrackConditionGroup(trackCondition);
+    const trackConditionCondition = getTrackConditionQueryCondition(trackConditionGroup);
+    
     const query = `
       SELECT 
         date, place, class_name, track_condition, lap_time, horse_name
@@ -723,8 +731,9 @@ async function getHistoricalLapData(
         AND lap_time IS NOT NULL
         AND lap_time != ''
         AND SUBSTRING(race_id, 1, 4)::INTEGER >= 2019
+        ${ageCondition}
+        ${trackConditionCondition}
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-      LIMIT 200
     `;
 
     const rows = await db.query(
@@ -781,6 +790,39 @@ function extractAgeCondition(className: string): string {
   return '';
 }
 
+// 年齢カテゴリを判定（歴代比較用）
+// - 2歳新馬: class_nameに「2歳」と「新馬」両方を含む
+// - 2・3歳戦: class_nameに「2歳」「3歳」「新馬」のいずれかを含む（「3歳以上」は除く）
+// - 古馬戦: 上記に該当しない
+function getAgeCategoryFromClass(className: string): 'newcomer' | 'young' | 'aged' {
+  if (!className) return 'aged';
+  const c = className.trim();
+  
+  // 2歳新馬戦
+  if (c.includes('2歳') && c.includes('新馬')) return 'newcomer';
+  // 新馬戦
+  if (c.includes('新馬')) return 'newcomer';
+  // 2歳戦・3歳戦（「3歳以上」「4歳以上」は除く）
+  if ((c.includes('2歳') || c.includes('3歳')) && !c.includes('以上')) return 'young';
+  // 古馬戦
+  return 'aged';
+}
+
+// 年齢カテゴリに対応するSQLクエリ条件を生成
+function getAgeConditionForQuery(ageCategory: 'newcomer' | 'young' | 'aged'): string {
+  switch (ageCategory) {
+    case 'newcomer':
+      // 2歳新馬戦のみ
+      return "AND class_name LIKE '%新馬%'";
+    case 'young':
+      // 2歳・3歳戦（「3歳以上」「4歳以上」は除く）
+      return "AND (class_name LIKE '%2歳%' OR class_name LIKE '%3歳%' OR class_name LIKE '%新馬%') AND class_name NOT LIKE '%以上%'";
+    case 'aged':
+      // 古馬戦（「2歳」「3歳」を含まない、または「以上」を含む）
+      return "AND (class_name NOT LIKE '%2歳%' AND class_name NOT LIKE '%3歳%' AND class_name NOT LIKE '%新馬%' OR class_name LIKE '%以上%')";
+  }
+}
+
 // 性別を抽出（seibetsu または gender_age から）
 function extractGender(horse: any): '牡' | '牝' | 'セ' | undefined {
   const seibetsu = horse.seibetsu || '';
@@ -814,17 +856,45 @@ function isSameClassLevel(class1: string, class2: string): boolean {
   return class1 === class2;
 }
 
-// 馬場状態が歴代比較に適しているか
+// 馬場状態が歴代比較に適しているか（同じグループのみ比較）
 function isTrackConditionComparableForHistorical(cond1: string, cond2: string): boolean {
-  const levels: Record<string, number> = { '良': 1, '稍': 2, '稍重': 2, '重': 3, '不': 4, '不良': 4 };
-  const getLevel = (c: string) => {
-    for (const [key, val] of Object.entries(levels)) {
-      if (c.includes(key)) return val;
-    }
-    return 1;
-  };
-  // 同じ馬場状態のみ比較（厳密に）
-  return getLevel(cond1) === getLevel(cond2);
+  return getTrackConditionGroup(cond1) === getTrackConditionGroup(cond2);
+}
+
+// 馬場状態グループを取得（クエリ用）
+// ダート: 良のみ / 稍重 / 重+不良 の3パターン
+// 芝: 良 / 稍重 / 重+不良 の3パターン
+function getTrackConditionGroup(trackCondition: string): 'good' | 'slightly_heavy' | 'heavy' {
+  if (trackCondition.includes('不') || trackCondition.includes('重') && !trackCondition.includes('稍')) {
+    return 'heavy'; // 重・不良
+  }
+  if (trackCondition.includes('稍')) {
+    return 'slightly_heavy'; // 稍重
+  }
+  return 'good'; // 良
+}
+
+// 馬場状態グループに対応するSQLクエリ条件を生成
+function getTrackConditionQueryCondition(group: 'good' | 'slightly_heavy' | 'heavy'): string {
+  switch (group) {
+    case 'good': // 良馬場
+      return "AND track_condition = '良'";
+    case 'slightly_heavy': // 稍重
+      return "AND (track_condition = '稍' OR track_condition = '稍重')";
+    case 'heavy': // 重・不良
+      return "AND (track_condition = '重' OR track_condition = '不' OR track_condition = '不良')";
+    default:
+      return "AND track_condition = '良'";
+  }
+}
+
+// 馬場状態グループの日本語表示
+function getTrackConditionGroupLabel(group: 'good' | 'slightly_heavy' | 'heavy'): string {
+  switch (group) {
+    case 'good': return '良馬場';
+    case 'slightly_heavy': return '稍重馬場';
+    case 'heavy': return '重・不良馬場';
+  }
 }
 
 // ワーク文字列からラップを解析

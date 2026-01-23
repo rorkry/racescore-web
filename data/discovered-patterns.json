@@ -1,0 +1,159 @@
+{
+  "generatedAt": "2026-01-23T12:56:35.364Z",
+  "totalData": 342038,
+  "patterns": [
+    {
+      "category": "combo",
+      "name": "高ポテンシャル + 巻き返しゾーン",
+      "condition": "potential >= 5 && makikaeshi >= 2 && makikaeshi <= 4",
+      "count": 5032,
+      "top3Rate": 44.29650238473768,
+      "winRate": 16.69316375198728,
+      "roi": 139.61248012718602
+    },
+    {
+      "category": "lap",
+      "name": "lap_pattern=非減速",
+      "condition": "lap_pattern === \"非減速\"",
+      "count": 93503,
+      "top3Rate": 22.606761280386724,
+      "winRate": 7.596547704351732,
+      "roi": 75.52709538731378
+    },
+    {
+      "category": "lap",
+      "name": "逆行ラップ",
+      "condition": "is_reverse === true",
+      "count": 35312,
+      "top3Rate": 22.247394653375625,
+      "winRate": 7.654621658359765,
+      "roi": 74.54887856819211
+    },
+    {
+      "category": "race_level",
+      "name": "member_level=C",
+      "condition": "member_level === \"C\"",
+      "count": 256175,
+      "top3Rate": 21.03171659998048,
+      "winRate": 6.9920952473894795,
+      "roi": 72.51562408509807
+    },
+    {
+      "category": "race_level",
+      "name": "member_level=B",
+      "condition": "member_level === \"B\"",
+      "count": 82939,
+      "top3Rate": 25.311373419018796,
+      "winRate": 8.483343179927417,
+      "roi": 71.86715537925463
+    },
+    {
+      "category": "lap",
+      "name": "lap_pattern=加速",
+      "condition": "lap_pattern === \"加速\"",
+      "count": 52869,
+      "top3Rate": 24.343187879475686,
+      "winRate": 8.337589135410164,
+      "roi": 71.2495034897577
+    },
+    {
+      "category": "lap",
+      "name": "lap_pattern=減速",
+      "condition": "lap_pattern === \"減速\"",
+      "count": 186027,
+      "top3Rate": 20.97276201841668,
+      "winRate": 6.895235637837518,
+      "roi": 70.53314841393991
+    },
+    {
+      "category": "disadvantage",
+      "name": "人気裏切り",
+      "condition": "disadvantage_type === \"人気裏切り\"",
+      "count": 14780,
+      "top3Rate": 28.55209742895805,
+      "winRate": 10.520974289580515,
+      "roi": 69.27537212449256
+    },
+    {
+      "category": "disadvantage",
+      "name": "前潰れ",
+      "condition": "disadvantage_type === \"前潰れ\"",
+      "count": 13477,
+      "top3Rate": 17.578096015433704,
+      "winRate": 5.884098835052312,
+      "roi": 68.18431401647251
+    },
+    {
+      "category": "disadvantage",
+      "name": "スロー不利",
+      "condition": "disadvantage_type === \"スロー不利\"",
+      "count": 4098,
+      "top3Rate": 19.594924353343092,
+      "winRate": 5.392874572962421,
+      "roi": 65.74426549536359
+    },
+    {
+      "category": "combo",
+      "name": "加速ラップで後方待機",
+      "condition": "lap_pattern === '加速' && corner_4 > field_size * 0.6",
+      "count": 19464,
+      "top3Rate": 16.6101520756268,
+      "winRate": 5.0143855322646935,
+      "roi": 63.4658857377723
+    },
+    {
+      "category": "race_level",
+      "name": "member_level=A",
+      "condition": "member_level === \"A\"",
+      "count": 2831,
+      "top3Rate": 30.907806428823736,
+      "winRate": 10.773578240904275,
+      "roi": 63.3274461321088
+    },
+    {
+      "category": "combo",
+      "name": "ハイレベル戦で差し損ね",
+      "condition": "(member_level === 'A' || member_level === 'B') && disadvantage_type === '差し損ね'",
+      "count": 6014,
+      "top3Rate": 22.39773860991021,
+      "winRate": 6.3352178250748254,
+      "roi": 58.78949118722979
+    },
+    {
+      "category": "disadvantage",
+      "name": "差し損ね",
+      "condition": "disadvantage_type === \"差し損ね\"",
+      "count": 22007,
+      "top3Rate": 17.52624165038397,
+      "winRate": 4.921161448629982,
+      "roi": 58.707683918753126
+    }
+  ],
+  "profitablePatterns": [
+    {
+      "category": "combo",
+      "name": "高ポテンシャル + 巻き返しゾーン",
+      "condition": "potential >= 5 && makikaeshi >= 2 && makikaeshi <= 4",
+      "count": 5032,
+      "top3Rate": 44.29650238473768,
+      "winRate": 16.69316375198728,
+      "roi": 139.61248012718602
+    }
+  ],
+  "rules": [
+    {
+      "id": "auto_combo_高ポテンシャル_+_巻き返しゾーン",
+      "name": "高ポテンシャル + 巻き返しゾーン",
+      "category": "combo",
+      "condition": "potential >= 5 && makikaeshi >= 2 && makikaeshi <= 4",
+      "scoreAdjust": 7,
+      "confidence": "high",
+      "stats": {
+        "count": 5032,
+        "top3Rate": 44.29650238473768,
+        "winRate": 16.69316375198728,
+        "roi": 139.61248012718602
+      }
+    }
+  ]
+}

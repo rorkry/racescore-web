@@ -980,6 +980,21 @@ function getAgeCategoryLabel(ageCategory: '2歳新馬' | '2・3歳' | '古馬'):
 }
 
 /**
+ * 馬場状態グループのラベルを取得
+ * ダート: 良のみ / 稍重 / 重+不良 の3パターン
+ * 芝: 良 / 稍重 / 重+不良 の3パターン
+ */
+function getTrackConditionGroupLabel(trackCondition: string): string {
+  if (trackCondition.includes('不') || (trackCondition.includes('重') && !trackCondition.includes('稍'))) {
+    return '重・不良馬場';
+  }
+  if (trackCondition.includes('稍')) {
+    return '稍重馬場';
+  }
+  return '良馬場';
+}
+
+/**
  * 歴代データと比較してランキングを算出
  * 
  * @param currentLapData - 現在のレースのラップデータ
@@ -1030,19 +1045,20 @@ export function compareWithHistorical(
   const placeDistance = `${condition.place}${condition.surface}${condition.distance}m`;
   const ageCategory = getAgeCategoryForLap(condition.className);
   const ageCategoryLabel = getAgeCategoryLabel(ageCategory);
+  const trackConditionLabel = getTrackConditionGroupLabel(condition.trackCondition);
   
-  // 表示形式: 「後半4F 46.5秒は2歳戦/中山芝1200mで'19年以降3位/50レース中」
-  // 古馬戦の場合: 「後半4F 46.5秒は中山芝1200mで'19年以降3位/50レース中」
+  // 表示形式: 「後半4F 46.5秒は2歳戦/中山芝1200m良馬場で'19年以降3位/50レース中」
+  // 古馬戦の場合: 「後半4F 46.5秒は中山芝1200m良馬場で'19年以降3位/50レース中」
   const categoryPrefix = ageCategoryLabel ? `${ageCategoryLabel}/` : '';
 
   if (isTop10Percent4F && last4FTotal >= 10) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last4FRank}位/${last4FTotal}レース中`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}${trackConditionLabel}で'19年以降${last4FRank}位/${last4FTotal}レース中`;
   } else if (isTop10Percent5F && last5FTotal >= 10) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last5FRank}位/${last5FTotal}レース中`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}${trackConditionLabel}で'19年以降${last5FRank}位/${last5FTotal}レース中`;
   } else if (last4FRank <= 3 && last4FTotal >= 5) {
-    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last4FRank}位`;
+    comment = `後半4F ${last4F.toFixed(1)}秒は${categoryPrefix}${placeDistance}${trackConditionLabel}で'19年以降${last4FRank}位`;
   } else if (last5FRank <= 3 && last5FTotal >= 5) {
-    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}で'19年以降${last5FRank}位`;
+    comment = `後半5F ${last5F.toFixed(1)}秒は${categoryPrefix}${placeDistance}${trackConditionLabel}で'19年以降${last5FRank}位`;
   }
 
   return {

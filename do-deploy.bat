@@ -1,22 +1,24 @@
 @echo off
 chcp 65001 > nul
-cd /d C:\競馬データ\racescore-web
+cd /d "C:\競馬データ\racescore-web"
 
-echo === Git Status ===
-git status
+echo === 大きなファイルを.gitignoreに追加 ===
+echo /data/special-patterns-analysis.json >> .gitignore
 
-echo.
-echo === Adding all changes ===
+echo === 大きなファイルをキャッシュから削除 ===
+git rm --cached data/special-patterns-analysis.json 2>nul
+git rm --cached data/discovered-patterns.json 2>nul
+
+echo === 前回のコミットをリセット ===
+git reset --soft HEAD~1
+
+echo === 全ファイルを追加してコミット ===
 git add -A
+git commit -m "fix: L4F/T2F評価ロジック改善 - 歴代比較を最優先、絶対値判断を廃止"
+
+echo === 強制プッシュ ===
+git push origin main --force
 
 echo.
-echo === Committing ===
-git commit -m "feat: AIチャット予想機能追加（GPT-4o-mini）"
-
-echo.
-echo === Pushing to origin ===
-git push origin main
-
-echo.
-echo === Done! ===
+echo === 完了！ ===
 pause

@@ -48,6 +48,16 @@ node_modules/
 /racescore-web/
 
 # large data files (exceed GitHub limits)
-/data/learning-data/
+/data/learning-data/*.json
+/data/learning-data/*.csv
+!/data/learning-data/stats-summary.json
 /data/fine-tuning/*.jsonl
 /data/pattern-validation/
+
+/data/special-patterns-analysis.json
+/data/special-patterns-analysis.json 
+/data/special-patterns-analysis.json 
+/data/special-patterns-analysis.json 
+/data/special-patterns-analysis.json 
+/data/special-patterns-analysis.json 
+/data/special-patterns-analysis.json 
