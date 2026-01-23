@@ -593,6 +593,8 @@ async function calculateAvgIndicesForDistance(
     // 現在のレース日付以前のデータのみをフィルタリング
     const raceRecords = allRaceRecords.filter(r => parseDateToNumber(r.date) < currentRaceDateNum);
     
+    console.log(`[calculateAvgIndices] ${horseName}: 全レコード=${allRaceRecords.length}, 日付フィルタ後=${raceRecords.length}, targetDist=${targetDistance}, targetSurface=${targetSurface}`);
+    
     if (raceRecords.length === 0) {
       return { 
         avgT2F: null, 
@@ -614,6 +616,9 @@ async function calculateAvgIndicesForDistance(
     
     // 芝/ダート判定
     const isTargetTurf = targetSurface === '芝';
+    let skippedByDistance = 0;
+    let skippedBySurface = 0;
+    let matchedRaces = 0;
     
     for (const record of raceRecords) {
       // 距離を抽出
@@ -622,14 +627,17 @@ async function calculateAvgIndicesForDistance(
       
       // 距離±200mフィルタ
       if (Math.abs(raceDist - targetDistance) > 200) {
+        skippedByDistance++;
         continue;
       }
       
       // 芝/ダートフィルタ
       const isTurf = record.distance?.includes('芝');
       if (isTargetTurf !== isTurf) {
+        skippedBySurface++;
         continue;
       }
+      matchedRaces++;
       
       // 18桁のrace_idを構築
       const raceId16 = record.race_id;
@@ -689,10 +697,11 @@ async function calculateAvgIndicesForDistance(
       : null;
     
     // ✅ デバッグログ
-    console.log(`[calculateAvgIndices] ${horseName} (${targetDistance}m±200m):`,
+    console.log(`[calculateAvgIndices] ${horseName} (${targetDistance}m±200m, ${targetSurface}):`,
       `T2F=${avgT2F?.toFixed(1) || 'N/A'}秒 (${t2fValues.length}件)`,
       `L4F=${avgL4F?.toFixed(1) || 'N/A'} (${l4fValues.length}件)`,
-      `対象レース=${relevantRaces.length}件`
+      `対象レース=${matchedRaces}件`,
+      `除外: 距離=${skippedByDistance}件, 馬場=${skippedBySurface}件`
     );
     
     return { 
