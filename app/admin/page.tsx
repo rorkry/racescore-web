@@ -62,13 +62,35 @@ export default function AdminPage() {
     };
     fetchSettings();
     
-    // ファインチューニング状態を取得
+    // ファインチューニング状態を取得（ジョブ状態も自動取得）
     const fetchFtStatus = async () => {
       try {
         const res = await fetch('/api/admin/fine-tune');
         if (res.ok) {
           const data = await res.json();
           setFtStatus(data);
+          
+          // 保存されているジョブIDがあれば状態を取得
+          if (data.lastJobId) {
+            const jobRes = await fetch('/api/admin/fine-tune', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'status', jobId: data.lastJobId }),
+            });
+            if (jobRes.ok) {
+              const jobData = await jobRes.json();
+              setFtJobStatus(jobData.job);
+              
+              // 進行中のジョブがあればメッセージ表示
+              if (jobData.job.status === 'queued' || jobData.job.status === 'running') {
+                setFtMessage(`🔄 ファインチューニング進行中... (${jobData.job.status})`);
+              } else if (jobData.job.status === 'succeeded') {
+                setFtMessage(`✅ ファインチューニング完了！モデル: ${jobData.job.fine_tuned_model}`);
+              } else if (jobData.job.status === 'failed') {
+                setFtMessage(`❌ ファインチューニング失敗: ${jobData.job.error?.message || '不明なエラー'}`);
+              }
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to fetch fine-tune status:', e);
@@ -76,6 +98,39 @@ export default function AdminPage() {
     };
     fetchFtStatus();
   }, [isAdmin]);
+  
+  // 進行中のジョブを定期的にポーリング（30秒ごと）
+  useEffect(() => {
+    if (!ftJobStatus) return;
+    if (ftJobStatus.status !== 'queued' && ftJobStatus.status !== 'running') return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/admin/fine-tune', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'status', jobId: ftJobStatus.id }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFtJobStatus(data.job);
+          
+          if (data.job.status === 'succeeded') {
+            setFtMessage(`✅ ファインチューニング完了！モデル: ${data.job.fine_tuned_model}`);
+            setFtStatus(prev => prev ? { ...prev, isFineTuned: true, currentModel: data.job.fine_tuned_model } : null);
+          } else if (data.job.status === 'failed') {
+            setFtMessage(`❌ ファインチューニング失敗: ${data.job.error?.message || '不明なエラー'}`);
+          } else {
+            setFtMessage(`🔄 ファインチューニング進行中... (${data.job.status})`);
+          }
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }, 30000); // 30秒ごと
+    
+    return () => clearInterval(interval);
+  }, [ftJobStatus?.id, ftJobStatus?.status]);
   
   // プレミアム設定を保存
   const handlePremiumToggle = async () => {
@@ -530,14 +585,35 @@ export default function AdminPage() {
               
               {ftJobStatus && (
                 <div className={`mt-3 p-3 rounded-lg text-sm ${
-                  ftJobStatus.status === 'succeeded' ? 'bg-green-50' :
-                  ftJobStatus.status === 'failed' ? 'bg-red-50' :
-                  'bg-yellow-50'
+                  ftJobStatus.status === 'succeeded' ? 'bg-green-50 border border-green-200' :
+                  ftJobStatus.status === 'failed' ? 'bg-red-50 border border-red-200' :
+                  'bg-yellow-50 border border-yellow-200'
                 }`}>
-                  <p>ジョブID: {ftJobStatus.id}</p>
-                  <p>状態: <strong>{ftJobStatus.status}</strong></p>
+                  <div className="flex items-center gap-2">
+                    {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running') && (
+                      <div className="size-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {ftJobStatus.status === 'succeeded' && (
+                      <span className="text-green-600">✅</span>
+                    )}
+                    {ftJobStatus.status === 'failed' && (
+                      <span className="text-red-600">❌</span>
+                    )}
+                    <span className="font-bold">
+                      {ftJobStatus.status === 'queued' && '待機中...'}
+                      {ftJobStatus.status === 'running' && '学習中...'}
+                      {ftJobStatus.status === 'succeeded' && '完了！'}
+                      {ftJobStatus.status === 'failed' && '失敗'}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">ジョブID: {ftJobStatus.id}</p>
                   {ftJobStatus.fine_tuned_model && (
-                    <p>モデル: <strong>{ftJobStatus.fine_tuned_model}</strong></p>
+                    <p className="mt-1 text-green-700">モデル: <strong>{ftJobStatus.fine_tuned_model}</strong></p>
+                  )}
+                  {(ftJobStatus.status === 'queued' || ftJobStatus.status === 'running') && (
+                    <p className="mt-2 text-xs text-yellow-700">
+                      🔄 30秒ごとに自動更新中（画面を離れても学習は継続します）
+                    </p>
                   )}
                 </div>
               )}
