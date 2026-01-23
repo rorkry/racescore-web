@@ -699,6 +699,75 @@ async function calculateAvgIndicesForDistance(
 }
 
 /**
+ * 【重要】前走のT2Fと1コーナー通過順位を取得
+ * 隊列予想で最重要視するデータ
+ */
+async function getLastRaceData(
+  db: any,
+  horseName: string,
+  currentRaceDateNum: number = 99999999
+): Promise<{
+  lastT2F: number | null;
+  lastFirstCornerPos: number | null;
+  lastSecondCornerPos: number | null;
+  lastDistance: number | null;
+  lastSurface: string | null;
+}> {
+  try {
+    // umadataから前走を取得
+    const query = `
+      SELECT race_id, horse_number, corner_1, corner_2, date, distance
+      FROM umadata
+      WHERE horse_name = $1
+      ORDER BY race_id DESC
+      LIMIT 10
+    `;
+    
+    const allRecords = await db.prepare(query).all(horseName) as Array<{
+      race_id: string;
+      horse_number: string;
+      corner_1: string;
+      corner_2: string;
+      date: string;
+      distance: string;
+    }>;
+    
+    // 現在のレース日付以前のデータから最新のものを取得
+    const lastRace = allRecords.find(r => parseDateToNumber(r.date) < currentRaceDateNum);
+    
+    if (!lastRace) {
+      return { lastT2F: null, lastFirstCornerPos: null, lastSecondCornerPos: null, lastDistance: null, lastSurface: null };
+    }
+    
+    // 距離と馬場を抽出
+    const distMatch = lastRace.distance?.match(/(\d+)/);
+    const lastDistance = distMatch ? parseInt(distMatch[1], 10) : null;
+    const lastSurface = lastRace.distance?.includes('芝') ? '芝' : 'ダ';
+    
+    // 1コーナー、2コーナー通過順位を抽出
+    const lastFirstCornerPos = lastRace.corner_1 ? parseInt(lastRace.corner_1, 10) : null;
+    const lastSecondCornerPos = lastRace.corner_2 ? parseInt(lastRace.corner_2, 10) : null;
+    
+    // indicesテーブルからT2Fを取得
+    const raceId16 = lastRace.race_id;
+    const horseNum = lastRace.horse_number?.padStart(2, '0') || '00';
+    const fullRaceId = raceId16 + horseNum;
+    
+    const indexQuery = `SELECT "T2F" FROM indices WHERE race_id = $1`;
+    const indexRecord = await db.prepare(indexQuery).get(fullRaceId) as { T2F: number } | undefined;
+    
+    const lastT2F = indexRecord?.T2F && indexRecord.T2F > 0 ? indexRecord.T2F : null;
+    
+    console.log(`[getLastRaceData] ${horseName}: 前走T2F=${lastT2F?.toFixed(1) || 'N/A'}秒, 1C=${lastFirstCornerPos || 'N/A'}番手, 2C=${lastSecondCornerPos || 'N/A'}番手`);
+    
+    return { lastT2F, lastFirstCornerPos, lastSecondCornerPos, lastDistance, lastSurface };
+  } catch (error) {
+    console.error('Error getting last race data:', error);
+    return { lastT2F: null, lastFirstCornerPos: null, lastSecondCornerPos: null, lastDistance: null, lastSurface: null };
+  }
+}
+
+/**
  * 過去の1コーナー通過順位を取得（テン1F推定用）
  * 現在のレース日付以前のデータのみを使用
  */
@@ -1347,6 +1416,10 @@ export async function predictRacePace(
     avgPotential: number | null;
     avgMakikaeshi: number | null;
     relevantRaces: Array<{ date: string; distance: number; T2F: number; L4F: number }>;
+    // 【重要】前走データ（隊列予想で最重要）
+    lastT2F: number | null;
+    lastFirstCornerPos: number | null;
+    lastSecondCornerPos: number | null;
   }> = [];
 
   // 第1ループ：データ収集（距離±200mでフィルタ）
@@ -1370,7 +1443,10 @@ export async function predictRacePace(
       currentRaceDateNum
     );
 
-    const lastDistance = await getLastDistance(db, horseName, currentRaceDateNum);
+    const lastDistanceData = await getLastDistance(db, horseName, currentRaceDateNum);
+    
+    // 【重要】前走データを取得（隊列予想で最重要）
+    const lastRaceData = await getLastRaceData(db, horseName, currentRaceDateNum);
 
     tempHorseData.push({
       horse,
@@ -1383,30 +1459,51 @@ export async function predictRacePace(
       fastestT2F: indexData.fastestT2F,
       t2fRaceCount: indexData.t2fRaceCount,
       l4fRaceCount: indexData.l4fRaceCount,
-      lastDistance,
+      lastDistance: lastDistanceData,
       hasEscapeExperience,
       escapeCount,
       avgPotential: indexData.avgPotential,
       avgMakikaeshi: indexData.avgMakikaeshi,
+      // 【重要】前走データ
+      lastT2F: lastRaceData.lastT2F,
+      lastFirstCornerPos: lastRaceData.lastFirstCornerPos,
+      lastSecondCornerPos: lastRaceData.lastSecondCornerPos,
       relevantRaces: indexData.relevantRaces,
     });
   }
 
   // =====================================================
-  // 【改善】メンバー内での相対順位（パーセンタイル）を計算
+  // 【重要】前走T2Fでメンバー内比較（最重要）
   // =====================================================
   
-  // T2Fでデータがある馬だけで比較（小さいほど速い = 昇順ソート）
+  // 前走T2Fでデータがある馬だけで比較（小さいほど速い = 昇順ソート）
+  const lastT2FWithData = tempHorseData
+    .filter(d => d.lastT2F !== null)
+    .sort((a, b) => (a.lastT2F || 999) - (b.lastT2F || 999));
+  
+  // 前走1コーナー3番手以内の馬を特定（先行馬判定）
+  const frontRunnersByCorner = tempHorseData
+    .filter(d => d.lastFirstCornerPos !== null && d.lastFirstCornerPos <= 3)
+    .map(d => d.horseNumber);
+  
+  // 従来のT2F（平均）でデータがある馬（フォールバック用）
   const t2fWithData = tempHorseData
     .filter(d => d.avgT2F !== null && d.t2fRaceCount > 0)
     .sort((a, b) => (a.avgT2F || 999) - (b.avgT2F || 999));
   
-  // L4Fでデータがある馬だけで比較（大きいほど速い = 降順ソート）
+  // L4Fでデータがある馬だけで比較
   const l4fWithData = tempHorseData
     .filter(d => d.avgL4F !== null && d.l4fRaceCount > 0)
     .sort((a, b) => (b.avgL4F || 0) - (a.avgL4F || 0));
   
-  // パーセンタイル計算用
+  // 【最重要】前走T2Fパーセンタイル計算
+  const getLastT2FPercentile = (horseNum: number) => {
+    const idx = lastT2FWithData.findIndex(d => d.horseNumber === horseNum);
+    if (idx < 0 || lastT2FWithData.length === 0) return null; // データなし
+    return Math.round(((idx + 1) / lastT2FWithData.length) * 100);
+  };
+  
+  // 従来のT2F（フォールバック用）
   const getT2FPercentile = (horseNum: number) => {
     const idx = t2fWithData.findIndex(d => d.horseNumber === horseNum);
     if (idx < 0 || t2fWithData.length === 0) return 100;
@@ -1419,31 +1516,52 @@ export async function predictRacePace(
     return Math.round(((idx + 1) / l4fWithData.length) * 100);
   };
   
-  // ✅ デバッグログ：メンバー内順位
-  console.log(`[predictRacePace] === メンバー内T2F順位（距離${currentDistance}m±200m）===`);
-  t2fWithData.forEach((d, idx) => {
-    console.log(`  ${idx + 1}位: ${d.horseName} T2F=${d.avgT2F?.toFixed(1)}秒 (${d.t2fRaceCount}レース)`);
+  // ✅ デバッグログ：前走T2Fメンバー内順位（最重要）
+  console.log(`[predictRacePace] === 【最重要】前走T2Fメンバー内順位 ===`);
+  lastT2FWithData.forEach((d, idx) => {
+    const corner = d.lastFirstCornerPos ? `1C=${d.lastFirstCornerPos}番手` : '1C=N/A';
+    const isFront = frontRunnersByCorner.includes(d.horseNumber) ? '★先行' : '';
+    console.log(`  ${idx + 1}位: ${d.horseName} 前走T2F=${d.lastT2F?.toFixed(1)}秒 ${corner} ${isFront}`);
   });
   
-  console.log(`[predictRacePace] === メンバー内L4F順位（距離${currentDistance}m±200m）===`);
-  l4fWithData.forEach((d, idx) => {
-    console.log(`  ${idx + 1}位: ${d.horseName} L4F=${d.avgL4F?.toFixed(1)} (${d.l4fRaceCount}レース)`);
+  console.log(`[predictRacePace] === 前走1コーナー3番手以内（先行判定）===`);
+  console.log(`  ${frontRunnersByCorner.length}頭: ${tempHorseData.filter(d => frontRunnersByCorner.includes(d.horseNumber)).map(d => d.horseName).join(', ') || 'なし'}`);
+  
+  console.log(`[predictRacePace] === 参考：平均T2F順位（距離${currentDistance}m±200m）===`);
+  t2fWithData.slice(0, 5).forEach((d, idx) => {
+    console.log(`  ${idx + 1}位: ${d.horseName} 平均T2F=${d.avgT2F?.toFixed(1)}秒 (${d.t2fRaceCount}レース)`);
   });
 
   // =====================================================
-  // 【改良版】椅子取りゲーム用の基礎データを準備
+  // 【重要】椅子取りゲーム用の基礎データを準備
+  // 前走T2Fを最重要視、前走1コーナー3番手以内は先行判定
   // =====================================================
   const baseSpeedDataList: BaseSpeedData[] = [];
   
   for (const data of tempHorseData) {
-    const { horse, horseNumber, horseName, avgT2F, t2fRaceCount, lastDistance, escapeCount, relevantRaces } = data;
+    const { horse, horseNumber, horseName, avgT2F, t2fRaceCount, lastDistance, escapeCount, relevantRaces, lastT2F, lastFirstCornerPos } = data;
     
-    const t2fPercentile = getT2FPercentile(horseNumber);
+    // 【最重要】前走T2Fパーセンタイル（なければ平均T2Fを使用）
+    const lastT2FPct = getLastT2FPercentile(horseNumber);
+    const avgT2FPct = getT2FPercentile(horseNumber);
+    const t2fPercentile = lastT2FPct !== null ? lastT2FPct : avgT2FPct;
+    
     const wakuNum = parseInt(horse.waku, 10);
     
-    // 1コーナー通過順位を取得（テン1F推定用、日付フィルタ適用）
-    const firstCornerPositions = await getFirstCornerPositions(db, horseName, 10, currentRaceDateNum);
-    const first1FScore = estimateFirst1FScore(firstCornerPositions, horses.length);
+    // 【重要】前走1コーナー3番手以内なら先行判定（大きなボーナス）
+    const wasFrontRunner = lastFirstCornerPos !== null && lastFirstCornerPos <= 3;
+    let first1FScore = 50; // デフォルト
+    if (wasFrontRunner) {
+      // 前走で前にいた馬は今回も前に行く可能性が高い
+      first1FScore = 85 + (3 - lastFirstCornerPos) * 5; // 1番手=95, 2番手=90, 3番手=85
+    } else if (lastFirstCornerPos !== null) {
+      // 前走の位置取りをスコア化
+      first1FScore = Math.max(20, 80 - lastFirstCornerPos * 5);
+    } else {
+      // 前走データなし → 過去複数走から推定
+      const firstCornerPositions = await getFirstCornerPositions(db, horseName, 10, currentRaceDateNum);
+      first1FScore = estimateFirst1FScore(firstCornerPositions, horses.length);
+    }
     
     // 重み付きT2F計算（近3走重視）
     const { weightedT2F, recentWeight } = calculateWeightedT2F(
@@ -1467,6 +1585,12 @@ export async function predictRacePace(
       recentWeight
     );
     
+    // 前走先行馬は追加ブースト
+    if (wasFrontRunner) {
+      speedData.boostedSpeedScore = Math.min(100, speedData.boostedSpeedScore + 10);
+      console.log(`[BaseSpeed] ${horseName}: 前走1C=${lastFirstCornerPos}番手 → 先行ブースト+10`);
+    }
+    
     baseSpeedDataList.push(speedData);
   }
   
@@ -1483,17 +1607,23 @@ export async function predictRacePace(
 
   // 第2ループ：位置計算（椅子取りゲーム結果を反映）
   for (const data of tempHorseData) {
-    const { horse, horseNumber, horseName, avgPosition, posRaceCount, avgT2F, avgL4F, t2fRaceCount, l4fRaceCount, hasEscapeExperience, escapeCount, avgPotential, avgMakikaeshi, relevantRaces } = data;
+    const { horse, horseNumber, horseName, avgPosition, posRaceCount, avgT2F, avgL4F, t2fRaceCount, l4fRaceCount, hasEscapeExperience, escapeCount, avgPotential, avgMakikaeshi, relevantRaces, lastT2F, lastFirstCornerPos } = data;
 
-    // メンバー内パーセンタイルを取得
-    const t2fPercentile = getT2FPercentile(horseNumber);
+    // 【最重要】前走T2Fパーセンタイル（なければ平均T2Fを使用）
+    const lastT2FPct = getLastT2FPercentile(horseNumber);
+    const avgT2FPct = getT2FPercentile(horseNumber);
+    const t2fPercentile = lastT2FPct !== null ? lastT2FPct : avgT2FPct;
     const l4fPercentile = getL4FPercentile(horseNumber);
+    
+    // 前走1コーナー3番手以内かどうか
+    const wasFrontRunner = lastFirstCornerPos !== null && lastFirstCornerPos <= 3;
     
     // 椅子取りゲーム結果を取得
     const chairResult = chairGameMap.get(horseNumber);
     
-    // ✅ デバッグログ：各馬の詳細
-    console.log(`[predictRacePace] ${horseName}: T2F=${avgT2F?.toFixed(1) || 'N/A'}秒 (${t2fWithData.length}頭中${t2fPercentile}%) L4F=${avgL4F?.toFixed(1) || 'N/A'} (${l4fWithData.length}頭中${l4fPercentile}%) 対象レース=${relevantRaces.length}件`);
+    // ✅ デバッグログ：各馬の詳細（前走データを重視）
+    const frontFlag = wasFrontRunner ? '★先行' : '';
+    console.log(`[predictRacePace] ${horseName}: 前走T2F=${lastT2F?.toFixed(1) || 'N/A'}秒 前走1C=${lastFirstCornerPos || 'N/A'}番手 ${frontFlag} | メンバー内${t2fPercentile}%`);
 
     // 椅子取りゲームの結果を使用（フォールバック: 旧ロジック）
     let adjustedPosition: number;
