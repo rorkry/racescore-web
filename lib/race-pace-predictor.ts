@@ -351,12 +351,28 @@ export function runChairGameSimulation(
     let pushedOutFlag = false;
     
     if (occupiedList.length === 0) {
-      // 最初の馬（1枠）: 最内を確保
-      finalPosition = boostedSpeedScore >= 70 ? 1 : 2;
-      positionType = finalPosition === 1 ? 'hana' : 'bantte';
-      occupiedPositions.set(finalPosition, { horseNumber, score: boostedSpeedScore });
+      // 最初の馬（1枠）: スコアに応じてポジション決定
+      // ★重要: 内枠でもスコアが低ければ前に行かない
+      if (boostedSpeedScore >= 85) {
+        // 高スコア: ハナ争い
+        finalPosition = 1;
+        positionType = 'hana';
+      } else if (boostedSpeedScore >= 70) {
+        // 中スコア: 先行
+        finalPosition = 2;
+        positionType = 'bantte';
+      } else if (boostedSpeedScore >= 55) {
+        // 低スコア: 中団
+        finalPosition = totalHorses * 0.35;
+        positionType = 'sashi';
+      } else {
+        // 非常に低いスコア: 後方
+        finalPosition = totalHorses * 0.6;
+        positionType = 'oikomi';
+      }
+      occupiedPositions.set(Math.ceil(finalPosition), { horseNumber, score: boostedSpeedScore });
       
-      console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 最内確保 → 位置${finalPosition}`);
+      console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): スコア${boostedSpeedScore.toFixed(0)} → ${positionType} 位置${finalPosition.toFixed(1)}`);
     }
     else {
       const scoreDiff = boostedSpeedScore - innerHorsesAvgScore;
@@ -391,22 +407,28 @@ export function runChairGameSimulation(
         occupiedPositions.set(finalPosition, { horseNumber, score: boostedSpeedScore });
         console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内より速い(+${scoreDiff.toFixed(0)}) → 切れ込み位置${finalPosition}`);
       }
-      // Case B: 内側と同等 → 外を回らされる
+      // Case B: 内側と同等 → スコアに応じて位置決定
       else if (Math.abs(scoreDiff) <= EQUAL_THRESHOLD) {
-        // 同列の外側
-        const maxOccupied = Math.max(...Array.from(occupiedPositions.keys()));
-        finalPosition = maxOccupied + 0.5 + wakuNumber * 0.1; // 外々を回る
-        positionType = wakuNumber <= 4 ? 'senkou_uchi' : 'senkou_soto';
-        pushedOutFlag = wakuNumber >= 5;
+        // スコアに応じてポジション決定（枠番の影響は最小限）
+        if (boostedSpeedScore >= 70) {
+          const maxOccupied = Math.max(...Array.from(occupiedPositions.keys()));
+          finalPosition = maxOccupied + 0.5 + wakuNumber * 0.03; // 枠番の影響を最小限に
+          positionType = 'senkou_uchi';
+        } else {
+          // スコアが低ければ中団
+          finalPosition = totalHorses * 0.4 + wakuNumber * 0.03;
+          positionType = 'sashi';
+        }
+        pushedOutFlag = wakuNumber >= 6;
         
         occupiedPositions.set(Math.ceil(finalPosition), { horseNumber, score: boostedSpeedScore });
-        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内と同等 → 外回り位置${finalPosition.toFixed(1)}`);
+        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内と同等(スコア${boostedSpeedScore.toFixed(0)}) → ${positionType} 位置${finalPosition.toFixed(1)}`);
       }
       // Case C: 内側より遅い → 控える
       else {
-        // 後方へ
+        // 後方へ（スコアに応じて、枠番の影響は最小限）
         const basePosition = totalHorses * 0.5 + (100 - boostedSpeedScore) / 100 * totalHorses * 0.5;
-        finalPosition = Math.min(totalHorses, basePosition + wakuNumber * 0.3);
+        finalPosition = Math.min(totalHorses, basePosition + wakuNumber * 0.05); // 枠番の影響を最小限に
         
         if (finalPosition <= totalHorses * 0.35) {
           positionType = 'sashi';
@@ -414,7 +436,7 @@ export function runChairGameSimulation(
           positionType = 'oikomi';
         }
         
-        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内より遅い(${scoreDiff.toFixed(0)}) → 控え位置${finalPosition.toFixed(1)}`);
+        console.log(`[ChairGame] ${horseName}(${wakuNumber}枠): 内より遅い(${scoreDiff.toFixed(0)}) → ${positionType} 位置${finalPosition.toFixed(1)}`);
       }
     }
     
@@ -493,9 +515,9 @@ export function calculateSimpleStartPosition(
   }
   
   // =====================================================
-  // 3. 枠番による微調整（内枠やや前、外枠やや後ろ）
+  // 3. 枠番による微調整（スパイス程度に弱める）
   // =====================================================
-  const wakuAdjust = (wakuNumber - 4.5) * 0.3;  // -1.05 〜 +1.05
+  const wakuAdjust = (wakuNumber - 4.5) * 0.1;  // -0.35 〜 +0.35（非常に控えめ）
   position += wakuAdjust;
   
   // 最小1、最大=頭数+1に制限
@@ -1134,59 +1156,56 @@ function adjustPositionByCourseAndWaku(
   if (courseChar) {
     const distToCorner = courseChar.distanceToFirstCorner;
     
-    // 最初のコーナーまでが短いコース（300m未満）= 内枠有利（影響強化）
+    // ★枠順はスパイス程度に（補正値を大幅に弱める）
+    // 最初のコーナーまでが短いコース（300m未満）= 内枠やや有利
     if (distToCorner < 300) {
       if (wakuNum <= 2) {
-        // innerFrameAdvantageが負 = 有利 = 前に行く
-        adjustment = courseChar.innerFrameAdvantage * 1.5; // 0.8 → 1.5
+        adjustment = courseChar.innerFrameAdvantage * 0.3; // スパイス程度
       } else if (wakuNum <= 4) {
-        adjustment = courseChar.innerFrameAdvantage * 0.8; // 0.4 → 0.8
+        adjustment = courseChar.innerFrameAdvantage * 0.15;
       } else if (wakuNum >= 7) {
-        // 外枠は不利になる
-        adjustment = courseChar.outerFrameAdvantage * 1.2; // 0.5 → 1.2
+        adjustment = courseChar.outerFrameAdvantage * 0.3;
       } else if (wakuNum >= 6) {
-        adjustment = courseChar.outerFrameAdvantage * 0.7; // 0.3 → 0.7
+        adjustment = courseChar.outerFrameAdvantage * 0.15;
       }
     }
-    // 最初のコーナーまで余裕あり（500m以上）= 外枠有利（影響強化）
+    // 最初のコーナーまで余裕あり（500m以上）= 外枠やや有利
     else if (distToCorner >= 500) {
       if (wakuNum >= 7) {
-        // outerFrameAdvantageが負 = 有利 = 前に行く
-        adjustment = courseChar.outerFrameAdvantage * 1.5; // 0.8 → 1.5
+        adjustment = courseChar.outerFrameAdvantage * 0.3;
       } else if (wakuNum >= 5) {
-        adjustment = courseChar.outerFrameAdvantage * 0.8; // 0.4 → 0.8
+        adjustment = courseChar.outerFrameAdvantage * 0.15;
       } else if (wakuNum <= 2) {
-        // 内枠は不利
-        adjustment = courseChar.innerFrameAdvantage * 0.8; // 0.4 → 0.8
+        adjustment = courseChar.innerFrameAdvantage * 0.15;
       }
     }
-    // 中間（300-500m）= どちらもあまり影響なし（やや強化）
+    // 中間（300-500m）= ほぼ影響なし
     else {
       if (wakuNum <= 2) {
-        adjustment = courseChar.innerFrameAdvantage * 0.6; // 0.3 → 0.6
+        adjustment = courseChar.innerFrameAdvantage * 0.1;
       } else if (wakuNum >= 7) {
-        adjustment = courseChar.outerFrameAdvantage * 0.6; // 0.3 → 0.6
+        adjustment = courseChar.outerFrameAdvantage * 0.1;
       }
     }
     
-    // 芝スタートダートの場合、外枠有利（強化）
+    // 芝スタートダートの場合、外枠やや有利（スパイス程度）
     if (courseChar.turfStartDirt && wakuNum >= 6) {
-      adjustment -= 0.8; // -0.5 → -0.8 前に行く補正
+      adjustment -= 0.2;
     }
     
-    // タイトなコーナーの場合、内枠有利（強化）
+    // タイトなコーナーの場合、内枠やや有利（スパイス程度）
     if (courseChar.tightCorner && wakuNum <= 3) {
-      adjustment -= 0.7; // -0.4 → -0.7 前に行く補正
+      adjustment -= 0.15;
     }
   }
-  // デフォルト補正（控えめに）
+  // デフォルト補正（非常に控えめに）
   else {
     if (totalHorses >= 16) {
-      if (wakuNum <= 2) adjustment = -0.8;
-      else if (wakuNum >= 7) adjustment = +1.2;
+      if (wakuNum <= 2) adjustment = -0.2;
+      else if (wakuNum >= 7) adjustment = +0.3;
     } else if (totalHorses >= 12) {
-      if (wakuNum <= 2) adjustment = -0.5;
-      else if (wakuNum >= 6) adjustment = +0.8;
+      if (wakuNum <= 2) adjustment = -0.15;
+      else if (wakuNum >= 6) adjustment = +0.2;
     }
   }
 
