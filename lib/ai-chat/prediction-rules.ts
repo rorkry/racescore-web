@@ -120,11 +120,14 @@ export function calculateBlessed(
   // 手動設定があれば優先
   if (manual) return manual;
   
-  // 巻き返し指数ベース
+  // 巻き返し指数ベース（34万件分析結果に基づく閾値）
+  // - < 1: 回収率55%、前走恵まれた可能性
+  // - 2〜6: 回収率100%超、期待値プラス
+  // - > 6: 好走率は高いが回収率低下
   if (makikaeshi === null) return 'neutral';
-  if (makikaeshi < 1.0) return 'blessed';    // 恵まれた
-  if (makikaeshi >= 3.0) return 'unlucky';   // 不利があった
-  return 'neutral';
+  if (makikaeshi < 1.0) return 'blessed';    // 恵まれた（回収率55%）
+  if (makikaeshi >= 2.0) return 'unlucky';   // 不利があった（回収率100%超ゾーン）
+  return 'neutral';  // 1〜2は様子見（回収率97%）
 }
 
 /**
@@ -476,7 +479,28 @@ export const PREDICTION_RULES: Record<string, PredictionRule> = {
   
   // ============================================
   // ポテンシャル指数（potential）
+  // ※34万件のデータ分析に基づく閾値設定
+  // >= 7: 回収率255%, >= 6: 回収率159%, >= 5: 回収率114%
   // ============================================
+  
+  SUPER_HIGH_POTENTIAL: {
+    id: 'super_high_potential',
+    name: 'ポテンシャル指数が超高い',
+    type: 'HONMEI',
+    category: 'potential',
+    priority: 120,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      // ポテンシャル7以上: 回収率255%, 3着内率59%
+      if (horse.potential !== null && horse.potential >= 7) {
+        return {
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}は超高水準（回収率255%ゾーン）、能力上位で本命候補`,
+          confidence: 'high' as const,
+          scoreAdjust: 10,
+        };
+      }
+      return null;
+    },
+  },
   
   HIGH_POTENTIAL: {
     id: 'high_potential',
@@ -485,40 +509,47 @@ export const PREDICTION_RULES: Record<string, PredictionRule> = {
     category: 'potential',
     priority: 100,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      // ポテンシャル指数は最大10までの数値
-      if (horse.potential !== null && horse.potential >= 8) {
-        return {
-          reason: `ポテンシャル指数${horse.potential.toFixed(1)}と高く、能力上位`,
-          confidence: 'high' as const,
-          scoreAdjust: 6,
-        };
-      }
+      // ポテンシャル6〜7: 回収率159%, 3着内率44%
       if (horse.potential !== null && horse.potential >= 6) {
         return {
-          reason: `ポテンシャル指数${horse.potential.toFixed(1)}、まずまずの能力`,
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}は高水準（回収率159%ゾーン）、積極的に狙いたい`,
+          confidence: 'high' as const,
+          scoreAdjust: 7,
+        };
+      }
+      // ポテンシャル5〜6: 回収率114%, 3着内率34%
+      if (horse.potential !== null && horse.potential >= 5) {
+        return {
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}は期待値プラス水準（回収率114%ゾーン）`,
           confidence: 'medium' as const,
-          scoreAdjust: 4,
+          scoreAdjust: 5,
         };
       }
       return null;
     },
   },
   
-  LOW_POTENTIAL_POPULAR: {
-    id: 'low_potential_popular',
-    name: '低ポテンシャルで人気',
+  LOW_POTENTIAL: {
+    id: 'low_potential',
+    name: 'ポテンシャル指数が低い',
     type: 'NEGATIVE',
     category: 'potential',
-    priority: 50,
+    priority: 80,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const lowPotential = horse.potential !== null && horse.potential < 3;
-      const popular = horse.estimatedPopularity <= 3;
-      
-      if (lowPotential && popular) {
+      // ポテンシャル4未満: 回収率53%以下
+      if (horse.potential !== null && horse.potential < 4) {
+        const popular = horse.estimatedPopularity <= 3;
+        if (popular) {
+          return {
+            reason: `ポテンシャル指数${horse.potential.toFixed(1)}は低い（回収率53%以下）のに人気、妙味なし`,
+            confidence: 'high' as const,
+            scoreAdjust: -5,
+          };
+        }
         return {
-          reason: `ポテンシャル指数${horse.potential?.toFixed(1)}と低いが人気、妙味なし`,
+          reason: `ポテンシャル指数${horse.potential.toFixed(1)}は低め、能力的に厳しいか`,
           confidence: 'medium' as const,
-          scoreAdjust: -4,
+          scoreAdjust: -3,
         };
       }
       return null;
@@ -527,7 +558,39 @@ export const PREDICTION_RULES: Record<string, PredictionRule> = {
   
   // ============================================
   // 巻き返し指数（makikaeshi）
+  // ※34万件のデータ分析に基づく閾値設定
+  // 2〜3: 最強ゾーン回収率125%, 4〜6: 回収率100-109%
+  // < 1: 前走恵まれ回収率55%, > 6: 好走率高いが回収率低下
   // ============================================
+  
+  MAKIKAESHI_SWEET_SPOT: {
+    id: 'makikaeshi_sweet_spot',
+    name: '巻き返し最強ゾーン',
+    type: 'HONMEI',
+    category: 'makikaeshi',
+    priority: 120,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      // 巻き返し2〜3: 最強ゾーン、回収率125%, 3着内率38%
+      if (horse.makikaeshi !== null && horse.makikaeshi >= 2 && horse.makikaeshi < 3) {
+        const last = horse.pastRaces[0];
+        const marginSec = last ? parseMargin(last.margin) : 99;
+        
+        if (marginSec <= 1.0) {
+          return {
+            reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}は最強ゾーン（回収率125%）、不利ありながら僅差、大きな巻き返し期待`,
+            confidence: 'high' as const,
+            scoreAdjust: 10,
+          };
+        }
+        return {
+          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}は最強ゾーン（回収率125%）、前走の軽い不利から巻き返し期待`,
+          confidence: 'high' as const,
+          scoreAdjust: 8,
+        };
+      }
+      return null;
+    },
+  },
   
   MAKIKAESHI_CANDIDATE: {
     id: 'makikaeshi_candidate',
@@ -536,29 +599,53 @@ export const PREDICTION_RULES: Record<string, PredictionRule> = {
     category: 'makikaeshi',
     priority: 100,
     check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
-      const last = horse.pastRaces[0];
-      const marginSec = last ? parseMargin(last.margin) : 99;
-      
-      if (horse.makikaeshi !== null && horse.makikaeshi >= 3.0) {
-        // 巻き返し指数高い + 僅差負けなら特に期待大
-        if (marginSec <= 1.0) {
-          return {
-            reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、不利がありながら僅差、大きな巻き返し期待`,
-            confidence: 'high' as const,
-            scoreAdjust: 8,
-          };
-        }
+      // 巻き返し3〜6: 期待値プラスゾーン、回収率91-109%
+      if (horse.makikaeshi !== null && horse.makikaeshi >= 3 && horse.makikaeshi <= 6) {
         return {
-          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、前走は不利があった可能性大、巻き返しに期待`,
+          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}で期待値プラス水準、前走の不利から反撃期待`,
           confidence: 'high' as const,
           scoreAdjust: 6,
         };
       }
-      if (horse.makikaeshi !== null && horse.makikaeshi >= 2.0) {
+      return null;
+    },
+  },
+  
+  MAKIKAESHI_BLESSED: {
+    id: 'makikaeshi_blessed',
+    name: '前走恵まれた可能性',
+    type: 'NEGATIVE',
+    category: 'makikaeshi',
+    priority: 90,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      // 巻き返し1未満: 前走恵まれ、回収率55%
+      if (horse.makikaeshi !== null && horse.makikaeshi < 1) {
+        const last = horse.pastRaces[0];
+        if (last && last.finishPosition <= 3) {
+          return {
+            reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}は低い、前走は恵まれた可能性（回収率55%ゾーン）、過信禁物`,
+            confidence: 'medium' as const,
+            scoreAdjust: -4,
+          };
+        }
+      }
+      return null;
+    },
+  },
+  
+  MAKIKAESHI_TOO_HIGH: {
+    id: 'makikaeshi_too_high',
+    name: '不利が大きすぎる可能性',
+    type: 'NEGATIVE',
+    category: 'makikaeshi',
+    priority: 70,
+    check: (horse: HorseAnalysisData, _settings: RaceConditionSettings) => {
+      // 巻き返し6超: 好走率は高いが回収率は低下傾向（86-88%）
+      if (horse.makikaeshi !== null && horse.makikaeshi > 6) {
         return {
-          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}、前走より上積み期待`,
-          confidence: 'medium' as const,
-          scoreAdjust: 4,
+          reason: `巻き返し指数${horse.makikaeshi.toFixed(1)}は高すぎ、前走の不利が大きすぎて能力疑問も`,
+          confidence: 'low' as const,
+          scoreAdjust: -2,
         };
       }
       return null;

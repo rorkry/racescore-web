@@ -46,3 +46,8 @@ node_modules/
 
 # duplicate subdirectory
 /racescore-web/
+
+# large data files (exceed GitHub limits)
+/data/learning-data/
+/data/fine-tuning/*.jsonl
+/data/pattern-validation/
