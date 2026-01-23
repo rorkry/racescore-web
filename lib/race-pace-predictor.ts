@@ -645,8 +645,9 @@ async function calculateAvgIndicesForDistance(
       const fullRaceId = raceId16 + horseNum;
       
       // indicesテーブルからT2F、L4F、potential、makikaeshiを取得
+      // PostgreSQLでは大文字カラム名に引用符が必須
       const indexQuery = `
-        SELECT T2F, L4F, potential, makikaeshi
+        SELECT "T2F", "L4F", potential, makikaeshi
         FROM indices
         WHERE race_id = $1
       `;
