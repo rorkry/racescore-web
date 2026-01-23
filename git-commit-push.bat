@@ -8,7 +8,7 @@ echo === Adding files ===
 git add -A
 echo.
 echo === Committing ===
-git commit -m "fix: レースレベルUNKNOWN判定を緩和 - 延べ出走3回以上で推定判定可能に - UNKNOWNキャッシュを1日に短縮 - デバッグログ追加"
+git commit -m "fix: レースレベルUNKNOWN判定緩和、巻き返し評価閾値を3.5以上に変更"
 echo.
 echo === Pushing to origin ===
 git push origin main
