@@ -418,8 +418,9 @@ async function handlePredictionRequest(
         goodRunCount: number;
       } | null = null;
       try {
+        const raceIdFor16 = raceId.substring(0, 16);
         const levelData = await db.prepare(`
-          SELECT level, level_label, plus_count, total_horses_run, good_run_count 
+          SELECT level, level_label, plus_count, total_horses_run, good_run_count, first_run_good_count 
           FROM race_levels WHERE race_id = $1
         `).get<{
           level: string;
@@ -427,15 +428,18 @@ async function handlePredictionRequest(
           plus_count: number;
           total_horses_run: number;
           good_run_count: number;
-        }>(raceId.substring(0, 16));
+          first_run_good_count: number;
+        }>(raceIdFor16);
         if (levelData) {
           raceLevel = levelData.level_label || levelData.level;
+          // first_run_good_count（次1走目での好走数）を優先、なければgood_run_count（延べ）
+          const actualGoodCount = levelData.first_run_good_count ?? levelData.good_run_count ?? 0;
           raceLevelDetail = {
             level: levelData.level || 'UNKNOWN',
             levelLabel: levelData.level_label || levelData.level || 'UNKNOWN',
             plusCount: levelData.plus_count || 0,
             totalHorsesRun: levelData.total_horses_run || 0,
-            goodRunCount: levelData.good_run_count || 0,
+            goodRunCount: actualGoodCount,
           };
         }
       } catch (e) {

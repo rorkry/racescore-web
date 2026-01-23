@@ -499,9 +499,10 @@ export class SagaBrain {
       const marginWithin1sec = !isNaN(marginNum) && marginNum <= 1.0;
       const marginWithin05sec = !isNaN(marginNum) && marginNum <= 0.5;
       
-      // 基本情報コメント
+      // 基本情報コメント（次1走目の好走数を使用、延べではない）
+      const goodCount = level.firstRunGoodCount ?? 0;  // 次1走目の好走数
       const totalInfo = level.totalHorsesRun > 0 
-        ? `（${level.totalHorsesRun}頭中${level.firstRunGoodCount || level.goodRunCount}頭好走）` 
+        ? `（${level.totalHorsesRun}頭中${goodCount}頭好走）` 
         : '';
       
       // B以上 = ハイレベル

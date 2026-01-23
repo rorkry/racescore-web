@@ -1015,13 +1015,18 @@ export const PREDICTION_RULES: Record<string, PredictionRule> = {
       const last = horse.pastRaces[0];
       if (!last) return null;
       
+      // ハイレベル戦（S/A/B）の馬は過大評価にしない
+      const isHighLevel = last.raceLevel === 'S' || last.raceLevel === 'A' || last.raceLevel === 'B';
+      if (isHighLevel) return null;
+      
       const lapBad = horse.lapRating === 'C' || horse.lapRating === 'D' || horse.lapRating === 'LOW';
       const timeBad = horse.timeRating === 'C' || horse.timeRating === 'D' || horse.timeRating === 'LOW';
       const isLowLevel = last.raceLevel === 'C' || last.raceLevel === 'D';
       const popular = horse.estimatedPopularity <= 3;
       
-      // 低レベル戦 + ラップ/時計悪い + 人気 = 過大評価
-      if ((lapBad || timeBad || isLowLevel) && popular && last.finishPosition <= 3) {
+      // 低レベル戦かつラップ/時計も悪い + 人気 = 過大評価
+      // （条件を厳しく：レースレベルが低い AND ラップ/時計も悪い）
+      if (isLowLevel && (lapBad || timeBad) && popular && last.finishPosition <= 3) {
         return {
           reason: '前走好走も中身が伴わず人気、過大評価の可能性',
           confidence: 'medium' as const,
