@@ -460,14 +460,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ========================================
     // STEP 4: メモリ上でデータを組み立て（ループ内DBアクセスなし）
     // ========================================
-    const horsesWithScore = horses.map((horse: any, horseIndex: number) => {
+    
+    // まず全馬のデータを収集（展開連動スコア計算用）
+    const allHorseData: { past: any[]; entry: any }[] = [];
+    const horsesBaseData: any[] = [];
+    
+    horses.forEach((horse: any, horseIndex: number) => {
       const horseName = normalizeHorseName(GET(horse, 'umamei'));
       const uniquePastRaces = processedPastRacesByHorse.get(horseName) || [];
 
       // 過去走データに指数とレースレベルを紐づけ（メモリ上のMapから取得）
       const pastRacesWithIndices = uniquePastRaces.map((race: any) => {
         const raceIdBase = race.race_id || '';
-        // umadataテーブルではカラム名は 'umaban'
         const horseNum = String(race.umaban || race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNum}`;
         
@@ -484,13 +488,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const pastRaces = pastRacesWithIndices.map(mapUmadataToRecordRow);
       const entryRow = mapWakujunToRecordRow(horse);
-
-      // スコア計算（ロジックは変更なし）
+      
+      allHorseData.push({ past: pastRaces, entry: entryRow });
+      horsesBaseData.push({ horse, pastRacesWithIndices, pastRaces, entryRow, horseIndex });
+    });
+    
+    // 全馬のデータを使ってスコアを計算
+    const horsesWithScore = horsesBaseData.map(({ horse, pastRacesWithIndices, pastRaces, entryRow, horseIndex }) => {
+      // スコア計算（全馬データを渡して展開連動スコアも計算）
       let score = 0;
       try {
-        score = computeKisoScore({ past: pastRaces, entry: entryRow });
+        score = computeKisoScore({ past: pastRaces, entry: entryRow }, allHorseData);
       } catch (scoreError: any) {
-        console.error('Score calculation error for', horseName, ':', scoreError.message);
+        console.error('Score calculation error for', GET(horse, 'umamei'), ':', scoreError.message);
         score = 0;
       }
 

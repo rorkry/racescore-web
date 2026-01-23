@@ -316,42 +316,116 @@ function filterValidRaces(races: RecordRow[]): RecordRow[] {
 }
 
 /**
- * 馬 1 頭の "競うスコア" を返す（最大100点）
- * @param horse 過去走配列と現在出走情報（過去走にはindicesオブジェクトが含まれる）
- * @returns 0〜100 のスコア（高いほど期待）
+ * 競うスコアの詳細情報（デバッグ用）
  */
-export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow }): number {
+export interface KisoScoreBreakdown {
+  total: number;
+  comeback: number;           // 巻き返し指数（35点満点）
+  potential: number;           // ポテンシャル指数（15点満点）
+  finish: number;              // 着順（8点満点）
+  margin: number;              // 着差（8点満点）
+  cluster: number;             // クラスタタイム（6点満点）
+  passing: number;             // 通過順位×ペース（6点満点）
+  positionImprovement: number; // 位置取り改善（8点満点）
+  paceSync: number;            // 展開連動（6点満点）
+  courseFit: number;           // コース適性（4点満点）
+  penalty: number;             // 減点（下級条件連続2着など）
+  details: {
+    comebackValues: { race1: number; race2: number; race3: number };
+    potentialValues: { race1: number; race2: number; race3: number; avg: number; max: number; combined: number };
+    lastPosition: number;
+    avgPastPosition: number;
+    forwardRate: number | null;
+    isTurfStartDirt: boolean;
+    firstCornerDistance: number;
+  };
+}
+
+/**
+ * 馬 1 頭の "競うスコア" を返す（最大100点）
+ * 
+ * 【新ロジック追加】
+ * - 位置取り改善: 後方競馬から前方への変化を評価
+ * - 下級条件連続2着: マイナス評価
+ * - コース適性: 芝スタートダート、初角距離
+ * - 展開連動: allHorsesが渡された場合のみ計算
+ * 
+ * @param horse 過去走配列と現在出走情報（過去走にはindicesオブジェクトが含まれる）
+ * @param allHorses 全出走馬のデータ（展開連動スコア計算用、オプション）
+ * @param debug デバッグモード（trueの場合、詳細情報を返す）
+ * @returns 0〜100 のスコア（高いほど期待）、または詳細情報（debug=trueの場合）
+ */
+export function computeKisoScore(
+  horse: { past: RecordRow[]; entry: RecordRow }, 
+  allHorses?: { past: RecordRow[]; entry: RecordRow }[],
+  debug: boolean = false
+): number | KisoScoreBreakdown {
   // 有効なレースのみをフィルタリング（競走除外、失格、中止等を除く）
   const validPastRaces = filterValidRaces(horse.past);
   const recent = validPastRaces.slice(0, 5);  // 直近5走（有効なもののみ）
   
   // 有効な過去走がない場合は0を返す
   if (recent.length === 0) {
-    return 0;
+    return debug ? {
+      total: 0,
+      comeback: 0,
+      potential: 0,
+      finish: 0,
+      margin: 0,
+      cluster: 0,
+      passing: 0,
+      positionImprovement: 0,
+      paceSync: 0,
+      courseFit: 0,
+      penalty: 0,
+      details: {
+        comebackValues: { race1: 0, race2: 0, race3: 0 },
+        potentialValues: { race1: 0, race2: 0, race3: 0, avg: 0, max: 0, combined: 0 },
+        lastPosition: 99,
+        avgPastPosition: 99,
+        forwardRate: null,
+        isTurfStartDirt: false,
+        firstCornerDistance: 999,
+      },
+    } : 0;
   }
 
+  let totalScore = 0;
+  
+  // デバッグ用: 各要素のスコアを個別に記録
+  let comebackScore = 0;
+  let potentialScore = 0;
+  let finishScore = 0;
+  let marginScoreVal = 0;
+  let clusterScore = 0;
+  let passScore = 0;
+  let positionImprovementScore = 0;
+  let paceSyncScore = 0;
+  let courseFitScore = 0;
+  let penaltyScore = 0;
+
   // ============================================================
-  // 巻き返し指数スコア（40点満点）
+  // 巻き返し指数スコア（35点満点）
   // indicesテーブルのmakikaeshiを使用
   // ============================================================
   const comeback1 = getIndexValue(recent[0], 'makikaeshi');
   const comeback2 = getIndexValue(recent[1], 'makikaeshi');
   const comeback3 = getIndexValue(recent[2], 'makikaeshi');
 
-  const comebackScore = 
-    (comeback1 / 10) * 28 +  // 前走: 28点
-    (comeback2 / 10) * 8 +   // 2走前: 8点
+  comebackScore = 
+    (comeback1 / 10) * 25 +  // 前走: 25点
+    (comeback2 / 10) * 6 +   // 2走前: 6点
     (comeback3 / 10) * 4;    // 3走前: 4点
+  totalScore += comebackScore;
 
   // ============================================================
-  // ポテンシャル指数スコア（25点満点）
+  // ポテンシャル指数スコア（15点満点）
   // 直近3走の平均(80%) + 最高値(20%)で爆発力も加味
   // ============================================================
   const potential1 = getIndexValue(recent[0], 'potential');
   const potential2 = getIndexValue(recent[1], 'potential');
   const potential3 = getIndexValue(recent[2], 'potential');
   
-  // 有効なデータのみで平均と最高値を計算
   const potentialValues = [potential1, potential2, potential3].filter(v => v > 0);
   const potentialAvg = potentialValues.length > 0 
     ? potentialValues.reduce((a, b) => a + b, 0) / potentialValues.length 
@@ -360,39 +434,37 @@ export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow })
     ? Math.max(...potentialValues)
     : 0;
   
-  // 平均80% + 最高値20%で総合評価値を算出
   const potentialCombined = potentialAvg * 0.8 + potentialMax * 0.2;
-  
-  // 基本点（20点満点）
-  const potentialBaseScore = (potentialCombined / 10) * 20;
-  
-  // ボーナス（総合評価3.0以上から加点、1上がるごとに+0.8、最大5点）
+  const potentialBaseScore = (potentialCombined / 10) * 12;
   let potentialBonus = 0;
   if (potentialCombined >= 3.0) {
-    potentialBonus = Math.min(5, (potentialCombined - 3.0) * 0.8 + 0.8);
+    potentialBonus = Math.min(3, (potentialCombined - 3.0) * 0.5 + 0.5);
   }
-  
-  const potentialScore = potentialBaseScore + potentialBonus;
+  potentialScore = potentialBaseScore + potentialBonus;
+  totalScore += potentialScore;
 
   // ============================================================
-  // 着順スコア（10点満点）
+  // 着順スコア（8点満点）
   // ============================================================
   const fin1 = parseInt(toHalfWidth(GET(recent[0] || {}, 'finish', '着順').trim()), 10) || 99;
-  const finishScore = Math.max(0, 10 - (fin1 - 1) * 1);
+  finishScore = Math.max(0, 8 - (fin1 - 1) * 0.8);
+  totalScore += finishScore;
 
   // ============================================================
-  // 着差スコア（10点満点）
+  // 着差スコア（8点満点）
   // ============================================================
   const margin1 = parseFloat(GET(recent[0] || {}, 'margin', '着差') || '0');
-  const marginScoreVal = Math.max(0, 10 - margin1 * 3);
+  marginScoreVal = Math.max(0, 8 - margin1 * 2.5);
+  totalScore += marginScoreVal;
 
   // ============================================================
-  // クラスタタイムスコア（8点満点）
+  // クラスタタイムスコア（6点満点）
   // ============================================================
-  const clusterScore = 4; // 仮実装（後で詳細化可能）
+  clusterScore = 3; // 仮実装
+  totalScore += clusterScore;
 
   // ============================================================
-  // 通過順位×ペーススコア（7点満点）
+  // 通過順位×ペーススコア（6点満点）
   // ============================================================
   const passNums = ['corner2', 'corner3', 'corner4']
     .map(k => {
@@ -413,15 +485,180 @@ export function computeKisoScore(horse: { past: RecordRow[]; entry: RecordRow })
   const pci = parseFloat(GET(recent[0] || {}, 'pci', 'PCI') || '0');
   const paceCat = getPaceCat(surf, dist, pci);
   const passFactor = paceFactorMap[paceCat];
-  const passScore = basePassScore * passFactor * 7;
+  passScore = basePassScore * passFactor * 6;
+  totalScore += passScore;
 
   // ============================================================
-  // 合計スコア（最大100点）
-  // 巻き返し40点 + ポテンシャル25点 + 着順10点 + 着差10点 + クラスタ8点 + 通過7点
+  // 【新規】位置取り改善スコア（8点満点）
+  // 後方競馬から前方へ位置取りが改善した場合に加点
   // ============================================================
-  const totalScore = comebackScore + potentialScore + finishScore + marginScoreVal + clusterScore + passScore;
+  // デバッグ用: 位置取り情報を保存
+  const lastPosition = recent.length > 0 ? getPassingPosition(recent[0]) : 99;
+  const avgPastPosition = recent.length >= 2 ? getAveragePassingPosition(recent, true) : 99;
   
-  return Math.min(100, Math.max(0, +totalScore.toFixed(1)));
+  if (recent.length >= 2) {
+    const fieldSz = parseInt(GET(recent[0], 'fieldSize', '頭数') || '16', 10);
+    
+    const wasBackRunner = avgPastPosition > fieldSz * 0.5;
+    const movedForward = lastPosition <= 5;
+    const positionImprovement = avgPastPosition - lastPosition;
+    
+    if (wasBackRunner && movedForward && positionImprovement >= 3) {
+      // 大幅改善: 最大8点（改善幅×1.2、最大8点）
+      positionImprovementScore = Math.min(8, positionImprovement * 1.2);
+      totalScore += positionImprovementScore;
+    } else if (wasBackRunner && positionImprovement >= 2) {
+      // 小幅改善: 3点
+      positionImprovementScore = 3;
+      totalScore += positionImprovementScore;
+    } else if (wasBackRunner && positionImprovement >= 1) {
+      // 微改善: 1点
+      positionImprovementScore = 1;
+      totalScore += positionImprovementScore;
+    }
+  }
+
+  // ============================================================
+  // 【新規】展開連動スコア（6点満点）
+  // メンバー全体の脚質分布から展開を判断
+  // ============================================================
+  // デバッグ用: 展開連動情報を保存
+  let forwardRate: number | null = null;
+  if (allHorses && allHorses.length > 0) {
+    let forwardRunnerCount = 0;
+    for (const h of allHorses) {
+      const hRecent = filterValidRaces(h.past).slice(0, 1);
+      if (hRecent.length > 0) {
+        const pos = getPassingPosition(hRecent[0]);
+        if (pos <= 3) forwardRunnerCount++;
+      }
+    }
+    
+    forwardRate = forwardRunnerCount / allHorses.length;
+    const myLastPosition = recent.length > 0 ? getPassingPosition(recent[0]) : 99;
+    const iAmForwardRunner = myLastPosition <= 3;
+    const iAmCloser = myLastPosition > 5;
+    
+    // 前方馬が少ない（30%未満）→ 前方馬に大幅加点
+    if (forwardRate < 0.30 && iAmForwardRunner) {
+      paceSyncScore = 6;
+      totalScore += paceSyncScore;
+    }
+    // 前方馬が多い（60%以上）→ 差し馬に大幅加点
+    else if (forwardRate >= 0.60 && iAmCloser) {
+      paceSyncScore = 6;
+      totalScore += paceSyncScore;
+    }
+    // 前方馬がやや少ない（30-40%）→ 前方馬に中程度加点
+    else if (forwardRate < 0.40 && iAmForwardRunner) {
+      paceSyncScore = 3;
+      totalScore += paceSyncScore;
+    }
+    // 前方馬がやや多い（50-60%）→ 差し馬に中程度加点
+    else if (forwardRate >= 0.50 && iAmCloser) {
+      paceSyncScore = 3;
+      totalScore += paceSyncScore;
+    }
+    // 中間的な場合でも小幅加点
+    else if (forwardRate < 0.45 && iAmForwardRunner) {
+      paceSyncScore = 1;
+      totalScore += paceSyncScore;
+    }
+    else if (forwardRate >= 0.55 && iAmCloser) {
+      paceSyncScore = 1;
+      totalScore += paceSyncScore;
+    }
+  }
+
+  // ============================================================
+  // 【新規】コース適性スコア（4点満点）
+  // ============================================================
+  const entryPlace = toHalfWidth(GET(horse.entry, 'place', '場所', '場所_1')).replace(/\s+/g, '');
+  const entrySurface = GET(horse.entry, 'surface', 'トラック種別', 'track_type').trim().charAt(0) as '芝'|'ダ';
+  const entryDistance = parseInt(GET(horse.entry, 'distance', '距離').replace(/[^\d]/g, '') || '0', 10);
+  const entryWaku = parseInt(GET(horse.entry, 'waku', '枠番') || '0', 10);
+  
+  // デバッグ用: コース情報を保存
+  const isTurfStartDirt = isTurfStartDirtCourse(entryPlace, entrySurface, entryDistance);
+  const firstCornerDist = getFirstCornerDistance(entryPlace, entrySurface, entryDistance);
+  
+  // 芝スタートダートで後方馬が位置取り改善できる可能性
+  if (isTurfStartDirt) {
+    const avgPastPos = getAveragePassingPosition(recent, false);
+    const fieldSz = parseInt(GET(horse.entry, 'tosu', '頭数', 'fieldSize', 'field_size') || '16', 10);
+    if (avgPastPos > fieldSz * 0.5) {
+      // 普段後方の馬は前に行ける可能性 → 3点
+      courseFitScore += 3;
+      totalScore += 3;
+    } else if (avgPastPos > fieldSz * 0.3) {
+      // 中団の馬もやや有利 → 1.5点
+      courseFitScore += 1.5;
+      totalScore += 1.5;
+    }
+  }
+  
+  // 初角距離が短いコースで内枠有利
+  if (firstCornerDist < 280 && entryWaku <= 3) {
+    // 内枠（1-3枠）ボーナス → 1点
+    courseFitScore += 1;
+    totalScore += 1;
+  } else if (firstCornerDist < 300 && entryWaku <= 2) {
+    // 最内枠（1-2枠）ボーナス → 0.5点
+    courseFitScore += 0.5;
+    totalScore += 0.5;
+  }
+
+  // ============================================================
+  // 【新規】下級条件連続2着（-4点減点）
+  // ============================================================
+  if (recent.length >= 2) {
+    const finPos1 = parseInt(toHalfWidth(GET(recent[0], 'finish', '着順').trim()), 10);
+    const finPos2 = parseInt(toHalfWidth(GET(recent[1], 'finish', '着順').trim()), 10);
+    const class1 = GET(recent[0], 'クラス名', 'class_name').trim();
+    const class2 = GET(recent[1], 'クラス名', 'class_name').trim();
+    
+    if (finPos1 === 2 && finPos2 === 2 && isLowerClass(class1) && isLowerClass(class2)) {
+      penaltyScore = -4;
+      totalScore -= 4;
+    }
+  }
+
+  const finalScore = Math.min(100, Math.max(0, +totalScore.toFixed(1)));
+  
+  // デバッグモードの場合は詳細情報を返す
+  if (debug) {
+    return {
+      total: finalScore,
+      comeback: +comebackScore.toFixed(2),
+      potential: +(potentialScore).toFixed(2),
+      finish: +finishScore.toFixed(2),
+      margin: +marginScoreVal.toFixed(2),
+      cluster: +clusterScore.toFixed(2),
+      passing: +passScore.toFixed(2),
+      positionImprovement: +positionImprovementScore.toFixed(2),
+      paceSync: +paceSyncScore.toFixed(2),
+      courseFit: +courseFitScore.toFixed(2),
+      penalty: +penaltyScore.toFixed(2),
+      details: {
+        comebackValues: { race1: comeback1, race2: comeback2, race3: comeback3 },
+        potentialValues: { 
+          race1: potential1, 
+          race2: potential2, 
+          race3: potential3, 
+          avg: +potentialAvg.toFixed(2), 
+          max: potentialMax, 
+          combined: +potentialCombined.toFixed(2) 
+        },
+        lastPosition,
+        avgPastPosition: avgPastPosition === 99 ? 99 : +avgPastPosition.toFixed(2),
+        forwardRate: forwardRate === null ? null : +(forwardRate * 100).toFixed(1),
+        isTurfStartDirt,
+        firstCornerDistance: firstCornerDist,
+      },
+    };
+  }
+  
+  return finalScore;
 }
 
 /**
@@ -622,11 +859,114 @@ function computeLocalRaceScore(race: RecordRow, targetClass: string): number {
   return Math.min(100, Math.max(0, +rawScore.toFixed(1)));
 }
 
+/* ------------------------------------------------------------------ */
+/*  新ロジック用ヘルパー関数                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 通過順位を取得（コーナー2または4から）
+ * 
+ * マッピング済みキー: corner4, corner2（mapUmadataToRecordRowで設定）
+ * フォールバック: corner_4, corner_4_position, corner_2（念のため）
+ */
+function getPassingPosition(race: RecordRow): number {
+  // マッピング済みのキーを優先（mapUmadataToRecordRowで設定済み）
+  const corner2 = toHalfWidth(GET(race, 'corner2', 'corner_2')).trim();
+  const corner4 = toHalfWidth(GET(race, 'corner4', 'corner_4', 'corner_4_position')).trim();
+  
+  const c2 = parseInt(corner2.replace(/[^0-9]/g, ''), 10);
+  const c4 = parseInt(corner4.replace(/[^0-9]/g, ''), 10);
+  
+  // 有効な方を返す（両方あればcorner4優先）
+  if (!isNaN(c4) && c4 > 0) return c4;
+  if (!isNaN(c2) && c2 > 0) return c2;
+  return 99;  // データなし
+}
+
+/**
+ * 過去走の平均通過順位を計算（直近N走、前走を除く）
+ */
+function getAveragePassingPosition(races: RecordRow[], excludeFirst: boolean = true): number {
+  const targetRaces = excludeFirst ? races.slice(1) : races;
+  const positions = targetRaces
+    .map(r => getPassingPosition(r))
+    .filter(p => p > 0 && p < 99);
+  
+  if (positions.length === 0) return 99;
+  return positions.reduce((a, b) => a + b, 0) / positions.length;
+}
+
+/**
+ * 下級条件かどうかを判定
+ */
+function isLowerClass(className: string): boolean {
+  if (!className) return false;
+  const normalized = toHalfWidth(className).toLowerCase();
+  return /新馬|未勝利|1勝/.test(normalized);
+}
+
+/**
+ * 芝スタートダートコースかどうかを判定
+ */
+const TURF_START_DIRT_COURSES: Record<string, number[]> = {
+  '東京': [1300, 1400, 1600, 2100],
+  '中山': [1200],
+  '阪神': [1200, 1400],
+  '京都': [1200, 1400],
+  '中京': [1200, 1400],
+  '新潟': [1200],
+  '福島': [1150],
+  '小倉': [1000],
+  '札幌': [1000],
+  '函館': [1000],
+};
+
+function isTurfStartDirtCourse(place: string, surface: string, distance: number): boolean {
+  if (surface !== 'ダ' && surface !== 'ダート') return false;
+  const distances = TURF_START_DIRT_COURSES[place];
+  if (!distances) return false;
+  return distances.includes(distance);
+}
+
+/**
+ * 初角までの距離（短いコースは内枠有利）
+ */
+const FIRST_CORNER_DISTANCE: Record<string, Record<string, number>> = {
+  '中山': { '芝1200': 200, '芝1600': 240, '芝1800': 306, 'ダ1200': 290, 'ダ1800': 340 },
+  '東京': { '芝1400': 350, '芝1600': 542, '芝1800': 342, 'ダ1400': 440, 'ダ1600': 640 },
+  '阪神': { '芝1200': 200, '芝1400': 304, '芝1600': 442, 'ダ1200': 264, 'ダ1400': 352 },
+  '京都': { '芝1200': 220, '芝1400': 350, '芝1600': 450, 'ダ1200': 280, 'ダ1400': 400, 'ダ1800': 286 },
+  '中京': { '芝1200': 280, '芝1400': 380, 'ダ1200': 310, 'ダ1400': 410 },
+  '新潟': { '芝1000': 100, '芝1200': 200, '芝1400': 300, 'ダ1200': 250 },
+  '福島': { '芝1200': 260, '芝1800': 460, 'ダ1150': 230, 'ダ1700': 290 },
+  '小倉': { '芝1200': 200, '芝1800': 310, 'ダ1000': 150, 'ダ1700': 300 },
+  '札幌': { '芝1200': 290, '芝1800': 390, 'ダ1000': 180, 'ダ1700': 380 },
+  '函館': { '芝1200': 250, '芝1800': 350, 'ダ1000': 180, 'ダ1700': 360 },
+};
+
+function getFirstCornerDistance(place: string, surface: string, distance: number): number {
+  const key = `${surface}${distance}`;
+  return FIRST_CORNER_DISTANCE[place]?.[key] || 999;
+}
+
 /**
  * 地方競馬を含む競うスコア計算（改良版：indicesテーブルの指数を使用）
+ * 
+ * 配点（合計100点）:
+ * - 巻き返し指数: 35点
+ * - ポテンシャル指数: 15点
+ * - 着順: 8点
+ * - 着差: 8点
+ * - クラスタタイム: 6点
+ * - 通過順位×ペース: 6点
+ * - 位置取り改善: 8点（新規）
+ * - 展開連動: 6点（新規）
+ * - コース適性: 4点（新規）
+ * - 下級条件連続2着: -4点（減点、新規）
+ * 
  * @returns { score: number, hasData: boolean } - score: 0〜100のスコア、hasData: 前走データの有無
  */
-export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: RecordRow }): { score: number; hasData: boolean } {
+export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: RecordRow }, allHorses?: { past: RecordRow[]; entry: RecordRow }[]): { score: number; hasData: boolean } {
   // 有効なレースのみをフィルタリング（競走除外、失格、中止等を除く）
   const validPastRaces = filterValidRaces(horse.past);
   const recent = validPastRaces.slice(0, 5);  // 直近5走（有効なもののみ）
@@ -640,10 +980,10 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
   let totalScore = 0;
   
   // ============================================================
-  // 巻き返し指数スコア（50点満点）
+  // 巻き返し指数スコア（35点満点）
   // indicesテーブルのmakikaeshiを使用、地方競馬は別ロジック
   // ============================================================
-  const weights = [35, 10, 5];  // 前走、2走前、3走前の重み
+  const comebackWeights = [25, 6, 4];  // 前走、2走前、3走前の重み
   
   for (let i = 0; i < 3; i++) {
     const race = recent[i];
@@ -654,11 +994,11 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
     if (isLocalTrack(place)) {
       // 地方競馬の場合
       const localScore = computeLocalRaceScore(race, targetClass);
-      totalScore += (localScore / 100) * weights[i];
+      totalScore += (localScore / 100) * comebackWeights[i];
     } else {
       // 中央競馬の場合（indicesテーブルのmakikaeshiを使用）
       const comeback = getIndexValue(race, 'makikaeshi');
-      totalScore += (comeback / 10) * weights[i];
+      totalScore += (comeback / 10) * comebackWeights[i];
     }
   }
   
@@ -687,21 +1027,21 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
   // ============================================================
   const race1 = recent[0];
   if (race1) {
-    // 着順スコア（10点満点）
+    // 着順スコア（8点満点）
     const fin1 = parseInt(toHalfWidth(GET(race1, 'finish', '着順').trim()), 10) || 99;
-    const finishScore = Math.max(0, 10 - (fin1 - 1) * 1);
+    const finishScore = Math.max(0, 8 - (fin1 - 1) * 0.8);
     totalScore += finishScore;
     
-    // 着差スコア（10点満点）
+    // 着差スコア（8点満点）
     const margin1 = parseFloat(GET(race1, 'margin', '着差') || '0');
-    const marginScoreVal = Math.max(0, 10 - margin1 * 3);
+    const marginScoreVal = Math.max(0, 8 - margin1 * 2.5);
     totalScore += marginScoreVal;
     
-    // クラスタタイムスコア（8点満点）
-    const clusterScore = 4; // 仮実装
+    // クラスタタイムスコア（6点満点）
+    const clusterScore = 3; // 仮実装
     totalScore += clusterScore;
     
-    // 通過順位×ペーススコア（7点満点）
+    // 通過順位×ペーススコア（6点満点）
     const passNums = ['corner2', 'corner3', 'corner4']
       .map(k => {
         const raw = toHalfWidth(GET(race1, k, k).trim());
@@ -721,8 +1061,133 @@ export function computeKisoScoreWithLocalEx(horse: { past: RecordRow[]; entry: R
     const pci = parseFloat(GET(race1, 'pci', 'PCI') || '0');
     const paceCat = getPaceCat(surf, dist, pci);
     const passFactor = paceFactorMap[paceCat];
-    const passScore = basePassScore * passFactor * 7;
+    const passScore = basePassScore * passFactor * 6;
     totalScore += passScore;
+  }
+  
+  // ============================================================
+  // 【新規】位置取り改善スコア（8点満点）
+  // 過去走で後方競馬が続いていた馬が、前走で前方に位置取りできた場合に加点
+  // ============================================================
+  if (recent.length >= 2) {
+    const lastPosition = getPassingPosition(recent[0]);
+    const avgPastPosition = getAveragePassingPosition(recent, true);  // 前走を除く過去走の平均
+    const fieldSize = parseInt(GET(recent[0], 'fieldSize', '頭数') || '16', 10);
+    
+    // 過去走で後方競馬（頭数の半分より後ろ）が続いていた場合
+    const wasBackRunner = avgPastPosition > fieldSize * 0.5;
+    
+    // 前走で前方（5番手以内）に位置取りできた
+    const movedForward = lastPosition <= 5;
+    
+    // 位置の改善幅（大きいほど評価）
+    const positionImprovement = avgPastPosition - lastPosition;
+    
+    if (wasBackRunner && movedForward && positionImprovement >= 3) {
+      // 後方→前方への大幅な位置取り改善は高評価（最大8点）
+      const improvementScore = Math.min(8, positionImprovement * 1.2);
+      totalScore += improvementScore;
+    } else if (wasBackRunner && positionImprovement >= 2) {
+      // 後方競馬からの改善（小幅）
+      totalScore += 3;
+    } else if (wasBackRunner && positionImprovement >= 1) {
+      // 微改善
+      totalScore += 1;
+    }
+  }
+  
+  // ============================================================
+  // 【新規】展開連動スコア（6点満点）
+  // メンバー内の脚質分布から展開を判断し、有利な脚質に加点
+  // ============================================================
+  if (allHorses && allHorses.length > 0) {
+    // メンバー全体で「前走3番手以内」の馬をカウント
+    let forwardRunnerCount = 0;
+    for (const h of allHorses) {
+      const hRecent = filterValidRaces(h.past).slice(0, 1);
+      if (hRecent.length > 0) {
+        const pos = getPassingPosition(hRecent[0]);
+        if (pos <= 3) forwardRunnerCount++;
+      }
+    }
+    
+    const forwardRate = forwardRunnerCount / allHorses.length;
+    const myLastPosition = recent.length > 0 ? getPassingPosition(recent[0]) : 99;
+    const iAmForwardRunner = myLastPosition <= 3;
+    const iAmCloser = myLastPosition > 5;
+    
+    // 前方馬が少ない（30%未満）→ 前方馬に大幅加点
+    if (forwardRate < 0.30 && iAmForwardRunner) {
+      totalScore += 6;
+    }
+    // 前方馬が多い（60%以上）→ 差し馬に大幅加点
+    else if (forwardRate >= 0.60 && iAmCloser) {
+      totalScore += 6;
+    }
+    // 前方馬がやや少ない（30-40%）→ 前方馬に中程度加点
+    else if (forwardRate < 0.40 && iAmForwardRunner) {
+      totalScore += 3;
+    }
+    // 前方馬がやや多い（50-60%）→ 差し馬に中程度加点
+    else if (forwardRate >= 0.50 && iAmCloser) {
+      totalScore += 3;
+    }
+    // 中間的な場合でも小幅加点
+    else if (forwardRate < 0.45 && iAmForwardRunner) {
+      totalScore += 1;
+    }
+    else if (forwardRate >= 0.55 && iAmCloser) {
+      totalScore += 1;
+    }
+  }
+  
+  // ============================================================
+  // 【新規】コース適性スコア（4点満点）
+  // 芝スタートダート・初角距離による枠有利を加味
+  // ============================================================
+  const entryPlace = toHalfWidth(GET(horse.entry, 'place', '場所', '場所_1')).replace(/\s+/g, '');
+  const entrySurface = GET(horse.entry, 'surface', 'トラック種別', 'track_type').trim().charAt(0) as '芝'|'ダ';
+  const entryDistance = parseInt(GET(horse.entry, 'distance', '距離').replace(/[^\d]/g, '') || '0', 10);
+  const entryWaku = parseInt(GET(horse.entry, 'waku', '枠番') || '0', 10);
+  
+  // 芝スタートダートで後方馬が位置取り改善できる可能性
+  if (isTurfStartDirtCourse(entryPlace, entrySurface, entryDistance)) {
+    const avgPastPosition = getAveragePassingPosition(recent, false);
+    const fieldSize = parseInt(GET(horse.entry, 'tosu', '頭数', 'fieldSize', 'field_size') || '16', 10);
+    
+    // 普段後方の馬は前に行ける可能性 → 3点
+    if (avgPastPosition > fieldSize * 0.5) {
+      totalScore += 3;
+    } else if (avgPastPosition > fieldSize * 0.3) {
+      // 中団の馬もやや有利 → 1.5点
+      totalScore += 1.5;
+    }
+  }
+  
+  // 初角距離が短いコースで内枠有利
+  const firstCornerDist = getFirstCornerDistance(entryPlace, entrySurface, entryDistance);
+  if (firstCornerDist < 280 && entryWaku <= 3) {
+    // 内枠（1-3枠）ボーナス → 1点
+    totalScore += 1;
+  } else if (firstCornerDist < 300 && entryWaku <= 2) {
+    // 最内枠（1-2枠）ボーナス → 0.5点
+    totalScore += 0.5;
+  }
+  
+  // ============================================================
+  // 【新規】下級条件連続2着（-4点減点）
+  // 未勝利/1勝クラスで連続2着は過信禁物
+  // ============================================================
+  if (recent.length >= 2) {
+    const fin1 = parseInt(toHalfWidth(GET(recent[0], 'finish', '着順').trim()), 10);
+    const fin2 = parseInt(toHalfWidth(GET(recent[1], 'finish', '着順').trim()), 10);
+    const class1 = GET(recent[0], 'クラス名', 'class_name').trim();
+    const class2 = GET(recent[1], 'クラス名', 'class_name').trim();
+    
+    // 連続2着かつ下級条件
+    if (fin1 === 2 && fin2 === 2 && isLowerClass(class1) && isLowerClass(class2)) {
+      totalScore -= 4;
+    }
   }
   
   return { score: Math.min(100, Math.max(0, +totalScore.toFixed(1))), hasData: true };

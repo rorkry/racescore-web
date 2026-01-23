@@ -690,6 +690,24 @@ export default function AdminPage() {
                           <span className="ml-2 text-green-700">→ {job.fine_tuned_model.slice(-20)}</span>
                         )}
                       </div>
+                      {job.status === 'failed' && (
+                        <button
+                          onClick={async () => {
+                            const res = await fetch('/api/admin/fine-tune', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'status', jobId: job.id }),
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              alert(`失敗理由:\n${data.job.error?.message || '不明なエラー'}`);
+                            }
+                          }}
+                          className="mt-1 text-red-600 underline text-xs"
+                        >
+                          失敗理由を確認
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
