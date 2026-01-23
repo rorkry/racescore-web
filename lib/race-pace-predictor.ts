@@ -573,7 +573,7 @@ async function calculateAvgIndicesForDistance(
     const raceIdsQuery = `
       SELECT DISTINCT 
         race_id, 
-        horse_number, 
+        umaban, 
         corner_2,
         date,
         distance
@@ -584,7 +584,7 @@ async function calculateAvgIndicesForDistance(
     
     const allRaceRecords = await db.prepare(raceIdsQuery).all(horseName) as Array<{
       race_id: string;
-      horse_number: string;
+      umaban: string;
       corner_2: string;
       date: string;
       distance: string;
@@ -633,7 +633,7 @@ async function calculateAvgIndicesForDistance(
       
       // 18桁のrace_idを構築
       const raceId16 = record.race_id;
-      const horseNum = record.horse_number.padStart(2, '0');
+      const horseNum = record.umaban.padStart(2, '0');
       const fullRaceId = raceId16 + horseNum;
       
       // indicesテーブルからT2F、L4F、potential、makikaeshiを取得
@@ -738,7 +738,7 @@ async function getLastRaceData(
   try {
     // umadataから前走を取得
     const query = `
-      SELECT race_id, horse_number, corner_1, corner_2, date, distance
+      SELECT race_id, umaban, corner_1, corner_2, date, distance
       FROM umadata
       WHERE horse_name = $1
       ORDER BY race_id DESC
@@ -747,7 +747,7 @@ async function getLastRaceData(
     
     const allRecords = await db.prepare(query).all(horseName) as Array<{
       race_id: string;
-      horse_number: string;
+      umaban: string;
       corner_1: string;
       corner_2: string;
       date: string;
@@ -772,7 +772,7 @@ async function getLastRaceData(
     
     // indicesテーブルからT2Fを取得
     const raceId16 = lastRace.race_id;
-    const horseNum = lastRace.horse_number?.padStart(2, '0') || '00';
+    const horseNum = lastRace.umaban?.padStart(2, '0') || '00';
     const fullRaceId = raceId16 + horseNum;
     
     const indexQuery = `SELECT "T2F" FROM indices WHERE race_id = $1`;
