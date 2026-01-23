@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getRawDb } from '../../lib/db';
-import { computeKisoScore } from '../../utils/getClusterData';
+import { computeKisoScore, KisoScoreBreakdown } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
 
@@ -498,7 +498,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // スコア計算（全馬データを渡して展開連動スコアも計算）
       let score = 0;
       try {
-        score = computeKisoScore({ past: pastRaces, entry: entryRow }, allHorseData);
+        // デバッグモード: 最初の3頭のみ詳細ログ出力（Railwayレート制限対策）
+        const isDebugSample = horseIndex < 3;
+        const scoreResult = computeKisoScore({ past: pastRaces, entry: entryRow }, allHorseData, isDebugSample);
+        
+        if (isDebugSample && typeof scoreResult !== 'number') {
+          // デバッグ情報がある場合のみログ出力
+          const breakdown = scoreResult;
+          const horseName = GET(horse, 'umamei');
+          console.log(`[kiso-score] ${horseName} (${horseIndex + 1}頭目):`, {
+            total: breakdown.total,
+            newLogic: {
+              positionImprovement: breakdown.positionImprovement,
+              paceSync: breakdown.paceSync,
+              courseFit: breakdown.courseFit,
+            },
+            details: {
+              lastPosition: breakdown.details.lastPosition,
+              avgPastPosition: breakdown.details.avgPastPosition,
+              forwardRate: breakdown.details.forwardRate,
+              isTurfStartDirt: breakdown.details.isTurfStartDirt,
+            }
+          });
+          score = breakdown.total;
+        } else {
+          score = typeof scoreResult === 'number' ? scoreResult : scoreResult.total;
+        }
       } catch (scoreError: any) {
         console.error('Score calculation error for', GET(horse, 'umamei'), ':', scoreError.message);
         score = 0;
