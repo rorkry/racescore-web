@@ -378,6 +378,15 @@ textarea {
   background: #047857; /* emerald-700 */
 }
 
+/* スクロールバー非表示（モバイル横スクロール用） */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .mobile-card {
     padding: 12px !important;

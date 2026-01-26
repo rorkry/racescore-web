@@ -12,6 +12,7 @@ import BabaMemoForm from '@/app/components/BabaMemoForm';
 import RaceMemoForm from '@/app/components/RaceMemoForm';
 import InlineMarkSelector, { type MarkType, getMarkColor } from '@/app/components/InlineMarkSelector';
 import { useFeatureAccess } from '@/app/components/FloatingActionButton';
+import PastRaceDetail from '@/app/components/PastRaceDetail';
 import { useRacePredictions } from '@/hooks/useRacePredictions';
 import { useSession } from '@/app/components/Providers';
 import { 
@@ -31,14 +32,25 @@ interface PastRaceIndices {
   cushion: number | null;
 }
 
+interface RaceLevelInfo {
+  level: string;
+  levelLabel: string;
+  totalHorsesRun: number;
+  firstRunGoodCount: number;
+  winCount: number;
+  aiComment: string;
+}
+
 interface PastRace {
   date: string;
   distance: string;
   class_name: string;
+  race_name?: string;
   finish_position: string;
   finish_time: string;
   margin: string;
   index_value: string;
+  corner_1?: string;
   corner_2: string;
   corner_3: string;
   corner_4: string;
@@ -47,8 +59,11 @@ interface PastRace {
   track_condition: string;
   place: string;
   race_number?: string;
+  jockey?: string;
+  lap_time?: string;
   indices?: PastRaceIndices | null;
   indexRaceId?: string;
+  raceLevel?: RaceLevelInfo | null;
 }
 
 interface Race {
@@ -1115,109 +1130,6 @@ export default function RaceCardPage() {
     }
   };
 
-  const PastRaceDetail = ({ pastRaces }: { pastRaces: PastRace[] }) => {
-    if (!pastRaces || pastRaces.length === 0) {
-      return <div className="text-slate-500 text-xs sm:text-sm p-2 sm:p-4">過去走データなし</div>;
-    }
-
-    return (
-      <div className="overflow-x-auto -mx-2 sm:mx-0">
-        <table className="min-w-max text-[10px] sm:text-sm border-collapse">
-          <thead>
-            <tr className="bg-slate-200">
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">日付</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">場所</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">クラス</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">距離</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">人気</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">着順</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">着差</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-700 whitespace-nowrap font-semibold">通過</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">巻返し</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">L4F</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">T2F</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">ポテ</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">レボ</th>
-              <th className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-emerald-800 bg-emerald-100 whitespace-nowrap font-semibold">クッション</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pastRaces.map((race, idx) => {
-              const passing = [race.corner_2, race.corner_3, race.corner_4]
-                .filter(c => c && c !== '')
-                .join('-');
-              const clickable = isDateClickable(race.date);
-              
-              // レースメモの存在チェック
-              const pastRaceKey = race.date && race.place && race.race_number 
-                ? `${race.date}_${race.place}_${race.race_number}` 
-                : null;
-              const hasMemo = pastRaceKey ? raceMemos.has(pastRaceKey) : false;
-              const memoContent = pastRaceKey ? raceMemos.get(pastRaceKey) : null;
-              
-              return (
-                <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-100'}>
-                  <td 
-                    className={`border border-slate-300 px-1 sm:px-2 py-1 text-center whitespace-nowrap ${
-                      clickable ? 'text-emerald-700 underline cursor-pointer hover:bg-emerald-50 font-medium' : 'text-slate-800'
-                    }`}
-                    onClick={() => clickable && navigateToDate(race.date)}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span>{race.date || '-'}</span>
-                      {hasMemo && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPastRaceMemoPopup({
-                              raceKey: pastRaceKey!,
-                              raceTitle: `${race.place} ${race.race_number}R ${race.class_name || ''}`,
-                              memo: memoContent || ''
-                            });
-                          }}
-                          className="text-amber-500 hover:text-amber-600 text-xs"
-                          title="レースメモを見る"
-                        >
-                          📝
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.place || '-'}</td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap">{race.class_name || '-'}</td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap tabular-nums">{race.distance || '-'}</td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 tabular-nums">{race.popularity || '-'}</td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center tabular-nums ${getFinishColor(race.finish_position || '')}`}>{toHalfWidth(race.finish_position || '-')}</td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800">{race.margin || '-'}</td>
-                  <td className="border border-slate-300 px-1 sm:px-2 py-1 text-center text-slate-800 whitespace-nowrap tabular-nums">{passing || '-'}</td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.makikaeshi != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.makikaeshi != null ? Number(race.indices.makikaeshi).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.L4F != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.L4F != null ? Number(race.indices.L4F).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.T2F != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.T2F != null ? Number(race.indices.T2F).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.potential != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.potential != null ? Number(race.indices.potential).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.revouma != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.revouma != null ? Number(race.indices.revouma).toFixed(1) : '-'}
-                  </td>
-                  <td className={`border border-slate-300 px-1 sm:px-2 py-1 text-center bg-emerald-50 tabular-nums ${race.indices?.cushion != null ? 'text-emerald-800 font-semibold' : 'text-slate-400'}`}>
-                    {race.indices?.cushion != null ? Number(race.indices.cushion).toFixed(1) : '-'}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <p className="text-[10px] sm:text-xs text-slate-500 mt-2">※ 横スクロールで指数データを確認できます</p>
-      </div>
-    );
-  };
-
   return (
     <div className="racecard-page overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
@@ -1646,11 +1558,20 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-100">
-                                <div className="text-xs sm:text-sm font-bold mb-2 text-emerald-700">
+                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-50">
+                                <div className="text-xs sm:text-sm font-bold mb-3 text-emerald-700">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>
-                                <PastRaceDetail pastRaces={horse.past} />
+                                <PastRaceDetail 
+                                  pastRaces={horse.past}
+                                  isPremium={showSagaAI}
+                                  onDateClick={navigateToDate}
+                                  isDateClickable={isDateClickable}
+                                  raceMemos={raceMemos}
+                                  onMemoClick={(raceKey, raceTitle, memo) => 
+                                    setPastRaceMemoPopup({ raceKey, raceTitle, memo })
+                                  }
+                                />
                               </td>
                             </tr>
                           )}
