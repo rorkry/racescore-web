@@ -625,14 +625,15 @@ function MobileRaceCard({
   return (
     <div 
       className={cn(
-        'flex-shrink-0 transition-all duration-200',
-        isExpanded ? 'w-72' : 'w-32'
+        'flex-shrink-0 transition-all duration-200 snap-start',
+        isExpanded ? 'w-72 z-10 relative' : 'w-32'
       )}
     >
       <div 
         className={cn(
-          'bg-white border rounded-xl h-full flex',
+          'bg-white border rounded-xl h-full flex shadow-sm',
           'transition-all active:scale-[0.98]',
+          isExpanded ? 'shadow-lg' : '',
           badges.some(b => b.level === 'high') ? 'border-red-300' : 'border-slate-200'
         )}
         onClick={onToggle}
