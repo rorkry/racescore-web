@@ -16,6 +16,7 @@ interface BabaMemo {
   id: string;
   date: string;
   place: string;
+  track_type: string;  // 芝 | ダート
   course_type: string | null;
   course_condition: string | null;
   advantage_position: string | null;
@@ -126,21 +127,19 @@ export default function MyMemosPage() {
       <div className="flex gap-2 mb-6">
         <button
           onClick={() => setTab('race')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            tab === 'race' 
-              ? 'bg-green-600 text-white' 
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${tab === 'race'
+              ? 'bg-green-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+            }`}
         >
           レースメモ ({raceMemos.length})
         </button>
         <button
           onClick={() => setTab('baba')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            tab === 'baba' 
-              ? 'bg-green-600 text-white' 
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${tab === 'baba'
+              ? 'bg-green-600 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+            }`}
         >
           馬場メモ ({babaMemos.length})
         </button>
@@ -211,6 +210,12 @@ export default function MyMemosPage() {
                         <span className="text-sm font-bold text-gray-800 tabular-nums">{memo.date}</span>
                         <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded font-medium">
                           {memo.place}
+                        </span>
+                        <span className={`px-2 py-0.5 text-xs rounded font-medium ${memo.track_type === '芝'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-amber-100 text-amber-700'
+                          }`}>
+                          {memo.track_type}
                         </span>
                       </div>
                       <p className="text-gray-700 font-medium">{generateBabaSummary(memo)}</p>

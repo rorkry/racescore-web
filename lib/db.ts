@@ -33,7 +33,7 @@ class DatabaseWrapper {
   /** 単一行を取得 */
   prepare(sql: string) {
     const convertedSql = convertSql(sql);
-    
+
     return {
       /** 単一行取得（SQLiteのgetに相当） */
       get: async <T = Record<string, unknown>>(...params: unknown[]): Promise<T | undefined> => {
@@ -45,7 +45,7 @@ class DatabaseWrapper {
           throw error;
         }
       },
-      
+
       /** 複数行取得（SQLiteのallに相当） */
       all: async <T = Record<string, unknown>>(...params: unknown[]): Promise<T[]> => {
         try {
@@ -56,7 +56,7 @@ class DatabaseWrapper {
           throw error;
         }
       },
-      
+
       /** 実行（INSERT/UPDATE/DELETE）（SQLiteのrunに相当） */
       run: async (...params: unknown[]): Promise<{ changes: number; lastInsertRowid?: number }> => {
         try {
@@ -77,7 +77,7 @@ class DatabaseWrapper {
       .split(';')
       .map(s => s.trim())
       .filter(s => s.length > 0);
-    
+
     for (const statement of statements) {
       try {
         const converted = convertDatetime(statement);
@@ -298,7 +298,7 @@ async function initDb(database: DatabaseWrapper) {
       free_memo TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW(),
-      UNIQUE (user_id, date, track_type)
+      UNIQUE (user_id, date, place, track_type)
     )
   `);
 
@@ -455,7 +455,7 @@ let initialized = false;
 export async function getDbAsync(): Promise<DatabaseWrapper> {
   if (!db) {
     db = new DatabaseWrapper();
-    
+
     if (!initialized) {
       await initDb(db);
       initialized = true;
@@ -471,7 +471,7 @@ export async function getDbAsync(): Promise<DatabaseWrapper> {
 export function getDb(): DatabaseWrapper {
   if (!db) {
     db = new DatabaseWrapper();
-    
+
     // 初期化は非同期で行う（最初のクエリ時に自動的にテーブルが作成される）
     if (!initialized) {
       initDb(db).then(() => {

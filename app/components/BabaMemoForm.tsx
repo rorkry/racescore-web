@@ -6,7 +6,7 @@ import { useSession } from './Providers';
 interface BabaMemoFormProps {
   date: string;
   trackType: '芝' | 'ダート';  // レースのトラックタイプ
-  place?: string;  // 競馬場名（参考情報として）
+  place: string;  // 競馬場名（必須）
   onSaved?: () => void;
 }
 
@@ -37,7 +37,7 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
   const fetchExistingMemo = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/user/baba-memos?date=${date}&trackType=${trackType}`);
+      const res = await fetch(`/api/user/baba-memos?date=${date}&place=${encodeURIComponent(place)}&trackType=${trackType}`);
       if (res.ok) {
         const data = await res.json();
         if (data.memo) {
@@ -57,7 +57,7 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
   };
 
   const toggleSpecialNote = (note: string) => {
-    setSpecialNotes(prev => 
+    setSpecialNotes(prev =>
       prev.includes(note) ? prev.filter(n => n !== note) : [...prev, note]
     );
   };
@@ -79,7 +79,7 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
 
     setSaving(true);
     setMessage('');
-    
+
     try {
       const res = await fetch('/api/user/baba-memos', {
         method: 'POST',
@@ -138,9 +138,8 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
       <div className="bg-gray-50 rounded-lg p-3 flex items-center justify-between">
         <div>
           <span className="text-lg font-bold text-gray-800">{date}</span>
-          <span className={`ml-2 px-2 py-0.5 rounded text-sm font-bold ${
-            trackType === '芝' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-          }`}>
+          <span className={`ml-2 px-2 py-0.5 rounded text-sm font-bold ${trackType === '芝' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+            }`}>
             {trackType}
           </span>
         </div>
@@ -159,11 +158,10 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
             <button
               key={pos}
               onClick={() => setAdvantagePosition(pos)}
-              className={`px-3 py-2 rounded-lg font-medium transition-all flex-1 text-sm ${
-                advantagePosition === pos 
-                  ? 'bg-amber-500 text-white' 
+              className={`px-3 py-2 rounded-lg font-medium transition-all flex-1 text-sm ${advantagePosition === pos
+                  ? 'bg-amber-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+                }`}
             >
               {pos}
             </button>
@@ -179,11 +177,10 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
             <button
               key={style}
               onClick={() => setAdvantageStyle(style)}
-              className={`px-3 py-2 rounded-lg font-medium transition-all text-sm ${
-                advantageStyle === style 
-                  ? 'bg-purple-600 text-white' 
+              className={`px-3 py-2 rounded-lg font-medium transition-all text-sm ${advantageStyle === style
+                  ? 'bg-purple-600 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+                }`}
             >
               {style}
             </button>
@@ -199,11 +196,10 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
             <button
               key={note}
               onClick={() => toggleSpecialNote(note)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                specialNotes.includes(note) 
-                  ? 'bg-red-500 text-white' 
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${specialNotes.includes(note)
+                  ? 'bg-red-500 text-white'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+                }`}
             >
               {note}
             </button>
@@ -233,11 +229,10 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
 
       {/* メッセージ */}
       {message && (
-        <div className={`p-3 rounded-lg text-sm text-center ${
-          message.includes('エラー') || message.includes('失敗') || message.includes('必要')
+        <div className={`p-3 rounded-lg text-sm text-center ${message.includes('エラー') || message.includes('失敗') || message.includes('必要')
             ? 'bg-red-50 text-red-700'
             : 'bg-green-50 text-green-700'
-        }`}>
+          }`}>
           {message}
         </div>
       )}
@@ -246,17 +241,16 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
       <button
         onClick={handleSave}
         disabled={saving}
-        className={`w-full py-3 text-white rounded-lg font-medium transition-colors disabled:opacity-50 ${
-          trackType === '芝' 
-            ? 'bg-green-600 hover:bg-green-700' 
+        className={`w-full py-3 text-white rounded-lg font-medium transition-colors disabled:opacity-50 ${trackType === '芝'
+            ? 'bg-green-600 hover:bg-green-700'
             : 'bg-amber-600 hover:bg-amber-700'
-        }`}
+          }`}
       >
         {saving ? '保存中...' : existingMemo ? '更新する' : '保存する'}
       </button>
 
       <p className="text-xs text-gray-400 text-center text-pretty">
-        同じ日の{trackType}レース全てでこのメモが共有されます
+        {place}の同じ日の{trackType}レース全てでこのメモが共有されます
       </p>
     </div>
   );

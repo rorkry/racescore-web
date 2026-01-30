@@ -30,24 +30,34 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
     const trackType = searchParams.get('trackType');
+    const place = searchParams.get('place');
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    if (date && trackType) {
+    // 日付・開催場・トラックタイプすべて指定された場合（特定の馬場メモ取得）
+    if (date && place && trackType) {
       const memo = await db.prepare(
-        'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?'
-      ).get<DbBabaMemo>(user.id, date, trackType);
+        'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? AND place = ? AND track_type = ?'
+      ).get<DbBabaMemo>(user.id, date, place, trackType);
       return NextResponse.json({ memo: memo || null });
-    } else if (date) {
+    } else if (date && place) {
+      // 日付と開催場が指定された場合（特定の競馬場の芝・ダート両方取得）
       const memos = await db.prepare(
-        'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? ORDER BY track_type'
+        'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? AND place = ? ORDER BY track_type'
+      ).all<DbBabaMemo>(user.id, date, place);
+      return NextResponse.json({ memos });
+    } else if (date) {
+      // 日付のみ指定された場合（その日の全開催場のメモ取得）
+      const memos = await db.prepare(
+        'SELECT * FROM baba_memos WHERE user_id = ? AND date = ? ORDER BY place, track_type'
       ).all<DbBabaMemo>(user.id, date);
       return NextResponse.json({ memos });
     } else {
+      // 何も指定なし（履歴一覧）
       const memos = await db.prepare(
-        'SELECT * FROM baba_memos WHERE user_id = ? ORDER BY date DESC, track_type LIMIT 100'
+        'SELECT * FROM baba_memos WHERE user_id = ? ORDER BY date DESC, place, track_type LIMIT 100'
       ).all<DbBabaMemo>(user.id);
       return NextResponse.json({ memos });
     }
@@ -66,9 +76,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { date, trackType, place, courseType, courseCondition, advantagePosition, advantageStyle, weatherNote, freeMemo } = await request.json();
-    
-    if (!date || !trackType) {
-      return NextResponse.json({ error: '日付とトラックタイプ（芝/ダート）は必須です' }, { status: 400 });
+
+    if (!date || !trackType || !place) {
+      return NextResponse.json({ error: '日付、開催場、トラックタイプ（芝/ダート）は必須です' }, { status: 400 });
     }
 
     const db = getDb();
@@ -77,8 +87,8 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
     const existing = await db.prepare(
-      'SELECT id FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?'
-    ).get<{ id: string }>(user.id, date, trackType);
+      'SELECT id FROM baba_memos WHERE user_id = ? AND date = ? AND place = ? AND track_type = ?'
+    ).get<{ id: string }>(user.id, date, place, trackType);
 
     if (existing) {
       await db.prepare(`
@@ -114,16 +124,17 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
     const trackType = searchParams.get('trackType');
+    const place = searchParams.get('place');
 
-    if (!date || !trackType) {
-      return NextResponse.json({ error: '日付とトラックタイプは必須です' }, { status: 400 });
+    if (!date || !trackType || !place) {
+      return NextResponse.json({ error: '日付、開催場、トラックタイプは必須です' }, { status: 400 });
     }
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    await db.prepare('DELETE FROM baba_memos WHERE user_id = ? AND date = ? AND track_type = ?').run(user.id, date, trackType);
+    await db.prepare('DELETE FROM baba_memos WHERE user_id = ? AND date = ? AND place = ? AND track_type = ?').run(user.id, date, place, trackType);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Baba memo delete error:', error);
