@@ -27,16 +27,17 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
     const placeholders = raceIds.map((_, i) => `$${i + 1}`).join(', ');
-    const result = await db.query<{ race_id: string; horse_name: string }>(
+    const rows = await db.query<{ race_id: string; horse_name: string }>(
       `SELECT DISTINCT ON (race_id) race_id, horse_name
        FROM umadata
        WHERE race_id IN (${placeholders})
-         AND finish_position = '1'`,
+         AND finish_position = '1'
+       ORDER BY race_id`,
       raceIds
     );
 
     const winners: Record<string, string> = {};
-    for (const row of result.rows) {
+    for (const row of rows) {
       winners[row.race_id] = row.horse_name;
     }
 

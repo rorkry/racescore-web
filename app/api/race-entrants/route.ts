@@ -23,16 +23,26 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
     const entrants = await db.query<RaceEntrant>(
-      `SELECT horse_name, finish_position, umaban, popularity
+      `SELECT DISTINCT ON (umaban) horse_name, finish_position, umaban, popularity
        FROM umadata
        WHERE race_id = $1
        ORDER BY
-         CASE WHEN finish_position ~ '^[0-9]+$' THEN finish_position::INTEGER ELSE 999 END,
-         CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 99 END`,
+         umaban,
+         CASE WHEN finish_position ~ '^[0-9]+$' THEN finish_position::INTEGER ELSE 999 END`,
       [raceId]
     );
 
-    return NextResponse.json({ entrants });
+    // umaban 順 → 着順でソートし直す
+    const sorted = [...entrants].sort((a, b) => {
+      const posA = /^\d+$/.test(a.finish_position) ? parseInt(a.finish_position) : 999;
+      const posB = /^\d+$/.test(b.finish_position) ? parseInt(b.finish_position) : 999;
+      if (posA !== posB) return posA - posB;
+      const umaA = /^\d+$/.test(a.umaban) ? parseInt(a.umaban) : 99;
+      const umaB = /^\d+$/.test(b.umaban) ? parseInt(b.umaban) : 99;
+      return umaA - umaB;
+    });
+
+    return NextResponse.json({ entrants: sorted });
   } catch (error) {
     console.error('[race-entrants] Error:', error);
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
