@@ -47,6 +47,7 @@ interface PastRaceData {
   lap_time?: string;
   indices?: PastRaceIndices | null;
   indexRaceId?: string;
+  race_id?: string;  // umadata.race_id（馬番なし）
   raceLevel?: RaceLevelInfo | null;
 }
 
@@ -466,6 +467,101 @@ function BadgeLabels({ badges, className }: BadgeLabelsProps) {
 }
 
 // ========================================
+// 出走馬一覧セクション（同レースの全馬）
+// ========================================
+
+interface RaceEntrant {
+  horse_name: string;
+  finish_position: string;
+  umaban: string;
+  popularity: string;
+}
+
+function RaceEntrantsSection({ raceId }: { raceId: string }) {
+  const [entrants, setEntrants] = useState<RaceEntrant[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    const fetch_ = async () => {
+      try {
+        const res = await fetch(`/api/race-entrants?raceId=${encodeURIComponent(raceId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setEntrants(data.entrants || []);
+        }
+      } catch {
+        setEntrants([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetch_();
+  }, [raceId]);
+
+  if (loading) return (
+    <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">出走馬取得中...</div>
+  );
+  if (!entrants || entrants.length === 0) return null;
+
+  const winner = entrants.find(e => e.finish_position === '1');
+  const displayEntrants = showAll ? entrants : entrants.slice(0, 5);
+
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100 w-full overflow-hidden">
+      {/* 勝ち馬 */}
+      {winner && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0">
+            勝ち馬
+          </span>
+          <a
+            href={`/mypage/horses?q=${encodeURIComponent(winner.horse_name)}`}
+            className="text-xs font-semibold text-amber-600 hover:underline truncate"
+            onClick={e => e.stopPropagation()}
+          >
+            {winner.horse_name}
+          </a>
+        </div>
+      )}
+
+      {/* 全馬リスト */}
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[9px] text-slate-500 font-medium">出走馬</span>
+        <button
+          onClick={e => { e.stopPropagation(); setShowAll(v => !v); }}
+          className="text-[9px] text-emerald-600 hover:underline"
+        >
+          {showAll ? '閉じる' : `全${entrants.length}頭を見る`}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        {displayEntrants.map((e, i) => (
+          <a
+            key={i}
+            href={`/mypage/horses?q=${encodeURIComponent(e.horse_name)}`}
+            onClick={ev => ev.stopPropagation()}
+            className={cn(
+              'text-[9px] px-1.5 py-0.5 rounded border whitespace-nowrap',
+              e.finish_position === '1'
+                ? 'bg-amber-50 border-amber-300 text-amber-700 font-bold'
+                : e.finish_position === '2'
+                  ? 'bg-slate-100 border-slate-300 text-slate-600'
+                  : e.finish_position === '3'
+                    ? 'bg-orange-50 border-orange-200 text-orange-600'
+                    : 'bg-white border-slate-200 text-slate-500'
+            )}
+          >
+            {e.finish_position}着 {e.horse_name}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // PC向け: アコーディオン形式（クリックで開閉）
 // ========================================
 
@@ -686,6 +782,9 @@ function CompactRaceRow({
             const { surface } = getSurfaceAndDistance(race.distance);
             return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
           })()}
+
+          {/* 出走馬一覧 */}
+          {race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
         </div>
       )}
     </div>
@@ -917,6 +1016,9 @@ function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
           const { surface } = getSurfaceAndDistance(race.distance);
           return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
         })()}
+
+        {/* 出走馬一覧 */}
+        {race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
       </div>
     </div>
   );

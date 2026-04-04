@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useSession } from '../../components/Providers';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
 import HorseDetailModal from '../../components/HorseDetailModal';
 import { useFeatureAccess } from '../../components/FloatingActionButton';
@@ -68,6 +69,7 @@ interface ModalHorse {
 
 export default function HorseAnalysisPage() {
   const { status } = useSession();
+  const searchParams = useSearchParams();
   const [favorites, setFavorites] = useState<FavoriteHorse[]>([]);
   const [favoriteNames, setFavoriteNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -247,6 +249,16 @@ export default function HorseAnalysisPage() {
       setTogglingFavorite(null);
     }
   };
+
+  // URLパラメータ q= で馬名が渡された場合、自動的に詳細を開く
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (q && status === 'authenticated') {
+      setSearchQuery(q);
+      openHorseDetail(q);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, status]);
 
   if (status === 'unauthenticated') {
     return (
@@ -470,5 +482,13 @@ export default function HorseAnalysisPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function HorseAnalysisPageWrapper() {
+  return (
+    <Suspense>
+      <HorseAnalysisPage />
+    </Suspense>
   );
 }
