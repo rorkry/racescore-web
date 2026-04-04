@@ -206,8 +206,8 @@ function BabaMemoChip({ date, place, surface }: { date: string; place: string; s
   if (tags.length === 0 && !memo.free_memo) return null;
 
   return (
-    <div className="mt-2 pt-2 border-t border-slate-100">
-      <div className="flex items-start gap-1.5">
+    <div className="mt-2 pt-2 border-t border-slate-100 w-full overflow-hidden">
+      <div className="flex items-start gap-1.5 min-w-0">
         <span className="text-[9px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">
           馬場メモ
         </span>
@@ -215,14 +215,14 @@ function BabaMemoChip({ date, place, surface }: { date: string; place: string; s
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {tags.map((tag, i) => (
-                <span key={i} className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200">
+                <span key={i} className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200 whitespace-nowrap">
                   {tag}
                 </span>
               ))}
             </div>
           )}
           {memo.free_memo && (
-            <p className="text-[9px] text-slate-500 mt-0.5 truncate">{memo.free_memo}</p>
+            <p className="text-[9px] text-slate-500 mt-0.5 break-all">{memo.free_memo}</p>
           )}
         </div>
       </div>
@@ -821,56 +821,56 @@ function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
 
   return (
-    <div className="mt-2 bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
+    <div className="mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
       {/* ヘッダー */}
-      <div className="bg-emerald-50 px-3 py-2 border-b border-emerald-100 flex items-center justify-between">
-        <span className="text-xs font-semibold text-emerald-700">{raceLabel} 詳細</span>
-        <span className="text-[10px] text-slate-500">
+      <div className="bg-emerald-50 px-3 py-2 border-b border-emerald-100 flex items-center gap-2 min-w-0">
+        <span className="text-xs font-semibold text-emerald-700 flex-shrink-0">{raceLabel} 詳細</span>
+        <span className="text-[10px] text-slate-500 truncate min-w-0">
           {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
         </span>
       </div>
 
       <div className="p-3">
         {/* 基本情報 + 指数 */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs mb-2">
-          <div className="flex justify-between">
-            <span className="text-slate-500">騎手</span>
-            <span className="text-slate-800">{race.jockey || '-'}</span>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs mb-2">
+          <div className="flex justify-between gap-1 min-w-0">
+            <span className="text-slate-500 flex-shrink-0">騎手</span>
+            <span className="text-slate-800 truncate">{race.jockey || '-'}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">通過</span>
+          <div className="flex justify-between gap-1 min-w-0">
+            <span className="text-slate-500 flex-shrink-0">通過</span>
             <span className="text-slate-800 tabular-nums">{getPassingOrder(race)}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">タイム</span>
+          <div className="flex justify-between gap-1 min-w-0">
+            <span className="text-slate-500 flex-shrink-0">タイム</span>
             <span className="text-slate-800 tabular-nums font-medium">{formatFinishTime(race.finish_time) || '-'}</span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-slate-500">馬場</span>
-            <span className="text-slate-800">
+          <div className="flex justify-between gap-1 min-w-0">
+            <span className="text-slate-500 flex-shrink-0">馬場</span>
+            <span className="text-slate-800 tabular-nums">
               {race.track_condition || '-'}
-              {race.indices?.cushion != null && ` / ${race.indices.cushion.toFixed(1)}`}
+              {race.indices?.cushion != null && `/${race.indices.cushion.toFixed(1)}`}
             </span>
           </div>
 
           {isPremium && (
             <>
-              <div className="flex justify-between">
-                <span className="text-slate-500">巻返し</span>
+              <div className="flex justify-between gap-1 min-w-0">
+                <span className="text-slate-500 flex-shrink-0">巻返し</span>
                 <span className={cn('tabular-nums font-semibold', getMakikaeshiColor(race.indices?.makikaeshi))}>
                   {race.indices?.makikaeshi?.toFixed(1) || '-'}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">L4F</span>
+              <div className="flex justify-between gap-1 min-w-0">
+                <span className="text-slate-500 flex-shrink-0">L4F</span>
                 <span className="text-slate-800 tabular-nums">{race.indices?.L4F?.toFixed(1) || '-'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">T2F</span>
+              <div className="flex justify-between gap-1 min-w-0">
+                <span className="text-slate-500 flex-shrink-0">T2F</span>
                 <span className="text-slate-800 tabular-nums">{race.indices?.T2F?.toFixed(1) || '-'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">ポテ</span>
+              <div className="flex justify-between gap-1 min-w-0">
+                <span className="text-slate-500 flex-shrink-0">ポテ</span>
                 <span className="text-slate-800 tabular-nums">{race.indices?.potential?.toFixed(1) || '-'}</span>
               </div>
             </>
