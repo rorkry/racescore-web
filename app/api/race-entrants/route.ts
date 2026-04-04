@@ -8,6 +8,12 @@ export interface RaceEntrant {
   finish_position: string;
   umaban: string;
   popularity: string;
+  win_odds: string;
+  margin: string;
+  weight_carried: string;
+  finish_time: string;
+  last_3f: string;
+  jockey: string;
 }
 
 // GET /api/race-entrants?raceId=202504040600701
@@ -23,16 +29,16 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
     const entrants = await db.query<RaceEntrant>(
-      `SELECT DISTINCT ON (umaban) horse_name, finish_position, umaban, popularity
+      `SELECT DISTINCT ON (umaban)
+         horse_name, finish_position, umaban, popularity,
+         win_odds, margin, weight_carried, finish_time, last_3f, jockey
        FROM umadata
        WHERE race_id = $1
-       ORDER BY
-         umaban,
-         CASE WHEN finish_position ~ '^[0-9]+$' THEN finish_position::INTEGER ELSE 999 END`,
+       ORDER BY umaban, id DESC`,
       [raceId]
     );
 
-    // umaban 順 → 着順でソートし直す
+    // 着順でソートし直す（JS側）
     const sorted = [...entrants].sort((a, b) => {
       const posA = /^\d+$/.test(a.finish_position) ? parseInt(a.finish_position) : 999;
       const posB = /^\d+$/.test(b.finish_position) ? parseInt(b.finish_position) : 999;

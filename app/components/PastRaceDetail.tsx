@@ -58,6 +58,7 @@ interface PastRaceDetailProps {
   isDateClickable?: (date: string) => boolean;
   raceMemos?: Map<string, string>;
   onMemoClick?: (raceKey: string, raceTitle: string, memo: string) => void;
+  hideEntrants?: boolean;
 }
 
 // ========================================
@@ -467,7 +468,7 @@ function BadgeLabels({ badges, className }: BadgeLabelsProps) {
 }
 
 // ========================================
-// 出走馬一覧セクション（同レースの全馬）
+// 出走馬一覧セクション（同レースの全馬）+ 馬過去走モーダル
 // ========================================
 
 interface RaceEntrant {
@@ -475,28 +476,73 @@ interface RaceEntrant {
   finish_position: string;
   umaban: string;
   popularity: string;
+  win_odds: string;
+  margin: string;
+  weight_carried: string;
+  finish_time: string;
+  last_3f: string;
+  jockey: string;
+}
+
+function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose: () => void }) {
+  const [pastRaces, setPastRaces] = useState<PastRaceData[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/horse-past-races?horseName=${encodeURIComponent(horseName)}`)
+      .then(r => r.ok ? r.json() : { pastRaces: [] })
+      .then(data => setPastRaces(data.pastRaces || []))
+      .catch(() => setPastRaces([]))
+      .finally(() => setLoading(false));
+  }, [horseName]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 flex-shrink-0">
+          <span className="font-semibold text-sm text-slate-800">{horseName} の過去走</span>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 text-xl leading-none px-1"
+          >
+            ✕
+          </button>
+        </div>
+        {/* コンテンツ */}
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading && (
+            <div className="text-sm text-slate-400 text-center py-8">読み込み中...</div>
+          )}
+          {!loading && pastRaces && pastRaces.length > 0 && (
+            <PastRaceDetailInner pastRaces={pastRaces} isPremium={false} hideEntrants />
+          )}
+          {!loading && (!pastRaces || pastRaces.length === 0) && (
+            <div className="text-sm text-slate-400 text-center py-8">過去走データなし</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function RaceEntrantsSection({ raceId }: { raceId: string }) {
   const [entrants, setEntrants] = useState<RaceEntrant[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showAll, setShowAll] = useState(false);
+  const [selectedHorse, setSelectedHorse] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetch_ = async () => {
-      try {
-        const res = await fetch(`/api/race-entrants?raceId=${encodeURIComponent(raceId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setEntrants(data.entrants || []);
-        }
-      } catch {
-        setEntrants([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch_();
+    fetch(`/api/race-entrants?raceId=${encodeURIComponent(raceId)}`)
+      .then(r => r.ok ? r.json() : { entrants: [] })
+      .then(data => setEntrants(data.entrants || []))
+      .catch(() => setEntrants([]))
+      .finally(() => setLoading(false));
   }, [raceId]);
 
   if (loading) return (
@@ -504,59 +550,65 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
   );
   if (!entrants || entrants.length === 0) return null;
 
-  const winner = entrants.find(e => e.finish_position === '1');
-  const displayEntrants = showAll ? entrants : entrants.slice(0, 5);
-
   return (
-    <div className="mt-2 pt-2 border-t border-slate-100 w-full overflow-hidden">
-      {/* 勝ち馬 */}
-      {winner && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded flex-shrink-0">
-            勝ち馬
-          </span>
-          <a
-            href={`/mypage/horses?q=${encodeURIComponent(winner.horse_name)}`}
-            className="text-xs font-semibold text-amber-600 hover:underline truncate"
-            onClick={e => e.stopPropagation()}
-          >
-            {winner.horse_name}
-          </a>
-        </div>
+    <div className="mt-2 pt-2 border-t border-slate-100 w-full">
+      <div className="text-[9px] font-medium text-slate-500 mb-1.5">同レース出走馬</div>
+      <div className="overflow-x-auto scrollbar-hide">
+        <table className="text-[9px] border-collapse w-full min-w-[380px]">
+          <thead>
+            <tr className="text-slate-400 border-b border-slate-200">
+              <th className="text-center pb-1 pr-1.5 font-normal w-5">着</th>
+              <th className="text-left pb-1 pr-1.5 font-normal">馬名</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-6">人</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-10">オッズ</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-10">着差</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-8">斤量</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-14 tabular-nums">時計</th>
+              <th className="text-right pb-1 pr-1.5 font-normal w-10">上がり</th>
+              <th className="text-right pb-1 font-normal w-16">騎手</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entrants.map((e, i) => (
+              <tr
+                key={i}
+                className={cn(
+                  'border-b border-slate-50',
+                  e.finish_position === '1' ? 'bg-amber-50' :
+                  e.finish_position === '2' ? 'bg-slate-50' :
+                  e.finish_position === '3' ? 'bg-orange-50' : ''
+                )}
+              >
+                <td className={cn('py-0.5 pr-1.5 text-center font-bold', getFinishColor(e.finish_position))}>
+                  {e.finish_position}
+                </td>
+                <td className="py-0.5 pr-1.5">
+                  <button
+                    onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
+                    className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
+                  >
+                    {e.horse_name}
+                  </button>
+                </td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-500">{toHalfWidth(e.popularity || '-')}</td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.win_odds || '-')}</td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-500 tabular-nums">{formatMargin(e.margin)}</td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-600">{toHalfWidth(e.weight_carried || '-')}</td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-700 tabular-nums">{formatFinishTime(e.finish_time)}</td>
+                <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.last_3f || '-')}</td>
+                <td className="py-0.5 text-right text-slate-500 truncate max-w-[60px]">{e.jockey || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {selectedHorse && (
+        <HorsePastRaceModal
+          horseName={selectedHorse}
+          onClose={() => setSelectedHorse(null)}
+        />
       )}
-
-      {/* 全馬リスト */}
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[9px] text-slate-500 font-medium">出走馬</span>
-        <button
-          onClick={e => { e.stopPropagation(); setShowAll(v => !v); }}
-          className="text-[9px] text-emerald-600 hover:underline"
-        >
-          {showAll ? '閉じる' : `全${entrants.length}頭を見る`}
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-1">
-        {displayEntrants.map((e, i) => (
-          <a
-            key={i}
-            href={`/mypage/horses?q=${encodeURIComponent(e.horse_name)}`}
-            onClick={ev => ev.stopPropagation()}
-            className={cn(
-              'text-[9px] px-1.5 py-0.5 rounded border whitespace-nowrap',
-              e.finish_position === '1'
-                ? 'bg-amber-50 border-amber-300 text-amber-700 font-bold'
-                : e.finish_position === '2'
-                  ? 'bg-slate-100 border-slate-300 text-slate-600'
-                  : e.finish_position === '3'
-                    ? 'bg-orange-50 border-orange-200 text-orange-600'
-                    : 'bg-white border-slate-200 text-slate-500'
-            )}
-          >
-            {e.finish_position}着 {e.horse_name}
-          </a>
-        ))}
-      </div>
     </div>
   );
 }
@@ -575,6 +627,7 @@ interface CompactRaceRowProps {
   isClickable?: boolean;
   hasMemo?: boolean;
   onMemoClick?: () => void;
+  hideEntrants?: boolean;
   winnerName?: string;
 }
 
@@ -588,6 +641,7 @@ function CompactRaceRow({
   isClickable,
   hasMemo,
   onMemoClick,
+  hideEntrants,
   winnerName
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
@@ -791,7 +845,7 @@ function CompactRaceRow({
           })()}
 
           {/* 出走馬一覧 */}
-          {race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
+          {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
         </div>
       )}
     </div>
@@ -928,9 +982,10 @@ interface MobileDetailPanelProps {
   race: PastRaceData;
   index: number;
   isPremium: boolean;
+  hideEntrants?: boolean;
 }
 
-function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1034,31 +1089,29 @@ function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
         })()}
 
         {/* 出走馬一覧 */}
-        {race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
+        {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
       </div>
     </div>
   );
 }
 
 // ========================================
-// メインコンポーネント
+// メインコンポーネント（内部・再利用用）
 // ========================================
 
-export default function PastRaceDetail({
+function PastRaceDetailInner({
   pastRaces,
   isPremium = false,
   onDateClick,
   isDateClickable,
   raceMemos,
-  onMemoClick
+  onMemoClick,
+  hideEntrants = false,
 }: PastRaceDetailProps) {
-  // PC版: アコーディオンの開閉状態（デフォルトで前走を開く）
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
-  // モバイル版: 横展開の状態（一度に1つだけ開く）
   const [mobileExpandedIndex, setMobileExpandedIndex] = useState<number | null>(null);
-  // 勝ち馬マップ: { [race_id]: 馬名 }
   const [winnersMap, setWinnersMap] = useState<Record<string, string>>({});
-  
+
   if (!pastRaces || pastRaces.length === 0) {
     return (
       <div className="text-slate-500 text-sm p-4 text-center">
@@ -1069,19 +1122,17 @@ export default function PastRaceDetail({
 
   const displayRaces = pastRaces.slice(0, 5);
 
-  // race_id が存在する過去走について、勝ち馬を一括取得
+  // race_id が存在する過去走の勝ち馬を一括取得（1回のAPIコール）
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     const raceIds = displayRaces
       .map(r => r.race_id)
       .filter((id): id is string => !!id);
     if (raceIds.length === 0) return;
-
     fetch(`/api/race-winners?raceIds=${raceIds.map(encodeURIComponent).join(',')}`)
       .then(r => r.ok ? r.json() : { winners: {} })
       .then(data => setWinnersMap(data.winners || {}))
       .catch(() => {});
-  // displayRaces の race_id が変わった時のみ再取得
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastRaces]);
 
@@ -1107,6 +1158,7 @@ export default function PastRaceDetail({
               onDateClick={onDateClick}
               isClickable={isDateClickable?.(race.date)}
               hasMemo={hasMemo}
+              hideEntrants={hideEntrants}
               winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
               onMemoClick={() => {
                 if (raceKey && memoContent) {
@@ -1124,7 +1176,6 @@ export default function PastRaceDetail({
 
       {/* モバイル向け: 横スクロールカード + 下部詳細パネル */}
       <div className="sm:hidden overflow-hidden">
-        {/* 横スクロールエリア: overflow-hidden の親で囲んでページへの影響を遮断 */}
         <div
           className="flex gap-2 overflow-x-scroll pb-2 snap-x snap-mandatory scrollbar-hide"
           style={{ overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
@@ -1162,12 +1213,12 @@ export default function PastRaceDetail({
           })}
         </div>
 
-        {/* 詳細パネル（タップしたカードの詳細をカード行の下に表示） */}
         {mobileExpandedIndex !== null && displayRaces[mobileExpandedIndex] && (
           <MobileDetailPanel
             race={displayRaces[mobileExpandedIndex]}
             index={mobileExpandedIndex}
             isPremium={isPremium}
+            hideEntrants={hideEntrants}
           />
         )}
 
@@ -1176,7 +1227,6 @@ export default function PastRaceDetail({
         </p>
       </div>
 
-      {/* プレミアム機能の説明（非プレミアム時） */}
       {!isPremium && (
         <div className="text-center py-2">
           <span className="text-[10px] text-slate-400">
@@ -1186,4 +1236,12 @@ export default function PastRaceDetail({
       )}
     </div>
   );
+}
+
+// ========================================
+// 公開メインコンポーネント
+// ========================================
+
+export default function PastRaceDetail(props: PastRaceDetailProps) {
+  return <PastRaceDetailInner {...props} />;
 }
