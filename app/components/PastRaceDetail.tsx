@@ -575,6 +575,7 @@ interface CompactRaceRowProps {
   isClickable?: boolean;
   hasMemo?: boolean;
   onMemoClick?: () => void;
+  winnerName?: string;
 }
 
 function CompactRaceRow({ 
@@ -586,7 +587,8 @@ function CompactRaceRow({
   onDateClick, 
   isClickable,
   hasMemo,
-  onMemoClick 
+  onMemoClick,
+  winnerName
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -633,8 +635,13 @@ function CompactRaceRow({
         {/* 場所 */}
         <span className="text-xs text-slate-700 w-8 flex-shrink-0">{race.place || '-'}</span>
         
-        {/* レース名 */}
-        <span className="text-xs text-slate-800 truncate min-w-0 flex-1">{raceName}</span>
+        {/* レース名 + 勝ち馬名 */}
+        <span className="text-xs text-slate-800 truncate min-w-0 flex-1">
+          {raceName}
+          {winnerName && (
+            <span className="text-slate-400 ml-1">({winnerName})</span>
+          )}
+        </span>
         
         {/* 芝/ダ + 距離 */}
         <span className="text-xs text-slate-600 w-14 flex-shrink-0 tabular-nums">
@@ -805,6 +812,7 @@ interface MobileRaceCardProps {
   isClickable?: boolean;
   hasMemo?: boolean;
   onMemoClick?: () => void;
+  winnerName?: string;
 }
 
 function MobileRaceCard({ 
@@ -816,7 +824,8 @@ function MobileRaceCard({
   onDateClick,
   isClickable,
   hasMemo,
-  onMemoClick
+  onMemoClick,
+  winnerName
 }: MobileRaceCardProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -858,6 +867,13 @@ function MobileRaceCard({
               {dist}
             </span>
           </div>
+
+          {/* 勝ち馬名 */}
+          {winnerName && (
+            <div className="text-[9px] text-slate-400 mb-1 truncate">
+              1着: {winnerName}
+            </div>
+          )}
           
           {/* 着順 + 人気 */}
           <div className="flex items-baseline gap-1 mb-1">
@@ -1040,6 +1056,8 @@ export default function PastRaceDetail({
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
   // モバイル版: 横展開の状態（一度に1つだけ開く）
   const [mobileExpandedIndex, setMobileExpandedIndex] = useState<number | null>(null);
+  // 勝ち馬マップ: { [race_id]: 馬名 }
+  const [winnersMap, setWinnersMap] = useState<Record<string, string>>({});
   
   if (!pastRaces || pastRaces.length === 0) {
     return (
@@ -1050,6 +1068,22 @@ export default function PastRaceDetail({
   }
 
   const displayRaces = pastRaces.slice(0, 5);
+
+  // race_id が存在する過去走について、勝ち馬を一括取得
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    const raceIds = displayRaces
+      .map(r => r.race_id)
+      .filter((id): id is string => !!id);
+    if (raceIds.length === 0) return;
+
+    fetch(`/api/race-winners?raceIds=${raceIds.map(encodeURIComponent).join(',')}`)
+      .then(r => r.ok ? r.json() : { winners: {} })
+      .then(data => setWinnersMap(data.winners || {}))
+      .catch(() => {});
+  // displayRaces の race_id が変わった時のみ再取得
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastRaces]);
 
   return (
     <div className="space-y-3">
@@ -1073,6 +1107,7 @@ export default function PastRaceDetail({
               onDateClick={onDateClick}
               isClickable={isDateClickable?.(race.date)}
               hasMemo={hasMemo}
+              winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
               onMemoClick={() => {
                 if (raceKey && memoContent) {
                   onMemoClick?.(
@@ -1112,6 +1147,7 @@ export default function PastRaceDetail({
                 onDateClick={onDateClick}
                 isClickable={isDateClickable?.(race.date)}
                 hasMemo={hasMemo}
+                winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
                 onMemoClick={() => {
                   if (raceKey && memoContent) {
                     onMemoClick?.(
