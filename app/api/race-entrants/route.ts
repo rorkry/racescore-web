@@ -16,6 +16,11 @@ export interface RaceEntrant {
   jockey: string;
 }
 
+// 全角数字→半角変換
+function toHalfNum(str: string): string {
+  return (str || '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).trim();
+}
+
 // GET /api/race-entrants?raceId=202504040600701
 // raceId は umadata.race_id（馬番なし）
 export async function GET(request: NextRequest) {
@@ -28,23 +33,31 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
+
+    // DISTINCT ON で重複排除 → CTE で着順ソート
     const entrants = await db.query<RaceEntrant>(
-      `SELECT DISTINCT ON (umaban)
-         horse_name, finish_position, umaban, popularity,
-         win_odds, margin, weight_carried, finish_time, last_3f, jockey
-       FROM umadata
-       WHERE race_id = $1
-       ORDER BY umaban, id DESC`,
+      `WITH deduped AS (
+         SELECT DISTINCT ON (umaban)
+           horse_name, finish_position, umaban, popularity,
+           win_odds, margin, weight_carried, finish_time, last_3f, jockey
+         FROM umadata
+         WHERE race_id = $1
+         ORDER BY umaban, id DESC
+       )
+       SELECT * FROM deduped
+       ORDER BY
+         CASE WHEN finish_position ~ '^[0-9]+$' THEN finish_position::INTEGER ELSE 999 END,
+         CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 99 END`,
       [raceId]
     );
 
-    // 着順でソートし直す（JS側）
+    // 全角数字対応で再ソート（DBに全角で入っている場合の保険）
     const sorted = [...entrants].sort((a, b) => {
-      const posA = /^\d+$/.test(a.finish_position) ? parseInt(a.finish_position) : 999;
-      const posB = /^\d+$/.test(b.finish_position) ? parseInt(b.finish_position) : 999;
+      const posA = parseInt(toHalfNum(a.finish_position)) || 999;
+      const posB = parseInt(toHalfNum(b.finish_position)) || 999;
       if (posA !== posB) return posA - posB;
-      const umaA = /^\d+$/.test(a.umaban) ? parseInt(a.umaban) : 99;
-      const umaB = /^\d+$/.test(b.umaban) ? parseInt(b.umaban) : 99;
+      const umaA = parseInt(toHalfNum(a.umaban)) || 99;
+      const umaB = parseInt(toHalfNum(b.umaban)) || 99;
       return umaA - umaB;
     });
 
