@@ -484,6 +484,123 @@ interface RaceEntrant {
   jockey: string;
 }
 
+// ========================================
+// お気に入り・メモセクション（モーダル内）
+// ========================================
+
+function HorseFavoriteSection({ horseName }: { horseName: string }) {
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [note, setNote] = useState<string>('');
+  const [editing, setEditing] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/user/favorites')
+      .then(r => r.ok ? r.json() : { favorites: [] })
+      .then(data => {
+        const found = (data.favorites || []).find((f: { horse_name: string; note: string | null }) => f.horse_name === horseName);
+        if (found) {
+          setIsFavorite(true);
+          setNote(found.note || '');
+          setNoteText(found.note || '');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [horseName]);
+
+  const toggleFavorite = async () => {
+    if (isFavorite) {
+      const res = await fetch('/api/user/favorites', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horseName }),
+      });
+      if (res.ok) { setIsFavorite(false); setNote(''); setNoteText(''); setEditing(false); }
+    } else {
+      const res = await fetch('/api/user/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horseName, notifyOnRace: false }),
+      });
+      if (res.ok) { setIsFavorite(true); }
+    }
+  };
+
+  const saveNote = async () => {
+    setSaving(true);
+    await fetch('/api/user/favorites', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ horseName, note: noteText }),
+    });
+    setSaving(false);
+    setNote(noteText);
+    setEditing(false);
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={toggleFavorite}
+          className={cn(
+            'flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors',
+            isFavorite
+              ? 'bg-amber-50 border-amber-300 text-amber-600'
+              : 'bg-white border-slate-200 text-slate-500 hover:border-amber-300'
+          )}
+        >
+          <span>{isFavorite ? '★' : '☆'}</span>
+          <span>{isFavorite ? 'お気に入り済み' : 'お気に入り登録'}</span>
+        </button>
+        {isFavorite && !editing && (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-xs text-slate-400 hover:text-slate-600"
+          >
+            {note ? '📝 メモを編集' : '📝 メモを追加'}
+          </button>
+        )}
+      </div>
+      {isFavorite && !editing && note && (
+        <div className="mt-1.5 text-xs text-slate-600 bg-amber-50 rounded px-2 py-1 border border-amber-100">
+          {note}
+        </div>
+      )}
+      {isFavorite && editing && (
+        <div className="mt-2">
+          <textarea
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            placeholder="メモを入力..."
+            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 resize-none h-14 focus:outline-none focus:border-emerald-300"
+          />
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={saveNote}
+              disabled={saving}
+              className="text-xs bg-emerald-500 text-white px-3 py-1 rounded hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setNoteText(note); }}
+              className="text-xs text-slate-500 px-3 py-1 rounded border border-slate-200"
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose: () => void }) {
   const [pastRaces, setPastRaces] = useState<PastRaceData[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -515,6 +632,8 @@ function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose
             ✕
           </button>
         </div>
+        {/* お気に入り・メモ */}
+        <HorseFavoriteSection horseName={horseName} />
         {/* コンテンツ */}
         <div className="overflow-y-auto flex-1 p-4">
           {loading && (
@@ -656,7 +775,7 @@ function CompactRaceRow({
       {/* ヘッダー行（常に表示・クリックで開閉） */}
       <div 
         className={cn(
-          'flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors',
+          'flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors',
           'hover:bg-slate-50',
           isExpanded && 'bg-slate-50 border-b border-slate-200'
         )}
@@ -675,14 +794,8 @@ function CompactRaceRow({
           {raceLabel}
         </span>
         
-        {/* 日付 */}
-        <span 
-          className={cn(
-            'text-xs tabular-nums w-12 flex-shrink-0',
-            isClickable ? 'text-emerald-600 cursor-pointer hover:underline' : 'text-slate-600'
-          )}
-          onClick={(e) => { e.stopPropagation(); isClickable && onDateClick?.(race.date); }}
-        >
+        {/* 日付（クリック不可） */}
+        <span className="text-xs tabular-nums w-12 flex-shrink-0 text-slate-600">
           {formatDate(race.date)}
         </span>
         
@@ -902,13 +1015,7 @@ function MobileRaceCard({
             <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
               {raceLabel}
             </span>
-            <span 
-              className={cn(
-                'text-[9px] tabular-nums',
-                isClickable ? 'text-emerald-600' : 'text-slate-500'
-              )}
-              onClick={(e) => { e.stopPropagation(); isClickable && onDateClick?.(race.date); }}
-            >
+            <span className="text-[9px] tabular-nums text-slate-500">
               {formatDate(race.date)}
             </span>
           </div>
@@ -1139,7 +1246,7 @@ function PastRaceDetailInner({
   return (
     <div className="space-y-3">
       {/* PC向け: アコーディオン形式 */}
-      <div className="hidden sm:block space-y-2">
+      <div className="hidden sm:block space-y-1">
         {displayRaces.map((race, idx) => {
           const raceKey = race.date && race.place && race.race_number
             ? `${race.date}_${race.place}_${race.race_number}`
