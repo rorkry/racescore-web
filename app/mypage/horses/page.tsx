@@ -67,7 +67,7 @@ interface ModalHorse {
   memo?: string;
 }
 
-export default function HorseAnalysisPage() {
+function HorseAnalysisPage() {
   const { status } = useSession();
   const searchParams = useSearchParams();
   const [favorites, setFavorites] = useState<FavoriteHorse[]>([]);
