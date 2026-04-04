@@ -1558,7 +1558,7 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-50">
+                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 overflow-hidden max-w-0">
                                 <div className="text-xs sm:text-sm font-bold mb-3 text-emerald-700">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>

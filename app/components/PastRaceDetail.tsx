@@ -635,12 +635,12 @@ function MobileRaceCard({
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
   
   return (
-    <div className="flex-shrink-0 w-32 snap-start">
+    <div className="flex-shrink-0 w-32 snap-start overflow-hidden">
       <div 
         className={cn(
           'bg-white border rounded-xl shadow-sm transition-all duration-150 active:scale-[0.97] cursor-pointer',
           isExpanded
-            ? 'border-emerald-400 ring-1 ring-emerald-300 bg-emerald-50'
+            ? 'border-emerald-400 bg-emerald-50'
             : badges.some(b => b.level === 'high') ? 'border-red-300' : 'border-slate-200'
         )}
         onClick={onToggle}
@@ -891,10 +891,10 @@ export default function PastRaceDetail({
       </div>
 
       {/* モバイル向け: 横スクロールカード + 下部詳細パネル */}
-      <div className="sm:hidden">
-        {/* 横スクロールエリア: overscroll-x-contain でページスクロールと分離 */}
+      <div className="sm:hidden overflow-hidden">
+        {/* 横スクロールエリア: overflow-hidden の親で囲んでページへの影響を遮断 */}
         <div
-          className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2 snap-x snap-mandatory scrollbar-hide"
+          className="flex gap-2 overflow-x-scroll pb-2 snap-x snap-mandatory scrollbar-hide"
           style={{ overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
         >
           {displayRaces.map((race, idx) => {

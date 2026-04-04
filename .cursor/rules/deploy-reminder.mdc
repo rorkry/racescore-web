@@ -1,0 +1,19 @@
+---
+description: 作業完了後にRailwayデプロイ手順を必ず伝える
+alwaysApply: true
+---
+
+# デプロイ手順リマインダー
+
+作業（コード変更・修正・機能追加など）が完了したら、必ず以下のデプロイ手順をユーザーに伝えること。
+
+## デプロイ手順
+
+```powershell
+git add .
+git commit -m "変更内容の説明"
+git push
+```
+
+- pushするとRailwayが自動でビルド＆デプロイを開始する
+- 完了まで約2〜3分。Railway の Deployments タブで進捗を確認できる
