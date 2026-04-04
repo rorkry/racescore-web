@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 // ========================================
@@ -145,6 +145,89 @@ function getMakikaeshiColor(value: number | null | undefined): string {
   if (value >= 3.5) return 'text-red-500';
   if (value >= 2.0) return 'text-orange-500';
   return 'text-slate-600';
+}
+
+// 過去走の日付(2025.04.04) → 馬場メモ用日付(0404)
+function pastDateToBabaMemoDate(dateStr: string): string {
+  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
+  const parts = cleaned.split('.');
+  if (parts.length >= 3) {
+    return parts[1].padStart(2, '0') + parts[2].padStart(2, '0');
+  }
+  return dateStr;
+}
+
+// surface("芝"/"ダ") → trackType("芝"/"ダート")
+function surfaceToTrackType(surface: string): '芝' | 'ダート' {
+  return surface === '芝' ? '芝' : 'ダート';
+}
+
+// ========================================
+// 馬場メモ表示チップ
+// ========================================
+
+interface BabaMemoData {
+  advantage_position: string | null;
+  advantage_style: string | null;
+  weather_note: string | null;
+  free_memo: string | null;
+}
+
+function BabaMemoChip({ date, place, surface }: { date: string; place: string; surface: string }) {
+  const [memo, setMemo] = useState<BabaMemoData | null>(null);
+
+  useEffect(() => {
+    if (!date || !place) return;
+    const fetchMemo = async () => {
+      try {
+        const babaMemoDate = pastDateToBabaMemoDate(date);
+        const trackType = surfaceToTrackType(surface);
+        const res = await fetch(
+          `/api/user/baba-memos?date=${babaMemoDate}&place=${encodeURIComponent(place)}&trackType=${encodeURIComponent(trackType)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setMemo(data.memo || null);
+        }
+      } catch {
+        // 未ログイン等は無視
+      }
+    };
+    fetchMemo();
+  }, [date, place, surface]);
+
+  if (!memo) return null;
+
+  const tags: string[] = [];
+  if (memo.advantage_position && memo.advantage_position !== 'フラット') tags.push(memo.advantage_position);
+  if (memo.advantage_style && memo.advantage_style !== 'フラット') tags.push(memo.advantage_style);
+  if (memo.weather_note) tags.push(...memo.weather_note.split(',').filter(Boolean));
+
+  if (tags.length === 0 && !memo.free_memo) return null;
+
+  return (
+    <div className="mt-2 pt-2 border-t border-slate-100">
+      <div className="flex items-start gap-1.5">
+        <span className="text-[9px] font-bold bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5">
+          馬場メモ
+        </span>
+        <div className="flex-1 min-w-0">
+          {tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {tags.map((tag, i) => (
+                <span key={i} className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded-full border border-green-200">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {memo.free_memo && (
+            <p className="text-[9px] text-slate-500 mt-0.5 truncate">{memo.free_memo}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ラップタイムをパースして前半/後半に分割
@@ -597,6 +680,12 @@ function CompactRaceRow({
               </div>
             );
           })()}
+
+          {/* 馬場メモ（当該レース日・開催場・芝ダートに紐づく） */}
+          {(() => {
+            const { surface } = getSurfaceAndDistance(race.distance);
+            return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
+          })()}
         </div>
       )}
     </div>
@@ -822,6 +911,12 @@ function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
             <BadgeLabels badges={badges} />
           </div>
         )}
+
+        {/* 馬場メモ */}
+        {(() => {
+          const { surface } = getSurfaceAndDistance(race.distance);
+          return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
+        })()}
       </div>
     </div>
   );
