@@ -13,12 +13,12 @@ import Papa from 'papaparse';
 
 // Index folder configuration (base paths - year folders will be auto-detected)
 const INDEX_BASE_FOLDERS = [
-  { name: 'L4F', basePath: 'C:\\競馬データ\\L4F' },
-  { name: 'T2F', basePath: 'C:\\競馬データ\\T2F' },
-  { name: 'potential', basePath: 'C:\\競馬データ\\ポテンシャル指数' },
-  { name: 'revouma', basePath: 'C:\\競馬データ\\レボウマ' },
-  { name: 'makikaeshi', basePath: 'C:\\競馬データ\\巻き返し指数' },
-  { name: 'cushion', basePath: 'C:\\競馬データ\\クッション値' },
+  { name: 'L4F', basePath: 'C:\\keiba_data\\L4F' },
+  { name: 'T2F', basePath: 'C:\\keiba_data\\T2F' },
+  { name: 'potential', basePath: 'C:\\keiba_data\\ポテンシャル指数' },
+  { name: 'revouma', basePath: 'C:\\keiba_data\\レボウマ' },
+  { name: 'makikaeshi', basePath: 'C:\\keiba_data\\巻き返し指数' },
+  { name: 'cushion', basePath: 'C:\\keiba_data\\クッション値' },
 ];
 
 /**

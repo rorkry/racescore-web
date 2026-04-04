@@ -127,6 +127,18 @@ function formatMargin(margin: string): string {
   return num > 0 ? `+${num.toFixed(1)}` : num.toFixed(1);
 }
 
+// タイム表記フォーマット: "1559" → "1:55.9"、"580" → "58.0"
+function formatFinishTime(timeStr: string): string {
+  if (!timeStr || timeStr === '-') return '-';
+  const cleaned = toHalfWidth(timeStr).replace(/[^\d]/g, '');
+  if (cleaned.length === 4) {
+    return `${cleaned[0]}:${cleaned.slice(1, 3)}.${cleaned[3]}`;
+  } else if (cleaned.length === 3) {
+    return `${cleaned.slice(0, 2)}.${cleaned[2]}`;
+  }
+  return timeStr;
+}
+
 // 巻き返し指数の色分け
 function getMakikaeshiColor(value: number | null | undefined): string {
   if (value == null) return 'text-slate-400';
@@ -507,7 +519,7 @@ function CompactRaceRow({
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <span className="text-slate-500 w-12">タイム</span>
-                <span className="text-slate-800 tabular-nums">{race.finish_time || '-'}</span>
+                <span className="text-slate-800 tabular-nums">{formatFinishTime(race.finish_time) || '-'}</span>
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <span className="text-slate-500 w-12">馬場</span>
@@ -623,23 +635,17 @@ function MobileRaceCard({
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
   
   return (
-    <div 
-      className={cn(
-        'flex-shrink-0 transition-all duration-200 snap-start',
-        isExpanded ? 'w-72 z-10 relative' : 'w-32'
-      )}
-    >
+    <div className="flex-shrink-0 w-32 snap-start">
       <div 
         className={cn(
-          'bg-white border rounded-xl h-full flex shadow-sm',
-          'transition-all active:scale-[0.98]',
-          isExpanded ? 'shadow-lg' : '',
-          badges.some(b => b.level === 'high') ? 'border-red-300' : 'border-slate-200'
+          'bg-white border rounded-xl shadow-sm transition-all duration-150 active:scale-[0.97] cursor-pointer',
+          isExpanded
+            ? 'border-emerald-400 ring-1 ring-emerald-300 bg-emerald-50'
+            : badges.some(b => b.level === 'high') ? 'border-red-300' : 'border-slate-200'
         )}
         onClick={onToggle}
       >
-        {/* 左側: メイン情報（常に表示） */}
-        <div className="p-2.5 flex-shrink-0 w-32">
+        <div className="p-2.5">
           {/* ヘッダー: ラベル + 日付 */}
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
@@ -656,7 +662,7 @@ function MobileRaceCard({
             </span>
           </div>
           
-          {/* 場所 + 距離（横並び） */}
+          {/* 場所 + 距離 */}
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-medium text-slate-800">{race.place}</span>
             <span className="text-[10px] text-slate-600">
@@ -680,7 +686,7 @@ function MobileRaceCard({
             {formatMargin(race.margin)}
           </div>
           
-          {/* 評価バッジ + メモ */}
+          {/* 評価バッジ + 選択インジケーター */}
           <div className="flex items-center justify-between">
             {isPremium && badges.length > 0 ? (
               <BadgeDots badges={badges} />
@@ -697,93 +703,123 @@ function MobileRaceCard({
                 </button>
               )}
               <span className={cn(
-                'text-[10px] text-slate-400 transition-transform',
-                isExpanded ? 'rotate-180' : ''
+                'text-[10px] transition-colors',
+                isExpanded ? 'text-emerald-500' : 'text-slate-400'
               )}>
-                {isExpanded ? '◀' : '▶'}
+                {isExpanded ? '▼' : '▶'}
               </span>
             </div>
           </div>
         </div>
-        
-        {/* 右側: 詳細情報（展開時のみ表示） */}
-        {isExpanded && (
-          <div className="border-l border-slate-200 p-2.5 flex-1 bg-slate-50 rounded-r-xl">
-            <div className="space-y-1 text-[10px]">
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// モバイル向け: タップ時に表示する詳細パネル
+// ========================================
+
+interface MobileDetailPanelProps {
+  race: PastRaceData;
+  index: number;
+  isPremium: boolean;
+}
+
+function MobileDetailPanel({ race, index, isPremium }: MobileDetailPanelProps) {
+  const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
+  const lapData = parseLapTime(race.lap_time);
+  const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
+
+  return (
+    <div className="mt-2 bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
+      {/* ヘッダー */}
+      <div className="bg-emerald-50 px-3 py-2 border-b border-emerald-100 flex items-center justify-between">
+        <span className="text-xs font-semibold text-emerald-700">{raceLabel} 詳細</span>
+        <span className="text-[10px] text-slate-500">
+          {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
+        </span>
+      </div>
+
+      <div className="p-3">
+        {/* 基本情報 + 指数 */}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs mb-2">
+          <div className="flex justify-between">
+            <span className="text-slate-500">騎手</span>
+            <span className="text-slate-800">{race.jockey || '-'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">通過</span>
+            <span className="text-slate-800 tabular-nums">{getPassingOrder(race)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">タイム</span>
+            <span className="text-slate-800 tabular-nums font-medium">{formatFinishTime(race.finish_time) || '-'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-500">馬場</span>
+            <span className="text-slate-800">
+              {race.track_condition || '-'}
+              {race.indices?.cushion != null && ` / ${race.indices.cushion.toFixed(1)}`}
+            </span>
+          </div>
+
+          {isPremium && (
+            <>
               <div className="flex justify-between">
-                <span className="text-slate-500">騎手</span>
-                <span className="text-slate-800">{race.jockey || '-'}</span>
+                <span className="text-slate-500">巻返し</span>
+                <span className={cn('tabular-nums font-semibold', getMakikaeshiColor(race.indices?.makikaeshi))}>
+                  {race.indices?.makikaeshi?.toFixed(1) || '-'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">通過</span>
-                <span className="text-slate-800 tabular-nums">{getPassingOrder(race)}</span>
+                <span className="text-slate-500">L4F</span>
+                <span className="text-slate-800 tabular-nums">{race.indices?.L4F?.toFixed(1) || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">タイム</span>
-                <span className="text-slate-800 tabular-nums">{race.finish_time || '-'}</span>
+                <span className="text-slate-500">T2F</span>
+                <span className="text-slate-800 tabular-nums">{race.indices?.T2F?.toFixed(1) || '-'}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">馬場</span>
-                <span className="text-slate-800">{race.track_condition || '-'}</span>
+                <span className="text-slate-500">ポテ</span>
+                <span className="text-slate-800 tabular-nums">{race.indices?.potential?.toFixed(1) || '-'}</span>
               </div>
-              
-              {isPremium && (
-                <>
-                  <div className="border-t border-slate-200 pt-1 mt-1">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">巻返し</span>
-                      <span className={cn('tabular-nums font-medium', getMakikaeshiColor(race.indices?.makikaeshi))}>
-                        {race.indices?.makikaeshi?.toFixed(1) || '-'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">L4F/T2F</span>
-                    <span className="text-slate-800 tabular-nums">
-                      {race.indices?.L4F?.toFixed(1) || '-'}/{race.indices?.T2F?.toFixed(1) || '-'}
-                    </span>
-                  </div>
-                </>
-              )}
-              
-              {/* ラップタイム（後半4F強調 + 横スクロール） */}
-              {race.lap_time && (() => {
-                const { first, last4, last4Sum } = parseLapTime(race.lap_time);
-                return (
-                  <div className="border-t border-slate-200 pt-1 mt-1">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[9px] text-slate-500">ラップ</span>
-                      {last4Sum && (
-                        <span className="text-[9px] font-medium text-emerald-600">
-                          L4F: {last4Sum.toFixed(1)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="overflow-x-auto scrollbar-hide">
-                      <div className="text-[9px] font-mono whitespace-nowrap">
-                        {first.length > 0 && (
-                          <span className="text-slate-400">
-                            {first.map(l => l.toFixed(1)).join('-')}-
-                          </span>
-                        )}
-                        {last4.length > 0 && (
-                          <span className="text-emerald-700 font-semibold">
-                            {last4.map(l => l.toFixed(1)).join('-')}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-              
-              {/* 評価バッジ */}
-              {isPremium && badges.length > 0 && (
-                <div className="pt-1 border-t border-slate-200">
-                  <BadgeLabels badges={badges} />
-                </div>
+            </>
+          )}
+        </div>
+
+        {/* ラップタイム */}
+        {race.lap_time && lapData.all.length > 0 && (
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] text-slate-500">ラップ</span>
+              {lapData.last4Sum != null && (
+                <span className="text-[10px] font-medium text-emerald-600">
+                  後半4F: {lapData.last4Sum.toFixed(1)}
+                </span>
               )}
             </div>
+            <div className="overflow-x-auto scrollbar-hide">
+              <div className="text-[10px] font-mono whitespace-nowrap">
+                {lapData.first.length > 0 && (
+                  <span className="text-slate-400">
+                    {lapData.first.map(l => l.toFixed(1)).join('-')}-
+                  </span>
+                )}
+                {lapData.last4.length > 0 && (
+                  <span className="text-emerald-700 font-semibold">
+                    {lapData.last4.map(l => l.toFixed(1)).join('-')}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 評価バッジ */}
+        {isPremium && badges.length > 0 && (
+          <div className="pt-2 mt-1 border-t border-slate-100">
+            <BadgeLabels badges={badges} />
           </div>
         )}
       </div>
@@ -854,9 +890,13 @@ export default function PastRaceDetail({
         })}
       </div>
 
-      {/* モバイル向け: 横スクロールカード（タップで右に展開） */}
+      {/* モバイル向け: 横スクロールカード + 下部詳細パネル */}
       <div className="sm:hidden">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2 snap-x scrollbar-hide">
+        {/* 横スクロールエリア: overscroll-x-contain でページスクロールと分離 */}
+        <div
+          className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2 snap-x snap-mandatory scrollbar-hide"
+          style={{ overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+        >
           {displayRaces.map((race, idx) => {
             const raceKey = race.date && race.place && race.race_number
               ? `${race.date}_${race.place}_${race.race_number}`
@@ -888,8 +928,18 @@ export default function PastRaceDetail({
             );
           })}
         </div>
+
+        {/* 詳細パネル（タップしたカードの詳細をカード行の下に表示） */}
+        {mobileExpandedIndex !== null && displayRaces[mobileExpandedIndex] && (
+          <MobileDetailPanel
+            race={displayRaces[mobileExpandedIndex]}
+            index={mobileExpandedIndex}
+            isPremium={isPremium}
+          />
+        )}
+
         <p className="text-[10px] text-slate-400 text-center mt-1">
-          {mobileExpandedIndex === null ? '← タップで詳細表示 →' : '← 別のカードをタップで切替 →'}
+          {mobileExpandedIndex === null ? '← スワイプして前後を確認 →' : '← カードをもう一度タップで閉じる →'}
         </p>
       </div>
 
