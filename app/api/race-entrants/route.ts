@@ -14,6 +14,10 @@ export interface RaceEntrant {
   finish_time: string;
   last_3f: string;
   jockey: string;
+  corner_1: string;
+  corner_2: string;
+  corner_3: string;
+  corner_4: string;
 }
 
 // 全角数字→半角変換
@@ -39,7 +43,8 @@ export async function GET(request: NextRequest) {
       `WITH deduped AS (
          SELECT DISTINCT ON (umaban)
            horse_name, finish_position, umaban, popularity,
-           win_odds, margin, weight_carried, finish_time, last_3f, jockey
+           win_odds, margin, weight_carried, finish_time, last_3f, jockey,
+           corner_1, corner_2, corner_3, corner_4
          FROM umadata
          WHERE race_id = $1
          ORDER BY umaban, id DESC

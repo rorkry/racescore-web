@@ -482,6 +482,16 @@ interface RaceEntrant {
   finish_time: string;
   last_3f: string;
   jockey: string;
+  corner_1: string;
+  corner_2: string;
+  corner_3: string;
+  corner_4: string;
+}
+
+function getEntrantPassingOrder(e: RaceEntrant): string {
+  const corners = [e.corner_1, e.corner_2, e.corner_3, e.corner_4]
+    .filter(c => c && c !== '' && c !== '0');
+  return corners.length > 0 ? corners.join('-') : '';
 }
 
 // ========================================
@@ -671,13 +681,14 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
 
   return (
     <div className="mt-2 pt-2 border-t border-slate-100 w-full">
-      <div className="text-[9px] font-medium text-slate-500 mb-1.5">同レース出走馬</div>
       <div className="overflow-x-auto scrollbar-hide">
-        <table className="text-[9px] border-collapse w-full min-w-[380px]">
+        <table className="text-[9px] border-collapse w-full min-w-[360px]">
           <thead>
             <tr className="text-slate-400 border-b border-slate-200">
               <th className="text-center pb-1 pr-1.5 font-normal w-5">着</th>
               <th className="text-left pb-1 pr-1.5 font-normal">馬名</th>
+              {/* 通過: PCのみ表示 */}
+              <th className="hidden sm:table-cell text-right pb-1 pr-1.5 font-normal w-16">通過</th>
               <th className="text-right pb-1 pr-1.5 font-normal w-6">人</th>
               <th className="text-right pb-1 pr-1.5 font-normal w-10">オッズ</th>
               <th className="text-right pb-1 pr-1.5 font-normal w-10">着差</th>
@@ -688,36 +699,53 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
             </tr>
           </thead>
           <tbody>
-            {entrants.map((e, i) => (
-              <tr
-                key={i}
-                className={cn(
-                  'border-b border-slate-50',
-                  e.finish_position === '1' ? 'bg-amber-50' :
-                  e.finish_position === '2' ? 'bg-slate-50' :
-                  e.finish_position === '3' ? 'bg-orange-50' : ''
-                )}
-              >
-                <td className={cn('py-0.5 pr-1.5 text-center font-bold', getFinishColor(e.finish_position))}>
-                  {e.finish_position}
-                </td>
-                <td className="py-0.5 pr-1.5">
-                  <button
-                    onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
-                    className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
+            {entrants.map((e, i) => {
+              const passingOrder = getEntrantPassingOrder(e);
+              return (
+                <React.Fragment key={i}>
+                  <tr
+                    className={cn(
+                      'border-b border-slate-50',
+                      e.finish_position === '1' ? 'bg-amber-50' :
+                      e.finish_position === '2' ? 'bg-slate-50' :
+                      e.finish_position === '3' ? 'bg-orange-50' : ''
+                    )}
                   >
-                    {e.horse_name}
-                  </button>
-                </td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-500">{toHalfWidth(e.popularity || '-')}</td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.win_odds || '-')}</td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-500 tabular-nums">{formatMargin(e.margin)}</td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-600">{toHalfWidth(e.weight_carried || '-')}</td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-700 tabular-nums">{formatFinishTime(e.finish_time)}</td>
-                <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.last_3f || '-')}</td>
-                <td className="py-0.5 text-right text-slate-500 truncate max-w-[60px]">{e.jockey || '-'}</td>
-              </tr>
-            ))}
+                    <td className={cn('py-0.5 pr-1.5 text-center font-bold', getFinishColor(e.finish_position))}>
+                      {toHalfWidth(e.finish_position)}
+                    </td>
+                    <td className="py-0.5 pr-1.5">
+                      <button
+                        onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
+                        className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
+                      >
+                        {e.horse_name}
+                      </button>
+                    </td>
+                    {/* 通過: PCのみ */}
+                    <td className="hidden sm:table-cell py-0.5 pr-1.5 text-right text-slate-400 tabular-nums">
+                      {passingOrder || '-'}
+                    </td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-500">{toHalfWidth(e.popularity || '-')}</td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.win_odds || '-')}</td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-500 tabular-nums">{formatMargin(e.margin)}</td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-600">{toHalfWidth(e.weight_carried || '-')}</td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-700 tabular-nums">{formatFinishTime(e.finish_time)}</td>
+                    <td className="py-0.5 pr-1.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.last_3f || '-')}</td>
+                    <td className="py-0.5 text-right text-slate-500 truncate max-w-[60px]">{e.jockey || '-'}</td>
+                  </tr>
+                  {/* 通過: モバイルのみ2段目 */}
+                  {passingOrder && (
+                    <tr className="sm:hidden border-b border-slate-50">
+                      <td />
+                      <td colSpan={8} className="pb-1 text-[8px] text-slate-400 tabular-nums">
+                        通過: {passingOrder}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
