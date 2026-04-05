@@ -62,8 +62,7 @@ export default function HomePage() {
   useEffect(() => {
     if (status === 'authenticated') {
       const now = new Date();
-      const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-      router.replace(`/races/${ymd}`);
+      router.replace(`/card`);
     }
   }, [status, router]);
 
