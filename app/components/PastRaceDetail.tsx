@@ -693,8 +693,9 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
 
   // このレースのメモを一括取得
   useEffect(() => {
-    if (!raceKey || !isLoggedIn) return;
-    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(raceKey)}`)
+    const key = raceKey || raceId;
+    if (!key || !isLoggedIn) return;
+    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(key)}`)
       .then(r => r.ok ? r.json() : { memos: [] })
       .then(data => {
         const map = new Map<string, string>();
@@ -704,16 +705,17 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
         setMemosMap(map);
       })
       .catch(() => {});
-  }, [raceKey, isLoggedIn]);
+  }, [raceKey, raceId, isLoggedIn]);
 
   const saveMemo = useCallback(async (horseName: string, memo: string) => {
-    if (!raceKey) return;
+    const key = raceKey || raceId;
+    if (!key) return;
     setSavingMemo(true);
     try {
       await fetch('/api/user/horse-race-memos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ horseName, raceKey, memo }),
+        body: JSON.stringify({ horseName, raceKey: key, memo }),
       });
       setMemosMap(prev => {
         const next = new Map(prev);
@@ -725,7 +727,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
       setSavingMemo(false);
       setMemoPopup(null);
     }
-  }, [raceKey]);
+  }, [raceKey, raceId]);
 
   if (loading) return (
     <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">出走馬取得中...</div>
@@ -777,7 +779,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                           {e.horse_name}
                         </button>
                         {/* 📓ボタンを馬名の横に直接配置（PC・モバイル共通） */}
-                        {isLoggedIn && raceKey && (
+                        {isLoggedIn && (
                           <button
                             onClick={ev => { ev.stopPropagation(); setMemoPopup({ horseName: e.horse_name, draft: memosMap.get(e.horse_name) || '' }); }}
                             className={`flex-shrink-0 text-[10px] px-0.5 rounded leading-none transition-colors ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
