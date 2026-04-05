@@ -616,10 +616,10 @@ export class SagaBrain {
       
       // 凡走続き判定（レースレベル問わず3戦以上凡走）
       // 前走も含めて判定
-      const allRecent = pastRaces.slice(0, 5);
+      const allRecent = pastRaces.slice(0, 10);
       const consecutiveBadRuns = allRecent.filter(r => r.finishPosition > 3).length;
       if (consecutiveBadRuns >= 3) {
-        levelComments.push(`近5走中${consecutiveBadRuns}回凡走（4着以下）。低調期の可能性`);
+        levelComments.push(`近10走中${consecutiveBadRuns}回凡走（4着以下）。低調期の可能性`);
         analysis.score -= Math.min(10, consecutiveBadRuns * 2); // 最大-10点
         analysis.warnings.push('凡走続きで大幅評価ダウン');
       }
@@ -1987,7 +1987,7 @@ export class SagaBrain {
     let totalCorner2 = 0;
     let cornerCount = 0;
 
-    for (const race of input.pastRaces.slice(0, 5)) {
+    for (const race of input.pastRaces.slice(0, 10)) {
       if (race.corner2) {
         totalCorner2 += race.corner2;
         cornerCount++;

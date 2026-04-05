@@ -49,14 +49,14 @@ export async function GET(request: NextRequest) {
       [horseName.trim()]
     );
 
-    // race_id の先頭8桁(YYYYMMDD)で日付降順ソート → 直近10走
+    // race_id の先頭8桁(YYYYMMDD)で日付降順ソート → 直近20走
     const sorted = rows
       .sort((a, b) => {
         const dA = a.race_id?.substring(0, 8) || '0';
         const dB = b.race_id?.substring(0, 8) || '0';
         return parseInt(dB) - parseInt(dA);
       })
-      .slice(0, 10);
+      .slice(0, 20);
 
     // PastRaceData 互換形式にマッピング
     const pastRaces = sorted.map(row => {

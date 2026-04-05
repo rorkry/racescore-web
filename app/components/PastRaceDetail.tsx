@@ -1255,7 +1255,7 @@ function PastRaceDetailInner({
     );
   }
 
-  const displayRaces = pastRaces.slice(0, 5);
+  const displayRaces = pastRaces;
 
   // race_id が存在する過去走の勝ち馬を一括取得（1回のAPIコール）
   // eslint-disable-next-line react-hooks/rules-of-hooks

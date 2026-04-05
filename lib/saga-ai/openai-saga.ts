@@ -180,7 +180,7 @@ function buildUserPrompt(
     if (pos <= 0 || pos >= 30) return '除外';
     return `${pos}着`;
   };
-  const pastRacesSummary = horse.pastRaces.slice(0, 5).map((r, i) => {
+  const pastRacesSummary = horse.pastRaces.slice(0, 10).map((r, i) => {
     return `${i + 1}走前: ${r.place}${r.surface}${r.distance}m ${formatFinish(r.finishPosition)}(${r.popularity}番人気)`;
   }).join('\n');
   

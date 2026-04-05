@@ -398,7 +398,7 @@ async function handlePredictionRequest(
          OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
         AND SUBSTRING(race_id, 1, 8)::INTEGER < $2
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-      LIMIT 5
+      LIMIT 15
     `).all<any>(horseName, targetDateInt);
     
     // 各過去走のindicesとrace_levelを取得
@@ -636,9 +636,9 @@ async function handlePredictionRequest(
         };
       });
       
-      // 時計比較データを取得（過去5走分）
+      // 時計比較データを取得（過去10走分）
       timeComparisonData = [];
-      const maxComparisonRaces = Math.min(5, pastRaces.length);
+      const maxComparisonRaces = Math.min(10, pastRaces.length);
       
       for (let i = 0; i < maxComparisonRaces; i++) {
         const pr = pastRaces[i];
@@ -1155,7 +1155,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
              OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
             AND SUBSTRING(race_id, 1, 8)::INTEGER < $2
           ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-          LIMIT 5
+          LIMIT 15
         `).all<any>(horseName, targetDateInt);
         
         raceDataContext += `\n**${horseNumber}番 ${horseName}** (${waku}枠, ${jockey})\n`;
