@@ -327,7 +327,6 @@ html, body {
 .table-scroll-container {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  max-width: 100%;
 }
 
 * {
