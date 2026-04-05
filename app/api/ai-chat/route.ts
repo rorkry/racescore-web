@@ -98,7 +98,7 @@ async function getTimeComparisonRaces(
       WHERE date IN ($1, $2, $3, $4, $5, $6)
         AND place LIKE $7
         AND distance = $8
-        AND finish_position = '１'
+        AND finish_position IN ('1', '１')
       ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
     `;
 
@@ -437,12 +437,12 @@ async function handlePredictionRequest(
       try {
         const raceIdFor16 = raceId.substring(0, 16);
         const levelData = await db.prepare(`
-          SELECT level, level_label, plus_count, total_horses_run, good_run_count, first_run_good_count 
+          SELECT level, level_label, has_plus, total_horses_run, good_run_count, first_run_good_count 
           FROM race_levels WHERE race_id = $1
         `).get<{
           level: string;
           level_label: string;
-          plus_count: number;
+          has_plus: number;
           total_horses_run: number;
           good_run_count: number;
           first_run_good_count: number;
@@ -454,7 +454,7 @@ async function handlePredictionRequest(
           raceLevelDetail = {
             level: levelData.level || 'UNKNOWN',
             levelLabel: levelData.level_label || levelData.level || 'UNKNOWN',
-            plusCount: levelData.plus_count || 0,
+            plusCount: levelData.has_plus || 0,
             totalHorsesRun: levelData.total_horses_run || 0,
             goodRunCount: actualGoodCount,
           };
@@ -1221,7 +1221,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
     if (userId && horseList.length > 0) {
       try {
         const favorites = await db.prepare(`
-          SELECT horse_name, memo FROM user_favorite_horses WHERE user_id = $1
+          SELECT horse_name, memo FROM favorite_horses WHERE user_id = $1
         `).all<{ horse_name: string; memo: string | null }>(userId);
         
         if (favorites && favorites.length > 0) {
