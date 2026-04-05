@@ -316,6 +316,20 @@ async function initDb(database: DatabaseWrapper) {
     )
   `);
 
+  // 今走メモ（馬×レース単位のメモ）
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS horse_race_memos (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      horse_name TEXT NOT NULL,
+      race_key TEXT NOT NULL,
+      memo TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE (user_id, horse_name, race_key)
+    )
+  `);
+
   // 予想履歴（的中率計算用）
   await database.exec(`
     CREATE TABLE IF NOT EXISTS predictions (
@@ -439,6 +453,9 @@ async function initDb(database: DatabaseWrapper) {
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_race_memos_race ON race_memos(race_key)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_baba_memos_user ON baba_memos(user_id)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_favorite_horses_user ON favorite_horses(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_horse_race_memos_user ON horse_race_memos(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_horse_race_memos_horse ON horse_race_memos(user_id, horse_name)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_horse_race_memos_race ON horse_race_memos(user_id, race_key)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(user_id)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_predictions_race ON predictions(race_key)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read)`);

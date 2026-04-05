@@ -59,6 +59,7 @@ interface PastRaceDetailProps {
   raceMemos?: Map<string, string>;
   onMemoClick?: (raceKey: string, raceTitle: string, memo: string) => void;
   hideEntrants?: boolean;
+  horseRaceMemos?: Map<string, string>; // 今走メモ: race_key → memo
 }
 
 // ========================================
@@ -68,6 +69,16 @@ interface PastRaceDetailProps {
 function toHalfWidth(str: string): string {
   return str.replace(/[！-～]/g, s =>
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+
+// 今走メモのキーを生成（race_id先頭8桁 + 場所 + R番号）
+function deriveHorseRaceMemoKey(race: PastRaceData): string | null {
+  if (!race.race_id) return null;
+  const yyyymmdd = race.race_id.substring(0, 8);
+  const place = (race.place || '').replace(/[0-9０-９]+回.*$/, '').trim();
+  const raceNum = race.race_number || '';
+  if (!yyyymmdd || !place || !raceNum) return null;
+  return `${yyyymmdd}-${place}-${raceNum}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -776,6 +787,7 @@ interface CompactRaceRowProps {
   onMemoClick?: () => void;
   hideEntrants?: boolean;
   winnerName?: string;
+  horseMemo?: string;
 }
 
 function CompactRaceRow({ 
@@ -789,7 +801,8 @@ function CompactRaceRow({
   hasMemo,
   onMemoClick,
   hideEntrants,
-  winnerName
+  winnerName,
+  horseMemo,
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -835,6 +848,9 @@ function CompactRaceRow({
           {raceName}
           {winnerName && (
             <span className="text-slate-400 ml-1">({winnerName})</span>
+          )}
+          {horseMemo && (
+            <span className="ml-1.5 text-amber-500 text-[10px]" title={horseMemo}>📓</span>
           )}
         </span>
         
@@ -985,6 +1001,13 @@ function CompactRaceRow({
             return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
           })()}
 
+          {/* 今走メモ */}
+          {horseMemo && (
+            <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap">
+              <span className="font-semibold mr-1">📓 当時メモ:</span>{horseMemo}
+            </div>
+          )}
+
           {/* 出走馬一覧 */}
           {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
         </div>
@@ -1008,6 +1031,7 @@ interface MobileRaceCardProps {
   hasMemo?: boolean;
   onMemoClick?: () => void;
   winnerName?: string;
+  horseMemo?: string;
 }
 
 function MobileRaceCard({ 
@@ -1020,7 +1044,8 @@ function MobileRaceCard({
   isClickable,
   hasMemo,
   onMemoClick,
-  winnerName
+  winnerName,
+  horseMemo,
 }: MobileRaceCardProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1087,6 +1112,9 @@ function MobileRaceCard({
               <span />
             )}
             <div className="flex items-center gap-1">
+              {horseMemo && (
+                <span className="text-amber-500 text-[10px]" title={horseMemo}>📓</span>
+              )}
               {hasMemo && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onMemoClick?.(); }}
@@ -1118,9 +1146,10 @@ interface MobileDetailPanelProps {
   index: number;
   isPremium: boolean;
   hideEntrants?: boolean;
+  horseMemo?: string;
 }
 
-function MobileDetailPanel({ race, index, isPremium, hideEntrants }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1136,6 +1165,12 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants }: MobileDetai
       </div>
 
       <div className="p-3">
+        {/* 今走メモ */}
+        {horseMemo && (
+          <div className="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap">
+            <span className="font-semibold mr-1">📓</span>{horseMemo}
+          </div>
+        )}
         {/* 基本情報 + 指数 */}
         <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs mb-2">
           <div className="flex justify-between gap-1 min-w-0">
@@ -1242,6 +1277,7 @@ function PastRaceDetailInner({
   raceMemos,
   onMemoClick,
   hideEntrants = false,
+  horseRaceMemos,
 }: PastRaceDetailProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
   const [mobileExpandedIndex, setMobileExpandedIndex] = useState<number | null>(null);
@@ -1281,6 +1317,8 @@ function PastRaceDetailInner({
             : null;
           const hasMemo = raceKey ? raceMemos?.has(raceKey) : false;
           const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
+          const horseRaceMemoKey = deriveHorseRaceMemoKey(race);
+          const horseMemo = horseRaceMemoKey ? horseRaceMemos?.get(horseRaceMemoKey) : undefined;
           
           return (
             <CompactRaceRow
@@ -1295,6 +1333,7 @@ function PastRaceDetailInner({
               hasMemo={hasMemo}
               hideEntrants={hideEntrants}
               winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
+              horseMemo={horseMemo}
               onMemoClick={() => {
                 if (raceKey && memoContent) {
                   onMemoClick?.(
@@ -1321,6 +1360,8 @@ function PastRaceDetailInner({
               : null;
             const hasMemo = raceKey ? raceMemos?.has(raceKey) : false;
             const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
+            const horseRaceMemoKey = deriveHorseRaceMemoKey(race);
+            const horseMemo = horseRaceMemoKey ? horseRaceMemos?.get(horseRaceMemoKey) : undefined;
             
             return (
               <MobileRaceCard
@@ -1334,6 +1375,7 @@ function PastRaceDetailInner({
                 isClickable={isDateClickable?.(race.date)}
                 hasMemo={hasMemo}
                 winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
+                horseMemo={horseMemo}
                 onMemoClick={() => {
                   if (raceKey && memoContent) {
                     onMemoClick?.(
@@ -1354,6 +1396,10 @@ function PastRaceDetailInner({
             index={mobileExpandedIndex}
             isPremium={isPremium}
             hideEntrants={hideEntrants}
+            horseMemo={(() => {
+              const key = deriveHorseRaceMemoKey(displayRaces[mobileExpandedIndex]);
+              return key ? horseRaceMemos?.get(key) : undefined;
+            })()}
           />
         )}
 

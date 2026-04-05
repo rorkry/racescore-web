@@ -212,6 +212,58 @@ export default function RaceCardPage() {
   const [showRaceMemo, setShowRaceMemo] = useState(false);
   const [raceMemos, setRaceMemos] = useState<Map<string, string>>(new Map()); // raceKey -> memo内容
   const [pastRaceMemoPopup, setPastRaceMemoPopup] = useState<{ raceKey: string; raceTitle: string; memo: string } | null>(null);
+
+  // ========== 今走メモ ==========
+  // キー: horse_name → 今走のメモ文字列
+  const [horseRaceMemosForCard, setHorseRaceMemosForCard] = useState<Map<string, string>>(new Map());
+  // 今走メモポップアップ: 開いている馬名 + 現在の入力テキスト
+  const [horseRaceMemoPopup, setHorseRaceMemoPopup] = useState<{ horseName: string; draft: string } | null>(null);
+  // 各馬の過去走メモ（キー: race_key → memo）: horseNameをキーに遅延ロード
+  const [horseRaceMemosCache, setHorseRaceMemosCache] = useState<Map<string, Map<string, string>>>(new Map());
+
+  // 今走メモを現在のレース全馬分ロード
+  useEffect(() => {
+    if (!selectedVenue || !selectedRace || !date) return;
+    const raceKey = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
+    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(raceKey)}`)
+      .then(r => r.ok ? r.json() : { memos: [] })
+      .then((data: { memos: Array<{ horse_name: string; memo: string }> }) => {
+        const map = new Map<string, string>();
+        for (const m of data.memos) map.set(m.horse_name, m.memo);
+        setHorseRaceMemosForCard(map);
+      })
+      .catch(() => {});
+  }, [selectedYear, date, selectedVenue, selectedRace]);
+
+  // 馬の過去走メモを遅延ロード（過去走パネルを開いたとき）
+  async function loadHorseRaceMemosFor(horseName: string) {
+    if (horseRaceMemosCache.has(horseName)) return;
+    try {
+      const res = await fetch(`/api/user/horse-race-memos?horseName=${encodeURIComponent(horseName)}`);
+      if (!res.ok) return;
+      const data: { memos: Array<{ race_key: string; memo: string }> } = await res.json();
+      const map = new Map<string, string>();
+      for (const m of data.memos) map.set(m.race_key, m.memo);
+      setHorseRaceMemosCache(prev => new Map(prev).set(horseName, map));
+    } catch {}
+  }
+
+  // 今走メモ保存
+  async function saveHorseRaceMemo(horseName: string, memo: string) {
+    if (!selectedVenue || !selectedRace || !date) return;
+    const raceKey = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
+    await fetch('/api/user/horse-race-memos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ horseName, raceKey, memo }),
+    });
+    setHorseRaceMemosForCard(prev => {
+      const next = new Map(prev);
+      if (memo.trim()) next.set(horseName, memo.trim());
+      else next.delete(horseName);
+      return next;
+    });
+  }
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
   const [favoriteHorseMemos, setFavoriteHorseMemos] = useState<Map<string, string>>(new Map()); // 馬名 -> メモ
@@ -1521,6 +1573,7 @@ export default function RaceCardPage() {
                             {(() => {
                               const horseName = normalizeHorseName(horse.umamei);
                               const isFavorite = favoriteHorses.includes(horseName);
+                              const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
                               return (
                                 <td className={`border border-slate-300 px-1 sm:px-4 py-2 font-semibold ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
                                   <div className="flex items-center gap-1">
@@ -1533,18 +1586,36 @@ export default function RaceCardPage() {
                                           : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
                                         }
                                       `}
-                                      onClick={() => toggleHorseExpand(horse.umaban)}
+                                      onClick={() => {
+                                        toggleHorseExpand(horse.umaban);
+                                        loadHorseRaceMemosFor(horseName);
+                                      }}
                                       title="過去走を表示"
                                     >
                                       {expandedHorse === horse.umaban ? '▲' : '▼'}
                                     </button>
                                     <span 
-                                      className={`truncate max-w-[80px] sm:max-w-none cursor-pointer hover:underline transition-colors ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                      className={`truncate max-w-[60px] sm:max-w-none cursor-pointer hover:underline transition-colors ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
                                       onClick={() => setSelectedHorseDetail(horse)}
                                       title="馬の詳細情報を表示"
                                     >
                                       {horseName}
                                     </span>
+                                    {/* 今走メモボタン */}
+                                    <button
+                                      className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
+                                        hasHorseRaceMemo
+                                          ? 'bg-amber-100 text-amber-600 border border-amber-300'
+                                          : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
+                                      }`}
+                                      onClick={() => setHorseRaceMemoPopup({
+                                        horseName,
+                                        draft: horseRaceMemosForCard.get(horseName) || '',
+                                      })}
+                                      title="今走メモを書く"
+                                    >
+                                      📓
+                                    </button>
                                   </div>
                                 </td>
                               );
@@ -1568,6 +1639,7 @@ export default function RaceCardPage() {
                                   onDateClick={navigateToDate}
                                   isDateClickable={isDateClickable}
                                   raceMemos={raceMemos}
+                                  horseRaceMemos={horseRaceMemosCache.get(normalizeHorseName(horse.umamei))}
                                   onMemoClick={(raceKey, raceTitle, memo) => 
                                     setPastRaceMemoPopup({ raceKey, raceTitle, memo })
                                   }
@@ -1716,6 +1788,66 @@ export default function RaceCardPage() {
                 <p className="text-xs text-slate-500 mt-3 text-center">
                   このレースで記録したメモです
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 今走メモ編集ポップアップ */}
+        {horseRaceMemoPopup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60" onClick={() => setHorseRaceMemoPopup(null)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+              <div className="px-5 py-4 flex items-center justify-between bg-amber-500">
+                <h2 className="text-base font-bold text-white">
+                  📓 今走メモ — {horseRaceMemoPopup.horseName}
+                </h2>
+                <button
+                  onClick={() => setHorseRaceMemoPopup(null)}
+                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="閉じる"
+                >
+                  <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="p-4">
+                <textarea
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  rows={5}
+                  placeholder="この馬の今走についてメモを書く&#10;（例: 外枠不利、斤量増、輸送明け...）"
+                  value={horseRaceMemoPopup.draft}
+                  onChange={e => setHorseRaceMemoPopup(prev => prev ? { ...prev, draft: e.target.value } : null)}
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    className="flex-1 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 transition-colors"
+                    onClick={async () => {
+                      await saveHorseRaceMemo(horseRaceMemoPopup.horseName, horseRaceMemoPopup.draft);
+                      setHorseRaceMemoPopup(null);
+                    }}
+                  >
+                    保存
+                  </button>
+                  {horseRaceMemosForCard.has(horseRaceMemoPopup.horseName) && (
+                    <button
+                      className="px-4 py-2 rounded-lg bg-red-100 text-red-600 text-sm hover:bg-red-200 transition-colors"
+                      onClick={async () => {
+                        await saveHorseRaceMemo(horseRaceMemoPopup.horseName, '');
+                        setHorseRaceMemoPopup(null);
+                      }}
+                    >
+                      削除
+                    </button>
+                  )}
+                  <button
+                    className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm hover:bg-slate-200 transition-colors"
+                    onClick={() => setHorseRaceMemoPopup(null)}
+                  >
+                    キャンセル
+                  </button>
+                </div>
               </div>
             </div>
           </div>
