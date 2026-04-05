@@ -749,8 +749,6 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
               <th className="text-right pb-1 pr-1 font-normal w-14 tabular-nums">時計</th>
               <th className="text-right pb-1 pr-1 font-normal w-10">上がり</th>
               <th className="hidden sm:table-cell text-right pb-1 font-normal w-16">騎手</th>
-              {/* メモ列: ログイン済み＆raceKeyありの場合のみ */}
-              {isLoggedIn && raceKey && <th className="text-center pb-1 font-normal w-6">📓</th>}
             </tr>
           </thead>
           <tbody>
@@ -771,12 +769,24 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                       {toHalfWidth(e.finish_position)}
                     </td>
                     <td className="py-0.5 pr-1">
-                      <button
-                        onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
-                        className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
-                      >
-                        {e.horse_name}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
+                          className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
+                        >
+                          {e.horse_name}
+                        </button>
+                        {/* 📓ボタンを馬名の横に直接配置（PC・モバイル共通） */}
+                        {isLoggedIn && raceKey && (
+                          <button
+                            onClick={ev => { ev.stopPropagation(); setMemoPopup({ horseName: e.horse_name, draft: memosMap.get(e.horse_name) || '' }); }}
+                            className={`flex-shrink-0 text-[10px] px-0.5 rounded leading-none transition-colors ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
+                            title={hasMemo ? 'メモあり（タップで編集）' : '今走メモを書く'}
+                          >
+                            📓
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {/* 通過: PCのみ */}
                     <td className="hidden sm:table-cell py-0.5 pr-1 text-right text-slate-400 tabular-nums">
@@ -791,18 +801,6 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                     <td className="py-0.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.last_3f || '-')}</td>
                     {/* 騎手: PCのみ */}
                     <td className="hidden sm:table-cell py-0.5 text-right text-slate-500 truncate max-w-[60px]">{e.jockey || '-'}</td>
-                    {/* メモボタン */}
-                    {isLoggedIn && raceKey && (
-                      <td className="py-0.5 text-center">
-                        <button
-                          onClick={ev => { ev.stopPropagation(); setMemoPopup({ horseName: e.horse_name, draft: memosMap.get(e.horse_name) || '' }); }}
-                          className={`text-[10px] px-0.5 rounded leading-none ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
-                          title={hasMemo ? 'メモあり（クリックで編集）' : 'メモを書く'}
-                        >
-                          📓
-                        </button>
-                      </td>
-                    )}
                   </tr>
                   {/* モバイルのみ2段目: 通過 + 騎手(斤量) [+ メモ内容] */}
                   {(hasSecondRow || hasMemo) && (
@@ -812,7 +810,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                       e.finish_position === '3' ? 'bg-orange-50' : ''
                     )}>
                       <td />
-                      <td colSpan={isLoggedIn && raceKey ? 7 : 6} className="pb-1 text-[8px] text-slate-400 tabular-nums">
+                      <td colSpan={6} className="pb-1 text-[8px] text-slate-400 tabular-nums">
                         <span className="flex items-center gap-2 flex-wrap">
                           {passingOrder && <span>通過: {passingOrder}</span>}
                           {e.jockey && (
