@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
+import { useSession } from '@/app/components/Providers';
 
 // ========================================
 // 型定義
@@ -672,10 +673,15 @@ function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose
   );
 }
 
-function RaceEntrantsSection({ raceId }: { raceId: string }) {
+function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: string | null }) {
+  const { status } = useSession();
+  const isLoggedIn = status === 'authenticated';
   const [entrants, setEntrants] = useState<RaceEntrant[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedHorse, setSelectedHorse] = useState<string | null>(null);
+  const [memosMap, setMemosMap] = useState<Map<string, string>>(new Map());
+  const [memoPopup, setMemoPopup] = useState<{ horseName: string; draft: string } | null>(null);
+  const [savingMemo, setSavingMemo] = useState(false);
 
   useEffect(() => {
     fetch(`/api/race-entrants?raceId=${encodeURIComponent(raceId)}`)
@@ -684,6 +690,42 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
       .catch(() => setEntrants([]))
       .finally(() => setLoading(false));
   }, [raceId]);
+
+  // このレースのメモを一括取得
+  useEffect(() => {
+    if (!raceKey || !isLoggedIn) return;
+    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(raceKey)}`)
+      .then(r => r.ok ? r.json() : { memos: [] })
+      .then(data => {
+        const map = new Map<string, string>();
+        for (const m of data.memos || []) {
+          map.set(m.horse_name, m.memo);
+        }
+        setMemosMap(map);
+      })
+      .catch(() => {});
+  }, [raceKey, isLoggedIn]);
+
+  const saveMemo = useCallback(async (horseName: string, memo: string) => {
+    if (!raceKey) return;
+    setSavingMemo(true);
+    try {
+      await fetch('/api/user/horse-race-memos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horseName, raceKey, memo }),
+      });
+      setMemosMap(prev => {
+        const next = new Map(prev);
+        if (memo.trim()) next.set(horseName, memo.trim());
+        else next.delete(horseName);
+        return next;
+      });
+    } finally {
+      setSavingMemo(false);
+      setMemoPopup(null);
+    }
+  }, [raceKey]);
 
   if (loading) return (
     <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-400">出走馬取得中...</div>
@@ -707,12 +749,15 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
               <th className="text-right pb-1 pr-1 font-normal w-14 tabular-nums">時計</th>
               <th className="text-right pb-1 pr-1 font-normal w-10">上がり</th>
               <th className="hidden sm:table-cell text-right pb-1 font-normal w-16">騎手</th>
+              {/* メモ列: ログイン済み＆raceKeyありの場合のみ */}
+              {isLoggedIn && raceKey && <th className="text-center pb-1 font-normal w-6">📓</th>}
             </tr>
           </thead>
           <tbody>
             {entrants.map((e, i) => {
               const passingOrder = getEntrantPassingOrder(e);
               const hasSecondRow = passingOrder || e.jockey || e.weight_carried;
+              const hasMemo = memosMap.has(e.horse_name);
               return (
                 <React.Fragment key={i}>
                   <tr
@@ -746,22 +791,37 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
                     <td className="py-0.5 text-right text-slate-600 tabular-nums">{toHalfWidth(e.last_3f || '-')}</td>
                     {/* 騎手: PCのみ */}
                     <td className="hidden sm:table-cell py-0.5 text-right text-slate-500 truncate max-w-[60px]">{e.jockey || '-'}</td>
+                    {/* メモボタン */}
+                    {isLoggedIn && raceKey && (
+                      <td className="py-0.5 text-center">
+                        <button
+                          onClick={ev => { ev.stopPropagation(); setMemoPopup({ horseName: e.horse_name, draft: memosMap.get(e.horse_name) || '' }); }}
+                          className={`text-[10px] px-0.5 rounded leading-none ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
+                          title={hasMemo ? 'メモあり（クリックで編集）' : 'メモを書く'}
+                        >
+                          📓
+                        </button>
+                      </td>
+                    )}
                   </tr>
-                  {/* モバイルのみ2段目: 通過 + 騎手(斤量) */}
-                  {hasSecondRow && (
+                  {/* モバイルのみ2段目: 通過 + 騎手(斤量) [+ メモ内容] */}
+                  {(hasSecondRow || hasMemo) && (
                     <tr className={cn('sm:hidden border-b border-slate-100',
                       e.finish_position === '1' ? 'bg-amber-50' :
                       e.finish_position === '2' ? 'bg-slate-50' :
                       e.finish_position === '3' ? 'bg-orange-50' : ''
                     )}>
                       <td />
-                      <td colSpan={6} className="pb-1 text-[8px] text-slate-400 tabular-nums">
+                      <td colSpan={isLoggedIn && raceKey ? 7 : 6} className="pb-1 text-[8px] text-slate-400 tabular-nums">
                         <span className="flex items-center gap-2 flex-wrap">
                           {passingOrder && <span>通過: {passingOrder}</span>}
                           {e.jockey && (
                             <span className="text-slate-500">
                               {e.jockey}{e.weight_carried ? `(${toHalfWidth(e.weight_carried)})` : ''}
                             </span>
+                          )}
+                          {hasMemo && (
+                            <span className="text-amber-600 font-medium">📓 {memosMap.get(e.horse_name)}</span>
                           )}
                         </span>
                       </td>
@@ -779,6 +839,50 @@ function RaceEntrantsSection({ raceId }: { raceId: string }) {
           horseName={selectedHorse}
           onClose={() => setSelectedHorse(null)}
         />
+      )}
+
+      {/* メモポップアップ */}
+      {memoPopup && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setMemoPopup(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-4"
+            onClick={ev => ev.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="font-semibold text-sm text-amber-700">📓 {memoPopup.horseName}</span>
+              <button onClick={() => setMemoPopup(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+            </div>
+            <textarea
+              className="w-full border border-slate-200 rounded-lg p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-300"
+              rows={4}
+              placeholder="このレースでのメモ..."
+              value={memoPopup.draft}
+              onChange={ev => setMemoPopup(p => p ? { ...p, draft: ev.target.value } : null)}
+              autoFocus
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => saveMemo(memoPopup.horseName, memoPopup.draft)}
+                disabled={savingMemo}
+                className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium py-2 rounded-lg disabled:opacity-50"
+              >
+                {savingMemo ? '保存中...' : '保存'}
+              </button>
+              {memosMap.has(memoPopup.horseName) && (
+                <button
+                  onClick={() => saveMemo(memoPopup.horseName, '')}
+                  disabled={savingMemo}
+                  className="px-3 bg-slate-100 hover:bg-red-50 text-red-500 text-sm rounded-lg disabled:opacity-50"
+                >
+                  削除
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1022,7 +1126,7 @@ function CompactRaceRow({
           )}
 
           {/* 出走馬一覧 */}
-          {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
+          {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} raceKey={deriveHorseRaceMemoKey(race)} />}
         </div>
       )}
     </div>
@@ -1272,7 +1376,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo }: 
         })()}
 
         {/* 出走馬一覧 */}
-        {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} />}
+        {!hideEntrants && race.race_id && <RaceEntrantsSection raceId={race.race_id} raceKey={deriveHorseRaceMemoKey(race)} />}
       </div>
     </div>
   );
