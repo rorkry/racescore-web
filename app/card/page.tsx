@@ -1575,8 +1575,8 @@ export default function RaceCardPage() {
                               const isFavorite = favoriteHorses.includes(horseName);
                               const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
                               return (
-                                <td className={`border border-slate-300 px-1 sm:px-4 py-2 font-semibold ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
-                                  <div className="flex items-center gap-1">
+                                <td className={`border border-slate-300 px-1 sm:px-4 py-2 font-semibold w-full ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
+                                  <div className="flex items-center gap-1 w-full">
                                     <button
                                       className={`
                                         flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
@@ -1595,15 +1595,15 @@ export default function RaceCardPage() {
                                       {expandedHorse === horse.umaban ? '▲' : '▼'}
                                     </button>
                                     <span 
-                                      className={`truncate max-w-[60px] sm:max-w-none cursor-pointer hover:underline transition-colors ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                      className={`flex-1 min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
                                       onClick={() => setSelectedHorseDetail(horse)}
                                       title="馬の詳細情報を表示"
                                     >
                                       {horseName}
                                     </span>
-                                    {/* 今走メモボタン */}
+                                    {/* 今走メモボタン（右端固定） */}
                                     <button
-                                      className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
+                                      className={`flex-shrink-0 ml-auto text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
                                         hasHorseRaceMemo
                                           ? 'bg-amber-100 text-amber-600 border border-amber-300'
                                           : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
@@ -1621,10 +1621,10 @@ export default function RaceCardPage() {
                               );
                             })()}
                             {/* 騎手(斤量) */}
-                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm">
+                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm w-16 sm:w-auto">
                               <span className="sm:hidden">{horse.kishu.trim().slice(0, 3)}</span>
                               <span className="hidden sm:inline">{horse.kishu.trim()}</span>
-                              <span className="text-slate-500">({horse.kinryo.trim()})</span>
+                              <span className="text-slate-500 text-[9px] sm:text-sm">({horse.kinryo.trim()})</span>
                             </td>
                           </tr>
                           {expandedHorse === horse.umaban && (
