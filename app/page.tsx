@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { signIn, useSession } from './components/Providers';
 
@@ -51,9 +52,20 @@ function LoginRequiredBanner() {
 }
 
 export default function HomePage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [todayRaces, setTodayRaces] = useState<TodayRace[]>([]);
   const [loading, setLoading] = useState(true);
   const [todayDate, setTodayDate] = useState('');
+
+  // ログイン済みなら今日のレース一覧ページへリダイレクト
+  useEffect(() => {
+    if (status === 'authenticated') {
+      const now = new Date();
+      const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      router.replace(`/races/${ymd}`);
+    }
+  }, [status, router]);
 
   useEffect(() => {
     const fetchTodayRaces = async () => {
