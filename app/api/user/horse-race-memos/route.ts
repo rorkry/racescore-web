@@ -22,16 +22,24 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const raceKey = searchParams.get('raceKey');
   const horseName = searchParams.get('horseName');
+  const all = searchParams.get('all');
 
-  if (!raceKey && !horseName) {
-    return NextResponse.json({ error: 'raceKey or horseName is required' }, { status: 400 });
+  if (!raceKey && !horseName && !all) {
+    return NextResponse.json({ error: 'raceKey, horseName, or all=true is required' }, { status: 400 });
   }
 
   try {
     const db = getDb();
-    let rows: Array<{ horse_name: string; race_key: string; memo: string }>;
+    let rows: Array<{ horse_name: string; race_key: string; memo: string; updated_at?: string }>;
 
-    if (raceKey) {
+    if (all) {
+      rows = await db.query<{ horse_name: string; race_key: string; memo: string; updated_at: string }>(
+        `SELECT horse_name, race_key, memo, updated_at FROM horse_race_memos
+         WHERE user_id = $1
+         ORDER BY updated_at DESC`,
+        [userId]
+      );
+    } else if (raceKey) {
       rows = await db.query<{ horse_name: string; race_key: string; memo: string }>(
         `SELECT horse_name, race_key, memo FROM horse_race_memos
          WHERE user_id = $1 AND race_key = $2
