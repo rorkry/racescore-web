@@ -639,7 +639,7 @@ function HorseFavoriteSection({ horseName }: { horseName: string }) {
   );
 }
 
-function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose: () => void }) {
+export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose: () => void }) {
   const [pastRaces, setPastRaces] = useState<PastRaceData[] | null>(null);
   const [loading, setLoading] = useState(true);
 

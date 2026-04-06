@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import AIChatPanel from './AIChatPanel';
+import TodayAlertsPanel from './TodayAlertsPanel';
 
 interface MenuItem {
   id: string;
@@ -128,6 +129,7 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
   
   const [isOpen, setIsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false); // チャットパネルの開閉状態を分離
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false); // 今日の注目馬パネル
   const [isAnimating, setIsAnimating] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [activeFeatures, setActiveFeatures] = useState<Set<string>>(() => {
@@ -520,6 +522,20 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
       <div className="fab-container">
         {/* メニューリスト */}
         <div ref={menuRef} className={`fab-menu ${isOpen ? 'open' : ''}`}>
+          {/* 今日の注目馬ボタン */}
+          <div
+            className="fab-menu-item"
+            style={{ borderBottom: '1px solid #e5e7eb', marginBottom: 4 }}
+            onClick={() => { setIsAlertsOpen(true); setIsOpen(false); setIsChatOpen(false); }}
+          >
+            <span className="fab-menu-item-icon">🔔</span>
+            <div className="fab-menu-item-content">
+              <span className="fab-menu-item-label">今日の注目馬</span>
+              <span className="fab-menu-item-description">お気に入り・メモ馬の出走確認</span>
+            </div>
+            <span className="fab-menu-item-status inactive">▶</span>
+          </div>
+
           <div className="fab-menu-header">
             <span className="fab-menu-title">🔒 プレミアム機能</span>
           </div>
@@ -596,6 +612,12 @@ export default function FloatingActionButton({ menuItems = [], raceContext: prop
         isPremium={isPremium}
         activeFeatures={activeFeatures}
         onToggleFeature={toggleFeature}
+      />
+
+      {/* 今日の注目馬パネル */}
+      <TodayAlertsPanel
+        isOpen={isAlertsOpen}
+        onClose={() => setIsAlertsOpen(false)}
       />
     </>
   );
