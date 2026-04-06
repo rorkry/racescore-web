@@ -983,8 +983,14 @@ function CompactRaceRow({
           {formatDate(race.date)}
         </span>
         
-        {/* 場所 */}
-        <span className="text-xs text-slate-700 w-8 flex-shrink-0">{race.place || '-'}</span>
+        {/* 場所 + 距離（隣接させる） */}
+        <span className="text-xs text-slate-700 flex-shrink-0 whitespace-nowrap">
+          {race.place || '-'}
+        </span>
+        <span className="text-xs text-slate-600 flex-shrink-0 whitespace-nowrap tabular-nums">
+          <span className={surface === '芝' ? 'text-green-600' : 'text-amber-700'}>{surface}</span>
+          {dist}m
+        </span>
         
         {/* レース名 + 勝ち馬名 */}
         <span className="text-xs text-slate-800 truncate min-w-0 flex-1">
@@ -997,23 +1003,17 @@ function CompactRaceRow({
           )}
         </span>
         
-        {/* 芝/ダ + 距離 */}
-        <span className="text-xs text-slate-600 w-14 flex-shrink-0 tabular-nums">
-          <span className={surface === '芝' ? 'text-green-600' : 'text-amber-700'}>{surface}</span>
-          {dist}m
-        </span>
-        
         {/* 人気 → 着順 */}
-        <div className="flex items-center gap-1 w-20 flex-shrink-0">
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           <span className="text-xs text-slate-500 tabular-nums">{toHalfWidth(race.popularity || '-')}人</span>
-          <span className="text-slate-400">→</span>
+          <span className="text-slate-400 text-[10px]">→</span>
           <span className={cn('text-sm font-semibold tabular-nums', getFinishColor(race.finish_position || ''))}>
             {toHalfWidth(race.finish_position || '-')}着
           </span>
         </div>
         
         {/* 着差 */}
-        <span className="text-xs text-slate-500 w-10 text-right flex-shrink-0 tabular-nums">
+        <span className="text-xs text-slate-500 w-8 text-right flex-shrink-0 tabular-nums">
           {formatMargin(race.margin)}
         </span>
         
@@ -1206,23 +1206,33 @@ function MobileRaceCard({
         onClick={onToggle}
       >
         <div className="p-2.5">
-          {/* ヘッダー: ラベル + 日付 */}
+          {/* ヘッダー: ラベル + 日付 + メモバッジ */}
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
               {raceLabel}
             </span>
-            <span className="text-[9px] tabular-nums text-slate-500">
-              {formatDate(race.date)}
-            </span>
+            <div className="flex items-center gap-1">
+              {horseMemo && (
+                <span className="text-[8px] bg-amber-100 text-amber-600 px-1 rounded leading-tight" title={horseMemo}>✏️メモ</span>
+              )}
+              <span className="text-[9px] tabular-nums text-slate-500">
+                {formatDate(race.date)}
+              </span>
+            </div>
           </div>
           
           {/* 場所 + 距離 */}
-          <div className="flex items-center justify-between mb-1.5">
+          <div className="flex items-center justify-between mb-0.5">
             <span className="text-xs font-medium text-slate-800">{race.place}</span>
             <span className="text-[10px] text-slate-600">
               <span className={surface === '芝' ? 'text-green-600' : 'text-amber-700'}>{surface}</span>
               {dist}
             </span>
+          </div>
+
+          {/* レース名 */}
+          <div className="text-[9px] text-slate-500 truncate mb-1 leading-tight">
+            {race.race_name || race.class_name || ''}
           </div>
 
           {/* 勝ち馬名 */}
@@ -1255,9 +1265,6 @@ function MobileRaceCard({
               <span />
             )}
             <div className="flex items-center gap-1">
-              {horseMemo && (
-                <span className="text-amber-500 text-[10px]" title={horseMemo}>✏️</span>
-              )}
               {hasMemo && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onMemoClick?.(); }}
