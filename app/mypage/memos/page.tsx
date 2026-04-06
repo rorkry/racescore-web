@@ -188,7 +188,7 @@ export default function MyMemosPage() {
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
         >
-          📓 レース別馬メモ ({horseMemos.length})
+          ✏️ レース別馬メモ ({horseMemos.length})
         </button>
       </div>
 
@@ -286,9 +286,9 @@ export default function MyMemosPage() {
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           {horseMemos.length === 0 ? (
             <div className="p-12 text-center text-gray-500">
-              <span className="text-4xl">📓</span>
+              <span className="text-4xl">✏️</span>
               <p className="mt-4">まだレース別馬メモがありません</p>
-              <p className="text-sm mt-1">レースカードの馬名横の 📓 ボタンからメモを追加できます</p>
+              <p className="text-sm mt-1">レースカードの馬名横の ✏️ ボタンからメモを追加できます</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">

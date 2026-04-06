@@ -771,21 +771,21 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                       {toHalfWidth(e.finish_position)}
                     </td>
                     <td className="py-0.5 pr-1">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center justify-between gap-1 w-full">
                         <button
                           onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
-                          className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap"
+                          className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap flex-1 min-w-0 truncate"
                         >
                           {e.horse_name}
                         </button>
-                        {/* 📓ボタンを馬名の横に直接配置（PC・モバイル共通） */}
+                        {/* ✏️ボタンを右端に固定 */}
                         {isLoggedIn && (
                           <button
                             onClick={ev => { ev.stopPropagation(); setMemoPopup({ horseName: e.horse_name, draft: memosMap.get(e.horse_name) || '' }); }}
-                            className={`flex-shrink-0 text-[10px] px-0.5 rounded leading-none transition-colors ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
+                            className={`flex-shrink-0 ml-1 text-[10px] px-0.5 rounded leading-none transition-colors ${hasMemo ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}`}
                             title={hasMemo ? 'メモあり（タップで編集）' : '今走メモを書く'}
                           >
-                            📓
+                            ✏️
                           </button>
                         )}
                       </div>
@@ -821,7 +821,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                             </span>
                           )}
                           {hasMemo && (
-                            <span className="text-amber-600 font-medium">📓 {memosMap.get(e.horse_name)}</span>
+                            <span className="text-amber-600 font-medium">✏️ {memosMap.get(e.horse_name)}</span>
                           )}
                         </span>
                       </td>
@@ -852,7 +852,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
             onClick={ev => ev.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="font-semibold text-sm text-amber-700">📓 {memoPopup.horseName}</span>
+              <span className="font-semibold text-sm text-amber-700">✏️ {memoPopup.horseName}</span>
               <button onClick={() => setMemoPopup(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
             </div>
             <textarea
@@ -967,7 +967,7 @@ function CompactRaceRow({
             <span className="text-slate-400 ml-1">({winnerName})</span>
           )}
           {horseMemo && (
-            <span className="ml-1.5 text-amber-500 text-[10px]" title={horseMemo}>📓</span>
+                <span className="ml-1.5 text-amber-500 text-[10px]" title={horseMemo}>✏️</span>
           )}
         </span>
         
@@ -1121,7 +1121,7 @@ function CompactRaceRow({
           {/* 今走メモ */}
           {horseMemo && (
             <div className="mt-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap">
-              <span className="font-semibold mr-1">📓 当時メモ:</span>{horseMemo}
+              <span className="font-semibold mr-1">✏️ 当時メモ:</span>{horseMemo}
             </div>
           )}
 
@@ -1230,7 +1230,7 @@ function MobileRaceCard({
             )}
             <div className="flex items-center gap-1">
               {horseMemo && (
-                <span className="text-amber-500 text-[10px]" title={horseMemo}>📓</span>
+                <span className="text-amber-500 text-[10px]" title={horseMemo}>✏️</span>
               )}
               {hasMemo && (
                 <button
@@ -1285,7 +1285,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo }: 
         {/* 今走メモ */}
         {horseMemo && (
           <div className="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap">
-            <span className="font-semibold mr-1">📓</span>{horseMemo}
+            <span className="font-semibold mr-1">✏️</span>{horseMemo}
           </div>
         )}
         {/* 基本情報 + 指数 */}

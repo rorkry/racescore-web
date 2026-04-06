@@ -1614,7 +1614,7 @@ export default function RaceCardPage() {
                                       })}
                                       title="今走メモを書く"
                                     >
-                                      📓
+                                      ✏️
                                     </button>
                                   </div>
                                 </td>
@@ -1800,7 +1800,7 @@ export default function RaceCardPage() {
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
               <div className="px-5 py-4 flex items-center justify-between bg-amber-500">
                 <h2 className="text-base font-bold text-white">
-                  📓 今走メモ — {horseRaceMemoPopup.horseName}
+                  ✏️ 今走メモ — {horseRaceMemoPopup.horseName}
                 </h2>
                 <button
                   onClick={() => setHorseRaceMemoPopup(null)}
