@@ -486,6 +486,7 @@ function BadgeLabels({ badges, className }: BadgeLabelsProps) {
 interface RaceEntrant {
   horse_name: string;
   finish_position: string;
+  waku: string;
   umaban: string;
   popularity: string;
   win_odds: string;
@@ -498,6 +499,21 @@ interface RaceEntrant {
   corner_2: string;
   corner_3: string;
   corner_4: string;
+}
+
+function getWakuBadgeClass(waku: string): string {
+  const n = parseInt(waku, 10);
+  const map: Record<number, string> = {
+    1: 'bg-white text-gray-900 border border-gray-400',
+    2: 'bg-black text-white',
+    3: 'bg-red-500 text-white',
+    4: 'bg-blue-500 text-white',
+    5: 'bg-yellow-400 text-gray-900',
+    6: 'bg-green-500 text-white',
+    7: 'bg-orange-500 text-white',
+    8: 'bg-pink-400 text-white',
+  };
+  return map[n] || 'bg-gray-400 text-white';
 }
 
 function getEntrantPassingOrder(e: RaceEntrant): string {
@@ -741,6 +757,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
           <thead>
             <tr className="text-slate-400 border-b border-slate-200">
               <th className="text-center pb-1 pr-1 font-normal w-5">着</th>
+              <th className="text-center pb-1 pr-1 font-normal w-5">馬番</th>
               <th className="text-left pb-1 pr-1 font-normal">馬名</th>
               {/* 通過・斤量・騎手: PCのみヘッダー表示 */}
               <th className="hidden sm:table-cell text-right pb-1 pr-1 font-normal w-16">通過</th>
@@ -769,6 +786,14 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                   >
                     <td className={cn('py-0.5 pr-1 text-center font-bold', getFinishColor(e.finish_position))}>
                       {toHalfWidth(e.finish_position)}
+                    </td>
+                    <td className="py-0.5 pr-1 text-center">
+                      <span className={cn(
+                        'inline-block w-5 h-5 flex items-center justify-center rounded-sm text-[9px] font-bold leading-none',
+                        getWakuBadgeClass(e.waku)
+                      )}>
+                        {toHalfWidth(e.umaban)}
+                      </span>
                     </td>
                     <td className="py-0.5 pr-1">
                       <div className="flex items-center justify-between gap-1 w-full">
@@ -811,6 +836,7 @@ function RaceEntrantsSection({ raceId, raceKey }: { raceId: string; raceKey?: st
                       e.finish_position === '2' ? 'bg-slate-50' :
                       e.finish_position === '3' ? 'bg-orange-50' : ''
                     )}>
+                      <td />
                       <td />
                       <td colSpan={6} className="pb-1 text-[8px] text-slate-400 tabular-nums">
                         <span className="flex items-center gap-2 flex-wrap">

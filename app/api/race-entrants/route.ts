@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 export interface RaceEntrant {
   horse_name: string;
   finish_position: string;
+  waku: string;
   umaban: string;
   popularity: string;
   win_odds: string;
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     const entrants = await db.query<RaceEntrant>(
       `WITH deduped AS (
          SELECT DISTINCT ON (umaban)
-           horse_name, finish_position, umaban, popularity,
+           horse_name, finish_position, waku, umaban, popularity,
            win_odds, margin, weight_carried, finish_time, last_3f, jockey,
            corner_1, corner_2, corner_3, corner_4
          FROM umadata
