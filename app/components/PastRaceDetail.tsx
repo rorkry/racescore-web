@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useSession } from '@/app/components/Providers';
+import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
 
 // ========================================
 // 型定義
@@ -1198,6 +1199,15 @@ function CompactRaceRow({
               <div className="mt-3 pt-3 border-t border-slate-200">
                 <div className="flex items-center gap-1 mb-1.5 flex-wrap">
                   <span className="text-[10px] text-slate-500 mr-1">ラップ</span>
+                  {race.race_id && (
+                    <button
+                      onClick={e => { e.stopPropagation(); setAnalysisRaceId(race.race_id!); }}
+                      className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 transition-colors"
+                      title="タイム分析を開く"
+                    >
+                      📊 タイム分析
+                    </button>
+                  )}
                   {first3Sum != null && (
                     <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半3F {first3Sum.toFixed(1)}</span>
                   )}
@@ -1504,7 +1514,17 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
         {/* ラップタイム */}
         {race.lap_time && lapData.all.length > 0 && (
           <div className="pt-2 border-t border-slate-100">
-            <span className="text-[10px] text-slate-500 block mb-1">ラップ</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] text-slate-500">ラップ</span>
+              {race.race_id && (
+                <button
+                  onClick={e => { e.stopPropagation(); setAnalysisRaceId(race.race_id!); }}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 transition-colors"
+                >
+                  📊 タイム分析
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-1 mb-1.5">
               {lapData.first3Sum != null && (
                 <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半3F {lapData.first3Sum.toFixed(1)}</span>
@@ -1585,6 +1605,8 @@ function PastRaceDetailInner({
   const [winnersMap, setWinnersMap] = useState<Record<string, string>>({});
   // 同走頭数マップ: race_id → 今回の出走馬と同走した頭数（出走馬一覧を展開した際に更新）
   const [sameRaceCountMap, setSameRaceCountMap] = useState<Map<string, number>>(new Map());
+  // タイム分析モーダル
+  const [analysisRaceId, setAnalysisRaceId] = useState<string | null>(null);
 
   const handleSameRaceCountUpdate = useCallback((raceId: string, count: number) => {
     setSameRaceCountMap(prev => {
@@ -1733,6 +1755,14 @@ function PastRaceDetailInner({
             🔒 評価バッジ・指数はプレミアム機能です
           </span>
         </div>
+      )}
+
+      {/* タイム分析モーダル */}
+      {analysisRaceId && (
+        <RaceTimeAnalysisModal
+          raceId={analysisRaceId}
+          onClose={() => setAnalysisRaceId(null)}
+        />
       )}
     </div>
   );
