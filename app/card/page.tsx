@@ -105,6 +105,7 @@ interface Horse {
 
 interface RaceCard {
   isUmadataFallback?: boolean;
+  isWakuUnconfirmed?: boolean;
   raceInfo: {
     date: string;
     place: string;
@@ -1432,12 +1433,12 @@ export default function RaceCardPage() {
             )}
 
             <div className="racecard-card rounded-xl p-3 sm:p-6">
-              {/* 枠順未確定バナー */}
-              {raceCard.isUmadataFallback && (
+              {/* 枠順未確定バナー（wakujun枠番なし or umadataフォールバック） */}
+              {(raceCard.isUmadataFallback || raceCard.isWakuUnconfirmed) && (
                 <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-xs sm:text-sm">
                   <span className="text-base">⚠️</span>
                   <span className="font-medium">枠順未確定</span>
-                  <span className="text-amber-600">— 馬名はあいうえお順。wakujunデータ登録後に正式枠順が表示されます。</span>
+                  <span className="text-amber-600">— 馬名はあいうえお順で表示。wakujunデータに枠番を登録後、正式な枠順が反映されます。</span>
                 </div>
               )}
               <div className="flex items-start justify-between gap-3 mb-2 sm:mb-4">
@@ -1526,9 +1527,14 @@ export default function RaceCardPage() {
                         <React.Fragment key={horse.umaban}>
                           <tr className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-100'} text-xs sm:text-base hover:bg-emerald-50 transition-colors`}>
                             {/* 馬番（枠順確定時は枠色付き、未確定は無色） */}
-                            <td className={`border border-slate-300 px-1 sm:px-2 py-2 text-center font-bold ${raceCard.isUmadataFallback ? 'text-slate-500' : getWakuColor(horse.waku)}`}>
-                              {raceCard.isUmadataFallback ? '?' : horse.umaban}
-                            </td>
+                            {(() => {
+                              const unconfirmed = raceCard.isUmadataFallback || raceCard.isWakuUnconfirmed;
+                              return (
+                                <td className={`border border-slate-300 px-1 sm:px-2 py-2 text-center font-bold ${unconfirmed ? 'text-slate-400' : getWakuColor(horse.waku)}`}>
+                                  {unconfirmed ? '—' : horse.umaban}
+                                </td>
+                              );
+                            })()}
                             {/* 競うスコア - データがない場合は「-」表示 */}
                             <td className={`border border-slate-300 px-2 sm:px-3 py-2 text-center text-sm sm:text-lg font-bold tabular-nums ${getScoreTextColor(horse.score, horse.hasData)}`}>
                               {horse.hasData && horse.score != null ? Math.round(horse.score) : '-'}

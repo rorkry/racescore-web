@@ -228,10 +228,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ========================================
     // STEP 1: 出走馬を取得（1クエリ）
     // ========================================
+    // 枠番が空のCSVでも ORDER BY で失敗しないよう安全なキャストを使用
     const horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = $1 AND place = $2 AND race_number = $3 ${yearFilter ? 'AND year = $4' : ''}
-      ORDER BY umaban::INTEGER
+      ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 9999 END, umamei
     `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
     // デバッグ：取得された馬の数を確認
@@ -241,12 +242,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.log(`[race-card-with-score] 馬番範囲: ${horses[0].umaban} - ${horses[horses.length - 1].umaban}`);
     }
 
+    // 枠番が未設定かどうか検出（waku が全て空・"0" の場合は枠順未確定）
+    const hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
+    if (!hasWaku && horses.length > 0) {
+      // 枠番なし → 馬名五十音順に並べ直し
+      horses.sort((a: any, b: any) => (a.umamei || '').localeCompare(b.umamei || '', 'ja'));
+      console.log(`[race-card-with-score] 枠番未確定のため馬名順にソート`);
+    }
+
     if (!horses || horses.length === 0) {
       // yearフィルタなしでも試行
       const horsesWithoutYear = await db.prepare(`
         SELECT * FROM wakujun
         WHERE date = $1 AND place = $2 AND race_number = $3
-        ORDER BY umaban::INTEGER
+        ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 9999 END, umamei
       `).all(date, place, raceNumber) as any[];
       console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
 
@@ -347,6 +356,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           comeback: null,
         })),
         fastMode: true,
+        isWakuUnconfirmed: !hasWaku,
       };
       
       console.log(`[race-card-with-score] 高速モード: ${Date.now() - startTime}ms`);
@@ -643,7 +653,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // レスポンスをキャッシュに保存
-    const responseData = { raceInfo, horses: horsesWithScore };
+    const responseData = {
+      raceInfo,
+      horses: horsesWithScore,
+      isWakuUnconfirmed: !hasWaku,  // 枠番未確定フラグ
+    };
     setToCache(cacheKey, responseData);
     console.log(`[race-card-with-score] キャッシュ保存: ${cacheKey} (現在${globalThis._raceCardCache?.size || 0}件)`);
     
