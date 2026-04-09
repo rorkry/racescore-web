@@ -104,6 +104,7 @@ interface Horse {
 }
 
 interface RaceCard {
+  isUmadataFallback?: boolean;
   raceInfo: {
     date: string;
     place: string;
@@ -1431,6 +1432,14 @@ export default function RaceCardPage() {
             )}
 
             <div className="racecard-card rounded-xl p-3 sm:p-6">
+              {/* 枠順未確定バナー */}
+              {raceCard.isUmadataFallback && (
+                <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2 text-amber-800 text-xs sm:text-sm">
+                  <span className="text-base">⚠️</span>
+                  <span className="font-medium">枠順未確定</span>
+                  <span className="text-amber-600">— 馬名はあいうえお順。wakujunデータ登録後に正式枠順が表示されます。</span>
+                </div>
+              )}
               <div className="flex items-start justify-between gap-3 mb-2 sm:mb-4">
                 <div>
                   <h2 className="text-lg sm:text-2xl font-bold text-slate-800 text-balance">
@@ -1516,9 +1525,9 @@ export default function RaceCardPage() {
                       return (
                         <React.Fragment key={horse.umaban}>
                           <tr className={`${index % 2 === 0 ? 'bg-white' : 'bg-slate-100'} text-xs sm:text-base hover:bg-emerald-50 transition-colors`}>
-                            {/* 馬番（枠色付き） */}
-                            <td className={`border border-slate-300 px-1 sm:px-2 py-2 text-center font-bold ${getWakuColor(horse.waku)}`}>
-                              {horse.umaban}
+                            {/* 馬番（枠順確定時は枠色付き、未確定は無色） */}
+                            <td className={`border border-slate-300 px-1 sm:px-2 py-2 text-center font-bold ${raceCard.isUmadataFallback ? 'text-slate-500' : getWakuColor(horse.waku)}`}>
+                              {raceCard.isUmadataFallback ? '?' : horse.umaban}
                             </td>
                             {/* 競うスコア - データがない場合は「-」表示 */}
                             <td className={`border border-slate-300 px-2 sm:px-3 py-2 text-center text-sm sm:text-lg font-bold tabular-nums ${getScoreTextColor(horse.score, horse.hasData)}`}>

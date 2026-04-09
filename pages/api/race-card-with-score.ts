@@ -249,8 +249,67 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ORDER BY umaban::INTEGER
       `).all(date, place, raceNumber) as any[];
       console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
-      
-      return res.status(404).json({ error: 'No horses found for this race' });
+
+      if (horsesWithoutYear.length === 0) {
+        // ======================================================
+        // umadata フォールバック（枠順データなし・出走馬表のみ）
+        // ======================================================
+        const currentYear = yearFilter ? parseInt(yearFilter, 10) : new Date().getFullYear();
+        const dateStr = String(date).padStart(4, '0');
+        const yyyymmdd = `${currentYear}${dateStr}`;
+        const raceNumPadded = String(raceNumber).padStart(2, '0');
+
+        const umadataHorses = await db.prepare(`
+          SELECT DISTINCT ON (horse_name)
+            horse_name, waku, umaban, weight_carried as kinryo, jockey as kishu,
+            distance, class_name, race_name, course_type as track_type, field_size
+          FROM umadata
+          WHERE SUBSTRING(race_id, 1, 8) = $1
+            AND place = $2
+            AND RIGHT(race_id, 2) = $3
+          ORDER BY horse_name ASC
+        `).all(yyyymmdd, place, raceNumPadded) as any[];
+
+        console.log(`[race-card-with-score] umadataフォールバック: ${umadataHorses.length}頭`);
+
+        if (!umadataHorses || umadataHorses.length === 0) {
+          return res.status(404).json({ error: 'No horses found for this race' });
+        }
+
+        const firstHorse = umadataHorses[0];
+        const fallbackResult = {
+          isUmadataFallback: true,
+          raceInfo: {
+            date: String(date),
+            place: String(place),
+            raceNumber: String(raceNumber),
+            raceName: firstHorse.race_name || firstHorse.class_name || `${raceNumber}R`,
+            distance: firstHorse.distance || '',
+            track: firstHorse.track_type || '',
+            condition: '良',
+            classCode: firstHorse.class_name || '',
+            weather: '晴',
+            fieldSize: umadataHorses.length,
+          },
+          horses: umadataHorses.map((h: any, idx: number) => ({
+            umaban: String(idx + 1),  // 仮の馬番（あいうえお順）
+            waku: '',                 // 枠番未確定
+            umamei: h.horse_name || '',
+            horseName: h.horse_name || '',
+            kishu: h.kishu || '',
+            jockey: h.kishu || '',
+            kinryo: h.kinryo || '',
+            weight: h.kinryo || '',
+            hasData: false,
+            score: null,
+            potential: null,
+            comeback: null,
+          })),
+        };
+
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).json(fallbackResult);
+      }
     }
 
     // 馬名リストを作成（正規化済み）
