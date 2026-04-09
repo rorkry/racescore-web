@@ -989,6 +989,7 @@ interface CompactRaceRowProps {
   currentHorseName?: string;
   sameRaceCount?: number;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
+  onAnalysisClick?: (raceId: string) => void;
 }
 
 function CompactRaceRow({ 
@@ -1008,6 +1009,7 @@ function CompactRaceRow({
   currentHorseName,
   sameRaceCount,
   onSameRaceCountUpdate,
+  onAnalysisClick,
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1199,9 +1201,9 @@ function CompactRaceRow({
               <div className="mt-3 pt-3 border-t border-slate-200">
                 <div className="flex items-center gap-1 mb-1.5 flex-wrap">
                   <span className="text-[10px] text-slate-500 mr-1">ラップ</span>
-                  {race.race_id && (
+                  {race.race_id && onAnalysisClick && (
                     <button
-                      onClick={e => { e.stopPropagation(); setAnalysisRaceId(race.race_id!); }}
+                      onClick={e => { e.stopPropagation(); onAnalysisClick(race.race_id!); }}
                       className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 transition-colors"
                       title="タイム分析を開く"
                     >
@@ -1430,9 +1432,10 @@ interface MobileDetailPanelProps {
   currentRaceHorses?: string[];
   currentHorseName?: string;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
+  onAnalysisClick?: (raceId: string) => void;
 }
 
-function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate, onAnalysisClick }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1516,9 +1519,9 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
           <div className="pt-2 border-t border-slate-100">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[10px] text-slate-500">ラップ</span>
-              {race.race_id && (
+              {race.race_id && onAnalysisClick && (
                 <button
-                  onClick={e => { e.stopPropagation(); setAnalysisRaceId(race.race_id!); }}
+                  onClick={e => { e.stopPropagation(); onAnalysisClick(race.race_id!); }}
                   className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 transition-colors"
                 >
                   📊 タイム分析
@@ -1671,6 +1674,7 @@ function PastRaceDetailInner({
               currentHorseName={currentHorseName}
               sameRaceCount={race.race_id ? sameRaceCountMap.get(race.race_id) : undefined}
               onSameRaceCountUpdate={handleSameRaceCountUpdate}
+              onAnalysisClick={setAnalysisRaceId}
               onMemoClick={() => {
                 if (raceKey && memoContent) {
                   onMemoClick?.(
@@ -1741,6 +1745,7 @@ function PastRaceDetailInner({
             currentRaceHorses={currentRaceHorses}
             currentHorseName={currentHorseName}
             onSameRaceCountUpdate={handleSameRaceCountUpdate}
+            onAnalysisClick={setAnalysisRaceId}
           />
         )}
 
