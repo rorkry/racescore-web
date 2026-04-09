@@ -62,6 +62,7 @@ interface PastRaceDetailProps {
   hideEntrants?: boolean;
   horseRaceMemos?: Map<string, string>; // 今走メモ: race_key → memo
   currentRaceHorses?: string[]; // 今回の出走馬名リスト（対戦ハイライト用）
+  currentHorseName?: string;   // 展開中の馬の名前（黄色ハイライト用）
 }
 
 // ========================================
@@ -702,11 +703,13 @@ function RaceEntrantsSection({
   raceId,
   raceKey,
   currentRaceHorses,
+  currentHorseName,
   onCountUpdate,
 }: {
   raceId: string;
   raceKey?: string | null;
   currentRaceHorses?: string[];
+  currentHorseName?: string;
   onCountUpdate?: (raceId: string, count: number) => void;
 }) {
   const { status } = useSession();
@@ -802,18 +805,22 @@ function RaceEntrantsSection({
               const passingOrder = getEntrantPassingOrder(e);
               const hasSecondRow = passingOrder || e.jockey || e.weight_carried;
               const hasMemo = memosMap.has(e.horse_name);
-              const isCurrentRaceHorse = currentRaceHorses
-                ? currentRaceHorses.map(n => n.trim()).includes(e.horse_name.trim())
+              const normalizedCurrent = currentRaceHorses?.map(n => n.trim()) ?? [];
+              const isViewingHorse = currentHorseName
+                ? e.horse_name.trim() === currentHorseName.trim()
                 : false;
+              const isOtherCurrentHorse = !isViewingHorse && normalizedCurrent.includes(e.horse_name.trim());
               return (
                 <React.Fragment key={i}>
                   <tr
                     className={cn(
-                      isCurrentRaceHorse
-                        ? 'bg-sky-50 outline outline-1 outline-sky-200'
-                        : e.finish_position === '1' ? 'bg-amber-50' :
-                          e.finish_position === '2' ? 'bg-slate-50' :
-                          e.finish_position === '3' ? 'bg-orange-50' : ''
+                      isViewingHorse
+                        ? 'bg-yellow-100'
+                        : isOtherCurrentHorse
+                          ? 'bg-emerald-100'
+                          : e.finish_position === '1' ? 'bg-amber-50' :
+                            e.finish_position === '2' ? 'bg-slate-50' :
+                            e.finish_position === '3' ? 'bg-orange-50' : ''
                     )}
                   >
                     <td className={cn('py-0.5 pr-1 text-center font-bold', getFinishColor(e.finish_position))}>
@@ -829,17 +836,12 @@ function RaceEntrantsSection({
                     </td>
                     <td className="py-0.5 pr-1">
                       <div className="flex items-center justify-between gap-1 w-full">
-                        <div className="flex items-center gap-1 flex-1 min-w-0">
-                          {isCurrentRaceHorse && (
-                            <span className="flex-shrink-0 text-[8px] bg-sky-500 text-white px-1 py-0.5 rounded font-bold leading-none">今回</span>
-                          )}
-                          <button
-                            onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
-                            className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap min-w-0 truncate"
-                          >
-                            {e.horse_name}
-                          </button>
-                        </div>
+                        <button
+                          onClick={ev => { ev.stopPropagation(); setSelectedHorse(e.horse_name); }}
+                          className="text-emerald-600 hover:underline text-left font-medium whitespace-nowrap flex-1 min-w-0 truncate"
+                        >
+                          {e.horse_name}
+                        </button>
                         {/* ✏️ボタンを右端に固定 */}
                         {isLoggedIn && (
                           <button
@@ -969,6 +971,7 @@ interface CompactRaceRowProps {
   winnerName?: string;
   horseMemo?: string;
   currentRaceHorses?: string[];
+  currentHorseName?: string;
   sameRaceCount?: number;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
 }
@@ -987,6 +990,7 @@ function CompactRaceRow({
   winnerName,
   horseMemo,
   currentRaceHorses,
+  currentHorseName,
   sameRaceCount,
   onSameRaceCountUpdate,
 }: CompactRaceRowProps) {
@@ -1046,10 +1050,10 @@ function CompactRaceRow({
           )}
         </span>
         
-        {/* 今回同走バッジ */}
+        {/* 同走バッジ */}
         {sameRaceCount != null && sameRaceCount > 0 && (
-          <span className="flex-shrink-0 text-[10px] bg-sky-100 text-sky-700 border border-sky-300 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
-            今回{sameRaceCount}頭
+          <span className="flex-shrink-0 text-[10px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap">
+            {sameRaceCount}頭同走
           </span>
         )}
         
@@ -1221,6 +1225,7 @@ function CompactRaceRow({
               raceId={race.race_id}
               raceKey={deriveHorseRaceMemoKey(race)}
               currentRaceHorses={currentRaceHorses}
+              currentHorseName={currentHorseName}
               onCountUpdate={onSameRaceCountUpdate}
             />
           )}
@@ -1315,11 +1320,11 @@ function MobileRaceCard({
             </div>
           )}
           
-          {/* 今回同走バッジ */}
+          {/* 同走バッジ */}
           {sameRaceCount != null && sameRaceCount > 0 && (
             <div className="mb-1">
-              <span className="text-[8px] bg-sky-100 text-sky-700 border border-sky-300 px-1 py-0.5 rounded-full font-bold leading-tight">
-                今回{sameRaceCount}頭同走
+              <span className="text-[8px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 py-0.5 rounded-full font-bold leading-tight">
+                {sameRaceCount}頭同走
               </span>
             </div>
           )}
@@ -1392,10 +1397,11 @@ interface MobileDetailPanelProps {
   hideEntrants?: boolean;
   horseMemo?: string;
   currentRaceHorses?: string[];
+  currentHorseName?: string;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
 }
 
-function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, onSameRaceCountUpdate }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1521,6 +1527,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
             raceId={race.race_id}
             raceKey={deriveHorseRaceMemoKey(race)}
             currentRaceHorses={currentRaceHorses}
+            currentHorseName={currentHorseName}
             onCountUpdate={onSameRaceCountUpdate}
           />
         )}
@@ -1543,6 +1550,7 @@ function PastRaceDetailInner({
   hideEntrants = false,
   horseRaceMemos,
   currentRaceHorses,
+  currentHorseName,
 }: PastRaceDetailProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
   const [mobileExpandedIndex, setMobileExpandedIndex] = useState<number | null>(null);
@@ -1610,6 +1618,7 @@ function PastRaceDetailInner({
               winnerName={race.race_id ? winnersMap[race.race_id] : undefined}
               horseMemo={horseMemo}
               currentRaceHorses={currentRaceHorses}
+              currentHorseName={currentHorseName}
               sameRaceCount={race.race_id ? sameRaceCountMap.get(race.race_id) : undefined}
               onSameRaceCountUpdate={handleSameRaceCountUpdate}
               onMemoClick={() => {
@@ -1680,6 +1689,7 @@ function PastRaceDetailInner({
               return key ? horseRaceMemos?.get(key) : undefined;
             })()}
             currentRaceHorses={currentRaceHorses}
+            currentHorseName={currentHorseName}
             onSameRaceCountUpdate={handleSameRaceCountUpdate}
           />
         )}

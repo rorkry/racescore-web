@@ -1656,6 +1656,7 @@ export default function RaceCardPage() {
                                   raceMemos={raceMemos}
                                   horseRaceMemos={horseRaceMemosCache.get(normalizeHorseName(horse.umamei))}
                                   currentRaceHorses={raceCard?.horses.map(h => normalizeHorseName(h.umamei))}
+                                  currentHorseName={normalizeHorseName(horse.umamei)}
                                   onMemoClick={(raceKey, raceTitle, memo) => 
                                     setPastRaceMemoPopup({ raceKey, raceTitle, memo })
                                   }
