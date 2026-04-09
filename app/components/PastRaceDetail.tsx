@@ -257,20 +257,34 @@ function BabaMemoChip({ date, place, surface }: { date: string; place: string; s
 // ラップタイムをパースして前半/後半に分割
 function parseLapTime(lapTime: string | undefined): { 
   all: number[]; 
-  first: number[]; 
+  first: number[];   // last4の前の部分（表示用）
   last4: number[];
   last4Sum: number | null;
+  first3Sum: number | null;
+  first5Sum: number | null;
+  last5Sum: number | null;
 } {
-  if (!lapTime) return { all: [], first: [], last4: [], last4Sum: null };
+  const empty = { all: [], first: [], last4: [], last4Sum: null, first3Sum: null, first5Sum: null, last5Sum: null };
+  if (!lapTime) return empty;
   
   const laps = lapTime.split('-').map(l => parseFloat(l.trim())).filter(l => !isNaN(l));
-  if (laps.length < 4) return { all: laps, first: laps, last4: [], last4Sum: null };
+  if (laps.length < 4) return { ...empty, all: laps, first: laps };
   
   const last4 = laps.slice(-4);
   const first = laps.slice(0, -4);
   const last4Sum = last4.reduce((sum, v) => sum + v, 0);
+
+  const first3Sum = laps.length >= 3
+    ? laps.slice(0, 3).reduce((sum, v) => sum + v, 0)
+    : null;
+  const first5Sum = laps.length >= 5
+    ? laps.slice(0, 5).reduce((sum, v) => sum + v, 0)
+    : null;
+  const last5Sum = laps.length >= 5
+    ? laps.slice(-5).reduce((sum, v) => sum + v, 0)
+    : null;
   
-  return { all: laps, first, last4, last4Sum };
+  return { all: laps, first, last4, last4Sum, first3Sum, first5Sum, last5Sum };
 }
 
 // ========================================
@@ -1179,15 +1193,22 @@ function CompactRaceRow({
           
           {/* ラップタイム（後半4F強調） */}
           {race.lap_time && (() => {
-            const { first, last4, last4Sum } = parseLapTime(race.lap_time);
+            const { first, last4, first3Sum, first5Sum, last4Sum, last5Sum } = parseLapTime(race.lap_time);
             return (
               <div className="mt-3 pt-3 border-t border-slate-200">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-slate-500">ラップ</span>
-                  {last4Sum && (
-                    <span className="text-xs font-medium text-emerald-600">
-                      後半4F合計: {last4Sum.toFixed(1)}秒
-                    </span>
+                <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-500 mr-1">ラップ</span>
+                  {first3Sum != null && (
+                    <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半3F {first3Sum.toFixed(1)}</span>
+                  )}
+                  {first5Sum != null && (
+                    <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半5F {first5Sum.toFixed(1)}</span>
+                  )}
+                  {last4Sum != null && (
+                    <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1 py-0.5 rounded">後半4F {last4Sum.toFixed(1)}</span>
+                  )}
+                  {last5Sum != null && (
+                    <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1 py-0.5 rounded">後半5F {last5Sum.toFixed(1)}</span>
                   )}
                 </div>
                 <div className="text-xs font-mono overflow-x-auto whitespace-nowrap bg-white rounded px-2 py-1 border border-slate-200">
@@ -1483,12 +1504,19 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
         {/* ラップタイム */}
         {race.lap_time && lapData.all.length > 0 && (
           <div className="pt-2 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-slate-500">ラップ</span>
+            <span className="text-[10px] text-slate-500 block mb-1">ラップ</span>
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {lapData.first3Sum != null && (
+                <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半3F {lapData.first3Sum.toFixed(1)}</span>
+              )}
+              {lapData.first5Sum != null && (
+                <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1 py-0.5 rounded">前半5F {lapData.first5Sum.toFixed(1)}</span>
+              )}
               {lapData.last4Sum != null && (
-                <span className="text-[10px] font-medium text-emerald-600">
-                  後半4F: {lapData.last4Sum.toFixed(1)}
-                </span>
+                <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1 py-0.5 rounded">後半4F {lapData.last4Sum.toFixed(1)}</span>
+              )}
+              {lapData.last5Sum != null && (
+                <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1 py-0.5 rounded">後半5F {lapData.last5Sum.toFixed(1)}</span>
               )}
             </div>
             <div className="overflow-x-auto scrollbar-hide">
