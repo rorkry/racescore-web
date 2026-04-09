@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
+import { RaceEntrantsSection } from '@/app/components/PastRaceDetail';
 import type { RaceTimeAnalysisResponse, RaceTimeInfo } from '@/app/api/race-time-analysis/route';
 
 // ========================================
@@ -36,10 +37,7 @@ function formatDiff(diff: number): { text: string; cls: string } {
 
 function formatDateFromRaceId(raceId: string): string {
   if (!raceId || raceId.length < 8) return '';
-  const y = raceId.slice(0, 4);
-  const m = raceId.slice(4, 6);
-  const d = raceId.slice(6, 8);
-  return `${y.slice(2)}/${m}/${d}`;
+  return `${raceId.slice(2, 4)}/${raceId.slice(4, 6)}/${raceId.slice(6, 8)}`;
 }
 
 function getRaceNumber(raceId: string): string {
@@ -68,18 +66,91 @@ function getDistanceNum(distance: string): string {
   return distance.replace(/[^0-9]/g, '');
 }
 
-function parseLapSummary(lapTime: string): { last4: number | null; last5: number | null; first3: number | null } {
-  if (!lapTime) return { last4: null, last5: null, first3: null };
+// ラップ解析（PastRaceDetail と同等のロジック）
+interface LapSummary {
+  all: number[];
+  first: number[];
+  last4: number[];
+  first3Sum: number | null;
+  first5Sum: number | null;
+  last4Sum: number | null;
+  last5Sum: number | null;
+}
+
+function parseLapTime(lapTime: string | undefined): LapSummary {
+  const empty: LapSummary = { all: [], first: [], last4: [], first3Sum: null, first5Sum: null, last4Sum: null, last5Sum: null };
+  if (!lapTime) return empty;
   const laps = lapTime.split('-').map(l => parseFloat(l.trim())).filter(l => !isNaN(l));
-  if (laps.length < 4) return { last4: null, last5: null, first3: null };
-  const last4 = laps.slice(-4).reduce((s, v) => s + v, 0);
-  const last5 = laps.length >= 5 ? laps.slice(-5).reduce((s, v) => s + v, 0) : null;
-  const first3 = laps.length >= 3 ? laps.slice(0, 3).reduce((s, v) => s + v, 0) : null;
-  return { last4, last5, first3 };
+  if (laps.length < 4) return { ...empty, all: laps, first: laps };
+  const last4 = laps.slice(-4);
+  const first = laps.slice(0, -4);
+  return {
+    all: laps,
+    first,
+    last4,
+    first3Sum: laps.length >= 3 ? laps.slice(0, 3).reduce((s, v) => s + v, 0) : null,
+    first5Sum: laps.length >= 5 ? laps.slice(0, 5).reduce((s, v) => s + v, 0) : null,
+    last4Sum: last4.reduce((s, v) => s + v, 0),
+    last5Sum: laps.length >= 5 ? laps.slice(-5).reduce((s, v) => s + v, 0) : null,
+  };
 }
 
 // ========================================
-// サブコンポーネント: 前後10日テーブル
+// 展開ディテールパネル（ラップ + 出走馬）
+// ========================================
+
+function RaceDetailPanel({ race }: { race: RaceTimeInfo }) {
+  const lap = parseLapTime(race.lap_time);
+  const hasLap = lap.all.length >= 4;
+
+  return (
+    <div className="bg-slate-50 border-t border-slate-200 px-3 py-2.5 space-y-2">
+      {/* ラップタイム */}
+      {hasLap ? (
+        <div>
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {lap.first3Sum != null && (
+              <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
+                前半3F {lap.first3Sum.toFixed(1)}
+              </span>
+            )}
+            {lap.first5Sum != null && (
+              <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
+                前半5F {lap.first5Sum.toFixed(1)}
+              </span>
+            )}
+            {lap.last4Sum != null && (
+              <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
+                後半4F {lap.last4Sum.toFixed(1)}
+              </span>
+            )}
+            {lap.last5Sum != null && (
+              <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
+                後半5F {lap.last5Sum.toFixed(1)}
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] font-mono bg-white border border-slate-200 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">
+            {lap.first.length > 0 && (
+              <span className="text-slate-400">{lap.first.map(l => l.toFixed(1)).join('-')}-</span>
+            )}
+            {lap.last4.length > 0 && (
+              <span className="text-emerald-700 font-semibold">{lap.last4.map(l => l.toFixed(1)).join('-')}</span>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="text-[10px] text-slate-400">ラップデータなし</div>
+      )}
+
+      {/* 出走馬一覧 */}
+      <RaceEntrantsSection raceId={race.race_id} />
+    </div>
+  );
+}
+
+// ========================================
+// 前後10日テーブル
 // ========================================
 
 function NearbyTable({
@@ -93,7 +164,8 @@ function NearbyTable({
   baseTime: number | null;
   baseDistance: string;
 }) {
-  // 距離ごとにグループ化
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   const grouped = useMemo(() => {
     const map = new Map<string, RaceTimeInfo[]>();
     for (const r of races) {
@@ -101,7 +173,6 @@ function NearbyTable({
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
-    // 同コース（ベースと同じ距離）を先頭に
     const sorted: [string, RaceTimeInfo[]][] = [];
     if (map.has(baseDistance)) sorted.push([baseDistance, map.get(baseDistance)!]);
     for (const [k, v] of map) {
@@ -133,55 +204,66 @@ function NearbyTable({
                 <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded">ベースと同距離</span>
               )}
             </div>
-            <div className="overflow-x-auto">
+            <div className="border border-slate-200 rounded overflow-hidden">
               <table className="w-full text-xs border-collapse">
                 <thead>
-                  <tr className="text-slate-400 border-b border-slate-200">
-                    <th className="text-left pb-1 pr-2 font-normal whitespace-nowrap">日付</th>
-                    <th className="text-left pb-1 pr-2 font-normal whitespace-nowrap">R</th>
-                    <th className="text-left pb-1 pr-2 font-normal">クラス</th>
-                    <th className="text-center pb-1 pr-2 font-normal whitespace-nowrap">馬場</th>
-                    <th className="text-right pb-1 pr-2 font-normal whitespace-nowrap">勝ち時計</th>
+                  <tr className="text-slate-400 bg-slate-50 border-b border-slate-200">
+                    <th className="text-left py-1 px-2 font-normal whitespace-nowrap">日付</th>
+                    <th className="text-left py-1 px-1 font-normal whitespace-nowrap">R</th>
+                    <th className="text-left py-1 px-1 font-normal">クラス</th>
+                    <th className="text-center py-1 px-1 font-normal whitespace-nowrap">馬場</th>
+                    <th className="text-right py-1 px-2 font-normal whitespace-nowrap">勝ち時計</th>
                     {isSameDistance && baseTime != null && (
-                      <th className="text-right pb-1 font-normal whitespace-nowrap">差</th>
+                      <th className="text-right py-1 px-2 font-normal whitespace-nowrap">差</th>
                     )}
                   </tr>
                 </thead>
                 <tbody>
                   {group.map((r) => {
                     const isBase = r.race_id === baseRaceId;
+                    const isExpanded = expandedId === r.race_id;
                     const raceTime = rawTimeToSeconds(r.winner_time);
                     const diff = isSameDistance && baseTime != null && raceTime != null
                       ? raceTime - baseTime : null;
                     const diffFmt = diff != null ? formatDiff(diff) : null;
                     return (
-                      <tr
-                        key={r.race_id}
-                        className={cn(
-                          'border-b border-slate-100',
-                          isBase ? 'bg-yellow-50 font-semibold' : 'hover:bg-slate-50'
-                        )}
-                      >
-                        <td className="py-1 pr-2 whitespace-nowrap tabular-nums text-slate-600">
-                          {formatDateFromRaceId(r.race_id)}
-                          {isBase && <span className="ml-1 text-[9px] bg-yellow-200 text-yellow-700 px-1 rounded">基準</span>}
-                        </td>
-                        <td className="py-1 pr-2 tabular-nums text-slate-500">{getRaceNumber(r.race_id)}R</td>
-                        <td className="py-1 pr-2 text-slate-800 truncate max-w-[120px]">
-                          {r.race_name || r.class_name || '-'}
-                        </td>
-                        <td className={cn('py-1 pr-2 text-center', getTrackConditionColor(r.track_condition))}>
-                          {r.track_condition || '-'}
-                        </td>
-                        <td className="py-1 pr-2 text-right tabular-nums font-mono">
-                          {formatTime(r.winner_time)}
-                        </td>
-                        {isSameDistance && baseTime != null && (
-                          <td className={cn('py-1 text-right tabular-nums', diffFmt?.cls ?? 'text-slate-400')}>
-                            {diffFmt?.text ?? '-'}
+                      <React.Fragment key={r.race_id}>
+                        <tr
+                          className={cn(
+                            'border-b border-slate-100 cursor-pointer transition-colors',
+                            isBase ? 'bg-yellow-50' : isExpanded ? 'bg-slate-100' : 'hover:bg-slate-50'
+                          )}
+                          onClick={() => setExpandedId(isExpanded ? null : r.race_id)}
+                        >
+                          <td className="py-1.5 px-2 whitespace-nowrap tabular-nums text-slate-600">
+                            {formatDateFromRaceId(r.race_id)}
+                            {isBase && <span className="ml-1 text-[9px] bg-yellow-200 text-yellow-700 px-1 rounded">基準</span>}
                           </td>
+                          <td className="py-1.5 px-1 tabular-nums text-slate-500">{getRaceNumber(r.race_id)}R</td>
+                          <td className="py-1.5 px-1 text-slate-800 truncate max-w-[120px]">
+                            {r.race_name || r.class_name || '-'}
+                          </td>
+                          <td className={cn('py-1.5 px-1 text-center', getTrackConditionColor(r.track_condition))}>
+                            {r.track_condition || '-'}
+                          </td>
+                          <td className="py-1.5 px-2 text-right tabular-nums font-mono">
+                            {formatTime(r.winner_time)}
+                            <span className="ml-1 text-slate-300 text-[9px]">{isExpanded ? '▲' : '▼'}</span>
+                          </td>
+                          {isSameDistance && baseTime != null && (
+                            <td className={cn('py-1.5 px-2 text-right tabular-nums', diffFmt?.cls ?? 'text-slate-400')}>
+                              {diffFmt?.text ?? '-'}
+                            </td>
+                          )}
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={isSameDistance && baseTime != null ? 6 : 5} className="p-0">
+                              <RaceDetailPanel race={r} />
+                            </td>
+                          </tr>
                         )}
-                      </tr>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -195,7 +277,7 @@ function NearbyTable({
 }
 
 // ========================================
-// サブコンポーネント: 同コース全期間テーブル
+// 同コース全期間テーブル
 // ========================================
 
 function SameCourseTable({
@@ -208,6 +290,7 @@ function SameCourseTable({
   baseTime: number | null;
 }) {
   const [sortBy, setSortBy] = useState<'date' | 'time'>('date');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     return [...races].sort((a, b) => {
@@ -239,57 +322,68 @@ function SameCourseTable({
           >時計順</button>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="border border-slate-200 rounded overflow-hidden">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="text-slate-400 border-b border-slate-200">
-              <th className="text-left pb-1 pr-2 font-normal whitespace-nowrap">日付</th>
-              <th className="text-left pb-1 pr-2 font-normal">クラス</th>
-              <th className="text-center pb-1 pr-2 font-normal whitespace-nowrap">馬場</th>
-              <th className="text-right pb-1 pr-2 font-normal whitespace-nowrap">勝ち時計</th>
-              <th className="text-right pb-1 pr-2 font-normal whitespace-nowrap">差</th>
-              <th className="text-right pb-1 pr-2 font-normal whitespace-nowrap">後半4F</th>
-              <th className="text-right pb-1 font-normal whitespace-nowrap">後半5F</th>
+            <tr className="text-slate-400 bg-slate-50 border-b border-slate-200">
+              <th className="text-left py-1 px-2 font-normal whitespace-nowrap">日付</th>
+              <th className="text-left py-1 px-1 font-normal">クラス</th>
+              <th className="text-center py-1 px-1 font-normal whitespace-nowrap">馬場</th>
+              <th className="text-right py-1 px-2 font-normal whitespace-nowrap">勝ち時計</th>
+              <th className="text-right py-1 px-1 font-normal whitespace-nowrap">差</th>
+              <th className="text-right py-1 px-1 font-normal whitespace-nowrap">後4F</th>
+              <th className="text-right py-1 px-2 font-normal whitespace-nowrap">後5F</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r) => {
               const isBase = r.race_id === baseRaceId;
+              const isExpanded = expandedId === r.race_id;
               const raceTime = rawTimeToSeconds(r.winner_time);
               const diff = baseTime != null && raceTime != null ? raceTime - baseTime : null;
               const diffFmt = diff != null ? formatDiff(diff) : null;
-              const lap = parseLapSummary(r.lap_time);
+              const lap = parseLapTime(r.lap_time);
               return (
-                <tr
-                  key={r.race_id}
-                  className={cn(
-                    'border-b border-slate-100',
-                    isBase ? 'bg-yellow-50 font-semibold' : 'hover:bg-slate-50'
+                <React.Fragment key={r.race_id}>
+                  <tr
+                    className={cn(
+                      'border-b border-slate-100 cursor-pointer transition-colors',
+                      isBase ? 'bg-yellow-50' : isExpanded ? 'bg-slate-100' : 'hover:bg-slate-50'
+                    )}
+                    onClick={() => setExpandedId(isExpanded ? null : r.race_id)}
+                  >
+                    <td className="py-1.5 px-2 whitespace-nowrap tabular-nums text-slate-600">
+                      {formatDateFromRaceId(r.race_id)}
+                      {isBase && <span className="ml-1 text-[9px] bg-yellow-200 text-yellow-700 px-1 rounded">基準</span>}
+                    </td>
+                    <td className="py-1.5 px-1 text-slate-800 truncate max-w-[100px]">
+                      {r.race_name || r.class_name || '-'}
+                    </td>
+                    <td className={cn('py-1.5 px-1 text-center', getTrackConditionColor(r.track_condition))}>
+                      {r.track_condition || '-'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums font-mono">
+                      {formatTime(r.winner_time)}
+                      <span className="ml-1 text-slate-300 text-[9px]">{isExpanded ? '▲' : '▼'}</span>
+                    </td>
+                    <td className={cn('py-1.5 px-1 text-right tabular-nums', diffFmt?.cls ?? 'text-slate-400')}>
+                      {diffFmt?.text ?? '-'}
+                    </td>
+                    <td className="py-1.5 px-1 text-right tabular-nums text-emerald-700">
+                      {lap.last4Sum != null ? lap.last4Sum.toFixed(1) : '-'}
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums text-emerald-600">
+                      {lap.last5Sum != null ? lap.last5Sum.toFixed(1) : '-'}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={7} className="p-0">
+                        <RaceDetailPanel race={r} />
+                      </td>
+                    </tr>
                   )}
-                >
-                  <td className="py-1 pr-2 whitespace-nowrap tabular-nums text-slate-600">
-                    {formatDateFromRaceId(r.race_id)}
-                    {isBase && <span className="ml-1 text-[9px] bg-yellow-200 text-yellow-700 px-1 rounded">基準</span>}
-                  </td>
-                  <td className="py-1 pr-2 text-slate-800 truncate max-w-[110px]">
-                    {r.race_name || r.class_name || '-'}
-                  </td>
-                  <td className={cn('py-1 pr-2 text-center', getTrackConditionColor(r.track_condition))}>
-                    {r.track_condition || '-'}
-                  </td>
-                  <td className="py-1 pr-2 text-right tabular-nums font-mono">
-                    {formatTime(r.winner_time)}
-                  </td>
-                  <td className={cn('py-1 pr-2 text-right tabular-nums', diffFmt?.cls ?? 'text-slate-400')}>
-                    {diffFmt?.text ?? '-'}
-                  </td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-emerald-700">
-                    {lap.last4 != null ? lap.last4.toFixed(1) : '-'}
-                  </td>
-                  <td className="py-1 text-right tabular-nums text-emerald-600">
-                    {lap.last5 != null ? lap.last5.toFixed(1) : '-'}
-                  </td>
-                </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -327,7 +421,7 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
   const baseTime = data ? rawTimeToSeconds(data.baseRace.winner_time) : null;
   const surface = data ? getSurface(data.baseRace.distance) : '';
   const distNum = data ? getDistanceNum(data.baseRace.distance) : '';
-  const baseLap = data ? parseLapSummary(data.baseRace.lap_time) : null;
+  const baseLap = data ? parseLapTime(data.baseRace.lap_time) : null;
 
   return (
     <div
@@ -368,14 +462,14 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
               <span className={getTrackConditionColor(data.baseRace.track_condition) + ' bg-white/10 px-1.5 py-0.5 rounded text-white'}>
                 {data.baseRace.track_condition || '不明'}
               </span>
-              {baseLap?.first3 != null && (
-                <span className="text-orange-200">前半3F {baseLap.first3.toFixed(1)}</span>
+              {baseLap?.first3Sum != null && (
+                <span className="text-orange-200">前半3F {baseLap.first3Sum.toFixed(1)}</span>
               )}
-              {baseLap?.last4 != null && (
-                <span className="text-emerald-200">後半4F {baseLap.last4.toFixed(1)}</span>
+              {baseLap?.last4Sum != null && (
+                <span className="text-emerald-200">後半4F {baseLap.last4Sum.toFixed(1)}</span>
               )}
-              {baseLap?.last5 != null && (
-                <span className="text-emerald-200">後半5F {baseLap.last5.toFixed(1)}</span>
+              {baseLap?.last5Sum != null && (
+                <span className="text-emerald-200">後半5F {baseLap.last5Sum.toFixed(1)}</span>
               )}
             </div>
           )}
@@ -442,9 +536,10 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
 
         {/* 凡例フッター */}
         <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex-shrink-0 flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-slate-500">
+          <span>行をタップで詳細展開</span>
           <span><span className="text-emerald-600 font-semibold">マイナス</span> = 基準より速い</span>
           <span><span className="text-red-500 font-semibold">プラス</span> = 基準より遅い</span>
-          <span><span className="bg-yellow-50 px-1 rounded">黄色行</span> = 基準レース</span>
+          <span><span className="bg-yellow-100 px-1 rounded">黄色</span> = 基準レース</span>
         </div>
       </div>
     </div>

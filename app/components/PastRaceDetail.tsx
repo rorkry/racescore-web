@@ -714,7 +714,7 @@ export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; 
   );
 }
 
-function RaceEntrantsSection({
+export function RaceEntrantsSection({
   raceId,
   raceKey,
   currentRaceHorses,
