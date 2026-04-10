@@ -63,7 +63,13 @@ interface PastRace {
   lap_time?: string;
   indices?: PastRaceIndices | null;
   indexRaceId?: string;
+  race_id?: string;
   raceLevel?: RaceLevelInfo | null;
+  weight_carried?: string;
+  horse_weight?: string;
+  weight_change?: string;
+  gender?: string;
+  age?: string;
 }
 
 interface Race {
@@ -101,6 +107,10 @@ interface Horse {
   past: PastRace[];
   indices: Indices | null;
   indexRaceId?: string;
+  seibetsu?: string;
+  nenrei?: string;
+  nenrei_display?: string;
+  chokyoshi?: string;
 }
 
 interface RaceCard {
@@ -121,6 +131,15 @@ interface RaceCard {
 function toHalfWidth(str: string): string {
   return str.replace(/[！-～]/g, s =>
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+
+function abbrevSeibetsu(s: string | undefined): string {
+  if (!s?.trim()) return '';
+  const t = toHalfWidth(s);
+  if (t.includes('牝')) return '牝';
+  if (t.includes('牡')) return '牡';
+  if (t.includes('セ')) return 'セ';
+  return t.slice(0, 2);
 }
 
 // normalizeHorseNameは@/utils/normalize-horse-nameからインポート
@@ -1589,48 +1608,65 @@ export default function RaceCardPage() {
                               const horseName = normalizeHorseName(horse.umamei);
                               const isFavorite = favoriteHorses.includes(horseName);
                               const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
+                              const ageStr = toHalfWidth((horse.nenrei_display || horse.nenrei || '').trim());
+                              const sexStr = abbrevSeibetsu(horse.seibetsu);
+                              const trainerStr = (horse.chokyoshi || '').trim();
                               return (
-                                <td className={`border border-slate-300 px-1 sm:px-4 py-2 font-semibold w-full ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
-                                  <div className="flex items-center gap-1 w-full">
-                                    <button
-                                      className={`
-                                        flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
-                                        text-[10px] sm:text-xs transition-all active:scale-95
-                                        ${expandedHorse === horse.umaban 
-                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
-                                          : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
-                                        }
-                                      `}
-                                      onClick={() => {
-                                        toggleHorseExpand(horse.umaban);
-                                        loadHorseRaceMemosFor(horseName);
-                                      }}
-                                      title="過去走を表示"
-                                    >
-                                      {expandedHorse === horse.umaban ? '▲' : '▼'}
-                                    </button>
-                                    <span 
-                                      className={`flex-1 min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
-                                      onClick={() => setSelectedHorseDetail(horse)}
-                                      title="馬の詳細情報を表示"
-                                    >
-                                      {horseName}
-                                    </span>
-                                    {/* 今走メモボタン（右端固定） */}
-                                    <button
-                                      className={`flex-shrink-0 ml-auto text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
-                                        hasHorseRaceMemo
-                                          ? 'bg-amber-100 text-amber-600 border border-amber-300'
-                                          : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
-                                      }`}
-                                      onClick={() => setHorseRaceMemoPopup({
-                                        horseName,
-                                        draft: horseRaceMemosForCard.get(horseName) || '',
-                                      })}
-                                      title="今走メモを書く"
-                                    >
-                                      ✏️
-                                    </button>
+                                <td className={`border border-slate-300 px-1 sm:px-4 py-1.5 sm:py-2 font-semibold w-full align-top ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
+                                  <div className="flex flex-col gap-0.5 min-w-0 w-full">
+                                    <div className="flex items-center gap-1 w-full min-w-0">
+                                      <button
+                                        className={`
+                                          flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
+                                          text-[10px] sm:text-xs transition-all active:scale-95
+                                          ${expandedHorse === horse.umaban 
+                                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                                            : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                                          }
+                                        `}
+                                        onClick={() => {
+                                          toggleHorseExpand(horse.umaban);
+                                          loadHorseRaceMemosFor(horseName);
+                                        }}
+                                        title="過去走を表示"
+                                      >
+                                        {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                      </button>
+                                      <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
+                                        <span 
+                                          className={`min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                          onClick={() => setSelectedHorseDetail(horse)}
+                                          title="馬の詳細情報を表示"
+                                        >
+                                          {horseName}
+                                        </span>
+                                        {ageStr && (
+                                          <span className="flex-shrink-0 text-[10px] text-slate-500 font-normal tabular-nums">{ageStr}</span>
+                                        )}
+                                        {sexStr && (
+                                          <span className="flex-shrink-0 text-[9px] text-slate-600 font-normal border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexStr}</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
+                                          hasHorseRaceMemo
+                                            ? 'bg-amber-100 text-amber-600 border border-amber-300'
+                                            : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
+                                        }`}
+                                        onClick={() => setHorseRaceMemoPopup({
+                                          horseName,
+                                          draft: horseRaceMemosForCard.get(horseName) || '',
+                                        })}
+                                        title="今走メモを書く"
+                                      >
+                                        ✏️
+                                      </button>
+                                    </div>
+                                    {trainerStr && (
+                                      <div className="text-[9px] sm:text-[10px] text-slate-500 font-normal truncate pl-6 sm:pl-7 max-w-full" title={trainerStr}>
+                                        {trainerStr}
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               );

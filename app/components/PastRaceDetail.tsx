@@ -51,6 +51,11 @@ interface PastRaceData {
   indexRaceId?: string;
   race_id?: string;  // umadata.race_id（馬番なし）
   raceLevel?: RaceLevelInfo | null;
+  weight_carried?: string; // 斤量
+  horse_weight?: string;
+  weight_change?: string;
+  gender?: string; // 性別（牡牝セ）
+  age?: string;     // 当時の年齢表記
 }
 
 interface PastRaceDetailProps {
@@ -143,6 +148,24 @@ function getSurfaceAndDistance(distance: string): { surface: string; dist: strin
     return { surface, dist: match[2] };
   }
   return { surface: '', dist: distance };
+}
+
+/** 性別を牡/牝/セ に短縮 */
+function formatSexAbbrev(gender: string | undefined): string {
+  if (!gender?.trim()) return '';
+  const g = toHalfWidth(gender);
+  if (g.includes('牝')) return '牝';
+  if (g.includes('牡')) return '牡';
+  if (g.includes('セ')) return 'セ';
+  return g.trim().slice(0, 2);
+}
+
+/** 馬体重と増減（例: 480(+2)） */
+function formatBodyWeightLine(hw: string | undefined, wc: string | undefined): string {
+  const w = (hw || '').replace(/[^\d]/g, '');
+  if (!w) return '';
+  const ch = (wc || '').trim().replace(/[＋]/g, '+').replace(/[－﹣−]/g, '-');
+  return ch ? `${w}(${ch})` : w;
 }
 
 function formatMargin(margin: string): string {
@@ -1017,18 +1040,25 @@ function CompactRaceRow({
   
   // レース名（race_nameがあればそれを使用、なければclass_name）
   const raceName = race.race_name || race.class_name || '-';
-  
+  const kinryo = (race.weight_carried || '').trim();
+  const sexAge = [formatSexAbbrev(race.gender), toHalfWidth((race.age || '').trim())].filter(Boolean).join('');
+  const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
+  const hasSummaryRow = Boolean(
+    race.raceLevel?.level || race.raceLevel?.levelLabel
+    || race.jockey || kinryo || bodyW || sexAge
+  );
+
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-      {/* ヘッダー行（常に表示・クリックで開閉） */}
-      <div 
+      {/* ヘッダー（常に表示・クリックで開閉） */}
+      <div
         className={cn(
-          'flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-colors',
-          'hover:bg-slate-50',
+          'cursor-pointer transition-colors hover:bg-slate-50',
           isExpanded && 'bg-slate-50 border-b border-slate-200'
         )}
         onClick={onToggle}
       >
+        <div className="flex items-center gap-2 px-3 py-1.5">
         {/* 開閉アイコン */}
         <span className={cn(
           'text-slate-400 transition-transform text-xs flex-shrink-0',
@@ -1125,6 +1155,24 @@ function CompactRaceRow({
           >
             📺
           </a>
+        )}
+        </div>
+
+        {hasSummaryRow && (
+          <div className="px-3 pb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 text-[10px] text-slate-600 leading-snug">
+            {(race.raceLevel?.level || race.raceLevel?.levelLabel) && (
+              <span className="font-medium bg-violet-100 text-violet-800 px-1 py-0.5 rounded">
+                Lv{race.raceLevel.levelLabel || race.raceLevel.level}
+              </span>
+            )}
+            {(race.jockey || kinryo) && (
+              <span className="text-slate-700">
+                {race.jockey || '-'}{kinryo ? `(${toHalfWidth(kinryo)})` : ''}
+              </span>
+            )}
+            {bodyW && <span className="tabular-nums">体重 {bodyW}</span>}
+            {sexAge && <span className="text-slate-500">{sexAge}</span>}
+          </div>
         )}
       </div>
       
@@ -1304,9 +1352,13 @@ function MobileRaceCard({
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
+  const kinryoM = (race.weight_carried || '').trim();
+  const sexAgeM = [formatSexAbbrev(race.gender), toHalfWidth((race.age || '').trim())].filter(Boolean).join('');
+  const bodyWM = formatBodyWeightLine(race.horse_weight, race.weight_change);
+  const hasLv = Boolean(race.raceLevel?.level || race.raceLevel?.levelLabel);
   
   return (
-    <div className="flex-shrink-0 w-32 snap-start overflow-hidden">
+    <div className="flex-shrink-0 w-[10.5rem] sm:w-36 snap-start overflow-hidden">
       <div 
         className={cn(
           'bg-white border rounded-xl shadow-sm transition-all duration-150 active:scale-[0.97] cursor-pointer',
@@ -1341,9 +1393,32 @@ function MobileRaceCard({
             </span>
           </div>
 
-          {/* レース名 */}
-          <div className="text-[9px] text-slate-500 truncate mb-1 leading-tight">
-            {race.race_name || race.class_name || ''}
+          {/* レース名 + レースレベル */}
+          <div className="mb-1 space-y-0.5">
+            <div className="text-[9px] text-slate-600 truncate leading-tight font-medium">
+              {race.race_name || race.class_name || ''}
+            </div>
+            {hasLv && (
+              <div className="text-[8px] font-medium bg-violet-100 text-violet-800 px-1 py-0.5 rounded inline-block max-w-full truncate">
+                Lv{race.raceLevel!.levelLabel || race.raceLevel!.level}
+              </div>
+            )}
+          </div>
+
+          {/* 騎手・斤量・馬体重・性齢（展開前に一覧） */}
+          <div className="text-[8px] text-slate-600 mb-1 space-y-0.5 leading-tight">
+            {(race.jockey || kinryoM) && (
+              <div className="truncate">
+                <span className="text-slate-500">騎</span>
+                {race.jockey || '-'}{kinryoM ? `(${toHalfWidth(kinryoM)})` : ''}
+              </div>
+            )}
+            {bodyWM && (
+              <div className="tabular-nums truncate">体重 {bodyWM}</div>
+            )}
+            {sexAgeM && (
+              <div className="text-slate-500">{sexAgeM}</div>
+            )}
           </div>
 
           {/* 勝ち馬名 */}

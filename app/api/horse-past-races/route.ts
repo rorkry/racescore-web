@@ -4,7 +4,7 @@ import { getDb } from '@/lib/db';
 export const dynamic = 'force-dynamic';
 
 // GET /api/horse-past-races?horseName=xxx
-// 指定した馬名の過去走一覧を返す（直近10走、PastRaceData互換形式）
+// 指定した馬名の過去走一覧を返す（直近20走、PastRaceData互換形式）
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const horseName = searchParams.get('horseName');
@@ -16,7 +16,6 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
 
-    // 馬名で過去走を取得（DISTINCT ON race_id で重複排除、日付降順）
     const rows = await db.query<{
       race_id: string;
       date: string;
@@ -37,19 +36,28 @@ export async function GET(request: NextRequest) {
       umaban: string;
       jockey: string;
       lap_time: string;
+      weight_carried: string;
+      horse_weight: string;
+      weight_change: string;
+      gender: string;
+      age: string;
     }>(
       `SELECT DISTINCT ON (race_id)
          race_id, date, place, distance, class_name, race_name,
          finish_position, finish_time, margin, popularity,
          corner_1, corner_2, corner_3, corner_4, pci,
-         track_condition, umaban, jockey, lap_time
+         track_condition, umaban, jockey, lap_time,
+         COALESCE(weight_carried, '') AS weight_carried,
+         COALESCE(horse_weight, '') AS horse_weight,
+         COALESCE(weight_change, '') AS weight_change,
+         COALESCE(gender, '') AS gender,
+         COALESCE(age, '') AS age
        FROM umadata
        WHERE TRIM(horse_name) = $1
        ORDER BY race_id DESC, id DESC`,
       [horseName.trim()]
     );
 
-    // race_id の先頭8桁(YYYYMMDD)で日付降順ソート → 直近20走
     const sorted = rows
       .sort((a, b) => {
         const dA = a.race_id?.substring(0, 8) || '0';
@@ -58,10 +66,47 @@ export async function GET(request: NextRequest) {
       })
       .slice(0, 20);
 
-    // PastRaceData 互換形式にマッピング
+    const raceIds = [...new Set(sorted.map(r => r.race_id).filter(id => id && id.length >= 16))];
+    const raceLevelMap = new Map<string, {
+      level: string;
+      levelLabel: string;
+      totalHorsesRun: number;
+      firstRunGoodCount: number;
+      winCount: number;
+      aiComment: string;
+    }>();
+
+    if (raceIds.length > 0) {
+      const placeholders = raceIds.map((_, i) => `$${i + 1}`).join(',');
+      const levels = await db.query<{
+        race_id: string;
+        level: string;
+        level_label: string | null;
+        total_horses_run: number | null;
+        first_run_good_count: number | null;
+        win_count: number | null;
+        ai_comment: string | null;
+      }>(
+        `SELECT race_id, level, level_label, total_horses_run, first_run_good_count, win_count, ai_comment
+         FROM race_levels WHERE race_id IN (${placeholders})`,
+        raceIds
+      );
+      for (const lv of levels) {
+        raceLevelMap.set(lv.race_id, {
+          level: lv.level || '',
+          levelLabel: lv.level_label || lv.level || '',
+          totalHorsesRun: lv.total_horses_run ?? 0,
+          firstRunGoodCount: lv.first_run_good_count ?? 0,
+          winCount: lv.win_count ?? 0,
+          aiComment: lv.ai_comment || '',
+        });
+      }
+    }
+
     const pastRaces = sorted.map(row => {
       const raceId = row.race_id || '';
       const raceNumber = raceId.length >= 2 ? String(parseInt(raceId.slice(-2), 10)) : '';
+      const rl = raceLevelMap.get(raceId);
       return {
         date: row.date || '',
         distance: row.distance || '',
@@ -83,6 +128,12 @@ export async function GET(request: NextRequest) {
         jockey: row.jockey || '',
         lap_time: row.lap_time || '',
         race_id: raceId,
+        weight_carried: row.weight_carried || '',
+        horse_weight: row.horse_weight || '',
+        weight_change: row.weight_change || '',
+        gender: row.gender || '',
+        age: row.age || '',
+        raceLevel: rl ?? null,
       };
     });
 
