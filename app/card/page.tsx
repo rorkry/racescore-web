@@ -1525,8 +1525,9 @@ export default function RaceCardPage() {
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 whitespace-nowrap w-10 sm:w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-8 sm:w-10 font-semibold">印</th>
                       <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-6 sm:w-10 font-semibold" title="お気に入り">★</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-4 py-2 sm:py-3 font-semibold">馬名</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold whitespace-nowrap">騎手<span className="hidden sm:inline">(斤量)</span></th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold min-w-0">馬名</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold min-w-[3.5rem] sm:min-w-[5rem] max-w-[5.5rem] sm:max-w-none">調教師</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold whitespace-nowrap min-w-0">騎手<span className="hidden sm:inline">(斤量)</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1610,69 +1611,70 @@ export default function RaceCardPage() {
                               const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
                               const ageStr = toHalfWidth((horse.nenrei_display || horse.nenrei || '').trim());
                               const sexStr = abbrevSeibetsu(horse.seibetsu);
-                              const trainerStr = (horse.chokyoshi || '').trim();
                               return (
-                                <td className={`border border-slate-300 px-1 sm:px-4 py-1.5 sm:py-2 font-semibold w-full align-top ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
-                                  <div className="flex flex-col gap-0.5 min-w-0 w-full">
-                                    <div className="flex items-center gap-1 w-full min-w-0">
-                                      <button
-                                        className={`
-                                          flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
-                                          text-[10px] sm:text-xs transition-all active:scale-95
-                                          ${expandedHorse === horse.umaban 
-                                            ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
-                                            : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
-                                          }
-                                        `}
-                                        onClick={() => {
-                                          toggleHorseExpand(horse.umaban);
-                                          loadHorseRaceMemosFor(horseName);
-                                        }}
-                                        title="過去走を表示"
+                                <td className={`border border-slate-300 px-1 sm:px-3 py-1.5 sm:py-2 font-semibold min-w-0 ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
+                                  <div className="flex items-center gap-1 w-full min-w-0">
+                                    <button
+                                      className={`
+                                        flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
+                                        text-[10px] sm:text-xs transition-all active:scale-95
+                                        ${expandedHorse === horse.umaban 
+                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                                          : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                                        }
+                                      `}
+                                      onClick={() => {
+                                        toggleHorseExpand(horse.umaban);
+                                        loadHorseRaceMemosFor(horseName);
+                                      }}
+                                      title="過去走を表示"
+                                    >
+                                      {expandedHorse === horse.umaban ? '▲' : '▼'}
+                                    </button>
+                                    <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
+                                      <span 
+                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                        onClick={() => setSelectedHorseDetail(horse)}
+                                        title="馬の詳細情報を表示"
                                       >
-                                        {expandedHorse === horse.umaban ? '▲' : '▼'}
-                                      </button>
-                                      <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
-                                        <span 
-                                          className={`min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
-                                          onClick={() => setSelectedHorseDetail(horse)}
-                                          title="馬の詳細情報を表示"
-                                        >
-                                          {horseName}
-                                        </span>
-                                        {ageStr && (
-                                          <span className="flex-shrink-0 text-[10px] text-slate-500 font-normal tabular-nums">{ageStr}</span>
-                                        )}
-                                        {sexStr && (
-                                          <span className="flex-shrink-0 text-[9px] text-slate-600 font-normal border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexStr}</span>
-                                        )}
-                                      </div>
-                                      <button
-                                        className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
-                                          hasHorseRaceMemo
-                                            ? 'bg-amber-100 text-amber-600 border border-amber-300'
-                                            : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
-                                        }`}
-                                        onClick={() => setHorseRaceMemoPopup({
-                                          horseName,
-                                          draft: horseRaceMemosForCard.get(horseName) || '',
-                                        })}
-                                        title="今走メモを書く"
-                                      >
-                                        ✏️
-                                      </button>
+                                        {horseName}
+                                      </span>
+                                      {ageStr && (
+                                        <span className="flex-shrink-0 text-[10px] text-slate-500 font-normal tabular-nums">{ageStr}</span>
+                                      )}
+                                      {sexStr && (
+                                        <span className="flex-shrink-0 text-[9px] text-slate-600 font-normal border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexStr}</span>
+                                      )}
                                     </div>
-                                    {trainerStr && (
-                                      <div className="text-[9px] sm:text-[10px] text-slate-500 font-normal truncate pl-6 sm:pl-7 max-w-full" title={trainerStr}>
-                                        {trainerStr}
-                                      </div>
-                                    )}
+                                    <button
+                                      className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
+                                        hasHorseRaceMemo
+                                          ? 'bg-amber-100 text-amber-600 border border-amber-300'
+                                          : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
+                                      }`}
+                                      onClick={() => setHorseRaceMemoPopup({
+                                        horseName,
+                                        draft: horseRaceMemosForCard.get(horseName) || '',
+                                      })}
+                                      title="今走メモを書く"
+                                    >
+                                      ✏️
+                                    </button>
                                   </div>
                                 </td>
                               );
                             })()}
+                            {/* 調教師 */}
+                            <td className="border border-slate-300 px-1 sm:px-2 py-1.5 sm:py-2 text-slate-700 align-middle min-w-0 max-w-[5rem] sm:max-w-[9rem]">
+                              <div
+                                className="text-[9px] sm:text-sm leading-tight line-clamp-2 sm:line-clamp-none break-words hyphens-auto"
+                                title={(horse.chokyoshi || '').trim() || undefined}
+                              >
+                                {(horse.chokyoshi || '').trim() || <span className="text-slate-300">—</span>}
+                              </div>
+                            </td>
                             {/* 騎手(斤量) */}
-                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm w-16 sm:w-auto">
+                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm min-w-0">
                               <span className="sm:hidden">{horse.kishu.trim().slice(0, 3)}</span>
                               <span className="hidden sm:inline">{horse.kishu.trim()}</span>
                               <span className="text-slate-500 text-[9px] sm:text-sm">({horse.kinryo.trim()})</span>
@@ -1680,7 +1682,7 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={6} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 overflow-hidden max-w-0">
+                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 overflow-hidden max-w-0">
                                 <div className="text-xs sm:text-sm font-bold mb-3 text-emerald-700">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>

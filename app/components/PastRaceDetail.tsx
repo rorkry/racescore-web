@@ -333,6 +333,17 @@ function getBadgeColor(level: BadgeLevel): string {
   }
 }
 
+/** calculateEvaluationBadges のメンバーレベル判定と同じ（S+/S/A=高、B=中、C/LOW=低、その他=灰） */
+function raceLevelToBadgeLevel(rl: RaceLevelInfo | null | undefined): BadgeLevel {
+  if (!rl?.level) return 'none';
+  const level = String(rl.level).toUpperCase().trim();
+  if (level === 'S+' || level === 'S' || level === 'A') return 'high';
+  if (level === 'B' || level.startsWith('B')) return 'mid'; // B+ など
+  if (level === 'C' || level === 'LOW' || level.startsWith('C')) return 'low';
+  if (level === 'UNKNOWN' || level === '-') return 'none';
+  return 'none';
+}
+
 function getBadgeDot(level: BadgeLevel): string {
   switch (level) {
     case 'high': return 'bg-red-500';
@@ -352,16 +363,8 @@ function calculateEvaluationBadges(race: PastRaceData): EvaluationBadge[] {
   const raceLevel = race.raceLevel;
   if (raceLevel) {
     const level = raceLevel.level?.toUpperCase() || '';
-    let badgeLevel: BadgeLevel = 'none';
     let label = level;
-    
-    if (level === 'S+' || level === 'S' || level === 'A') {
-      badgeLevel = 'high';
-    } else if (level === 'B') {
-      badgeLevel = 'mid';
-    } else if (level === 'C' || level === 'LOW') {
-      badgeLevel = 'low';
-    }
+    const badgeLevel = raceLevelToBadgeLevel(raceLevel);
     
     const goodRate = raceLevel.totalHorsesRun > 0 
       ? Math.round((raceLevel.firstRunGoodCount / raceLevel.totalHorsesRun) * 100)
@@ -1161,7 +1164,7 @@ function CompactRaceRow({
         {hasSummaryRow && (
           <div className="px-3 pb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 text-[10px] text-slate-600 leading-snug">
             {(race.raceLevel?.level || race.raceLevel?.levelLabel) && (
-              <span className="font-medium bg-violet-100 text-violet-800 px-1 py-0.5 rounded">
+              <span className={cn('font-medium px-1 py-0.5 rounded', getBadgeColor(raceLevelToBadgeLevel(race.raceLevel)))}>
                 Lv{race.raceLevel.levelLabel || race.raceLevel.level}
               </span>
             )}
@@ -1399,7 +1402,7 @@ function MobileRaceCard({
               {race.race_name || race.class_name || ''}
             </div>
             {hasLv && (
-              <div className="text-[8px] font-medium bg-violet-100 text-violet-800 px-1 py-0.5 rounded inline-block max-w-full truncate">
+              <div className={cn('text-[8px] font-medium px-1 py-0.5 rounded inline-block max-w-full truncate', getBadgeColor(raceLevelToBadgeLevel(race.raceLevel)))}>
                 Lv{race.raceLevel!.levelLabel || race.raceLevel!.level}
               </div>
             )}
