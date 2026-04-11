@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getCourseData, COURSE_DATABASE } from '@/lib/course-data/index';
@@ -779,6 +779,74 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
     }
   }, [analysisData]);
 
+  type SireAptitudePayload = {
+    success: true;
+    sire: string;
+    minRuns: number;
+    overall: { runs: number; wins: number; winRate: number; showRate: number };
+    bands: Array<{
+      bandId: string;
+      label: string;
+      runs: number;
+      wins: number;
+      top3: number;
+      winRate: number;
+      showRate: number;
+      badge: '◎' | '○' | '△' | null;
+      note: string | null;
+    }>;
+    diagnoses: string[];
+  };
+
+  const [mainTab, setMainTab] = useState<'detail' | 'sire'>('detail');
+  const [sireLoading, setSireLoading] = useState(false);
+  const [sirePayload, setSirePayload] = useState<SireAptitudePayload | null>(null);
+  const [sireErr, setSireErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMainTab('detail');
+    setSirePayload(null);
+    setSireErr(null);
+  }, [horse?.umamei]);
+
+  useEffect(() => {
+    if (mainTab !== 'sire' || !horse) return;
+    const name = normalizeHorseName(horse.umamei);
+    if (!name) return;
+    let cancelled = false;
+    setSireLoading(true);
+    setSireErr(null);
+    fetch(`/api/sire-aptitude?horseName=${encodeURIComponent(name)}`)
+      .then(async (r) => {
+        const j = (await r.json()) as { success?: boolean; message?: string; details?: string } & Partial<SireAptitudePayload>;
+        if (cancelled) return;
+        if (!r.ok) {
+          setSirePayload(null);
+          setSireErr(j.details || j.message || 'サーバーエラー');
+          return;
+        }
+        if (!j.success) {
+          setSirePayload(null);
+          setSireErr(j.message || '父名を取得できませんでした');
+        } else {
+          setSirePayload(j as SireAptitudePayload);
+          setSireErr(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSireErr('通信に失敗しました');
+          setSirePayload(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSireLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mainTab, horse]);
+
   // 早期リターン（Hooks の後に配置）
   if (!horse) return null;
 
@@ -844,9 +912,121 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
             </motion.button>
           </div>
 
+          {/* タブ */}
+          <div className="px-4 flex gap-2 border-b border-cyan-500/25 pb-0">
+            <button
+              type="button"
+              onClick={() => setMainTab('detail')}
+              className={`px-3 py-2 text-xs md:text-sm font-bold rounded-t-lg border-b-2 transition-colors ${
+                mainTab === 'detail'
+                  ? 'text-cyan-300 border-cyan-400 bg-cyan-500/10'
+                  : 'text-slate-500 border-transparent hover:text-slate-300'
+              }`}
+            >
+              過去走・分析
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainTab('sire')}
+              className={`px-3 py-2 text-xs md:text-sm font-bold rounded-t-lg border-b-2 transition-colors ${
+                mainTab === 'sire'
+                  ? 'text-purple-300 border-purple-400 bg-purple-500/10'
+                  : 'text-slate-500 border-transparent hover:text-slate-300'
+              }`}
+            >
+              適性診断（父）
+            </button>
+          </div>
+
           {/* メインコンテンツ */}
           <div className="p-3 md:p-4">
-            {hasAnyData ? (
+            {mainTab === 'sire' ? (
+              <div className="space-y-3">
+                <CyberCard glowColor="purple">
+                  <GlowingTitle color="purple">父系プロファイル</GlowingTitle>
+                  <p className="text-[10px] text-slate-500 leading-relaxed mb-3">
+                    umadata に登録された<strong className="text-slate-400">同一種牡馬の産駒全体</strong>
+                    を芝・ダート・距離帯別に集計しています。個体の適性を保証するものではありません。
+                  </p>
+                  {sireLoading && (
+                    <p className="text-sm text-purple-300/80 animate-pulse">集計中…</p>
+                  )}
+                  {!sireLoading && sireErr && (
+                    <p className="text-sm text-amber-300/90">{sireErr}</p>
+                  )}
+                  {!sireLoading && !sireErr && sirePayload && (
+                    <>
+                      <p className="text-sm text-white mb-2">
+                        種牡馬:{' '}
+                        <span className="font-bold text-purple-200" style={{ textShadow: '0 0 8px rgba(168,85,247,0.4)' }}>
+                          {sirePayload.sire}
+                        </span>
+                      </p>
+                      <p className="text-xs text-slate-400 mb-3">
+                        産駒全体: {sirePayload.overall.runs.toLocaleString()} 走 / 勝率 {sirePayload.overall.winRate}% / 複勝率{' '}
+                        {sirePayload.overall.showRate}%
+                        <span className="text-slate-600">（最低 {sirePayload.minRuns} 走で傾向判定）</span>
+                      </p>
+                      {sirePayload.diagnoses.length > 0 && (
+                        <ul className="space-y-1.5 mb-4">
+                          {sirePayload.diagnoses.map((t, i) => (
+                            <li key={i} className="text-xs text-emerald-200/95 leading-relaxed pl-3 border-l-2 border-emerald-500/50">
+                              {t}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div className="overflow-x-auto rounded-lg border border-purple-500/25">
+                        <table className="w-full text-[11px] md:text-xs">
+                          <thead>
+                            <tr className="bg-black/40 text-slate-400 text-left">
+                              <th className="p-2 font-semibold">条件</th>
+                              <th className="p-2 font-semibold text-right">出走</th>
+                              <th className="p-2 font-semibold text-right">勝率</th>
+                              <th className="p-2 font-semibold text-right">複勝率</th>
+                              <th className="p-2 font-semibold text-center w-10">傾向</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sirePayload.bands.map((b) => (
+                              <tr key={b.bandId} className="border-t border-slate-700/50 text-slate-200">
+                                <td className="p-2">{b.label}</td>
+                                <td className="p-2 text-right tabular-nums">{b.runs}</td>
+                                <td className="p-2 text-right tabular-nums">{b.winRate}%</td>
+                                <td className="p-2 text-right tabular-nums">{b.showRate}%</td>
+                                <td className="p-2 text-center">
+                                  {b.badge ? (
+                                    <span
+                                      className={
+                                        b.badge === '◎'
+                                          ? 'text-orange-300 font-black'
+                                          : b.badge === '○'
+                                            ? 'text-cyan-300 font-bold'
+                                            : 'text-slate-400 font-semibold'
+                                      }
+                                      title={b.note || undefined}
+                                    >
+                                      {b.badge}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600">—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {sirePayload.bands.every((b) => !b.badge) && sirePayload.diagnoses.length === 0 && (
+                        <p className="text-xs text-slate-500 mt-3">
+                          距離帯ごとのサンプルが十分でないか、全体平均と大きな差が見つかりませんでした。
+                        </p>
+                      )}
+                    </>
+                  )}
+                </CyberCard>
+              </div>
+            ) : hasAnyData ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 
                 {/* 左カラム: レーダーチャート */}
