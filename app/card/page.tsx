@@ -142,6 +142,28 @@ function abbrevSeibetsu(s: string | undefined): string {
   return t.slice(0, 2);
 }
 
+/** 年齢文字列から数字部分のみ（例: 3歳→3） */
+function extractAgeNum(ageStr: string): string {
+  const t = toHalfWidth(ageStr).replace(/\s/g, '');
+  const m = t.match(/(\d+)/);
+  return m ? m[1] : '';
+}
+
+/** 牝3・牡5 のように性別＋年齢を1つに */
+function formatSexAgeCompact(
+  seibetsu: string | undefined,
+  nenrei_display: string | undefined,
+  nenrei: string | undefined
+): string {
+  const sex = abbrevSeibetsu(seibetsu);
+  const raw = (nenrei_display || nenrei || '').trim();
+  const num = extractAgeNum(raw);
+  if (sex && num) return `${sex}${num}`;
+  if (sex) return sex;
+  if (num) return num;
+  return '';
+}
+
 // normalizeHorseNameは@/utils/normalize-horse-nameからインポート
 
 function formatDateForQuery(dateStr: string): string {
@@ -1561,8 +1583,8 @@ export default function RaceCardPage() {
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-8 sm:w-10 font-semibold">印</th>
                       <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-6 sm:w-10 font-semibold" title="お気に入り">★</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold min-w-0">馬名</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold min-w-[3.5rem] sm:min-w-[5rem] max-w-[5.5rem] sm:max-w-none">調教師</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold whitespace-nowrap min-w-0">騎手<span className="hidden sm:inline">(斤量)</span></th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold min-w-[3.5rem] sm:min-w-[5rem] max-w-[5.5rem] sm:max-w-none">調教師</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1644,8 +1666,7 @@ export default function RaceCardPage() {
                               const horseName = normalizeHorseName(horse.umamei);
                               const isFavorite = favoriteHorses.includes(horseName);
                               const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
-                              const ageStr = toHalfWidth((horse.nenrei_display || horse.nenrei || '').trim());
-                              const sexStr = abbrevSeibetsu(horse.seibetsu);
+                              const sexAgeStr = formatSexAgeCompact(horse.seibetsu, horse.nenrei_display, horse.nenrei);
                               return (
                                 <td className={`border border-slate-300 px-1 sm:px-3 py-1.5 sm:py-2 font-semibold min-w-0 ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
                                   <div className="flex items-center gap-1 w-full min-w-0">
@@ -1674,11 +1695,8 @@ export default function RaceCardPage() {
                                       >
                                         {horseName}
                                       </span>
-                                      {ageStr && (
-                                        <span className="flex-shrink-0 text-[10px] text-slate-500 font-normal tabular-nums">{ageStr}</span>
-                                      )}
-                                      {sexStr && (
-                                        <span className="flex-shrink-0 text-[9px] text-slate-600 font-normal border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexStr}</span>
+                                      {sexAgeStr && (
+                                        <span className="flex-shrink-0 text-[10px] text-slate-600 font-normal tabular-nums border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexAgeStr}</span>
                                       )}
                                       {horsesWithPastHorseRaceMemo.has(horseName) && (
                                         <span
@@ -1708,6 +1726,12 @@ export default function RaceCardPage() {
                                 </td>
                               );
                             })()}
+                            {/* 騎手(斤量) */}
+                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm min-w-0">
+                              <span className="sm:hidden">{horse.kishu.trim().slice(0, 3)}</span>
+                              <span className="hidden sm:inline">{horse.kishu.trim()}</span>
+                              <span className="text-slate-500 text-[9px] sm:text-sm">({horse.kinryo.trim()})</span>
+                            </td>
                             {/* 調教師 */}
                             <td className="border border-slate-300 px-1 sm:px-2 py-1.5 sm:py-2 text-slate-700 align-middle min-w-0 max-w-[5rem] sm:max-w-[9rem]">
                               <div
@@ -1716,12 +1740,6 @@ export default function RaceCardPage() {
                               >
                                 {(horse.chokyoshi || '').trim() || <span className="text-slate-300">—</span>}
                               </div>
-                            </td>
-                            {/* 騎手(斤量) */}
-                            <td className="border border-slate-300 px-1 sm:px-3 py-2 text-slate-700 whitespace-nowrap text-[10px] sm:text-sm min-w-0">
-                              <span className="sm:hidden">{horse.kishu.trim().slice(0, 3)}</span>
-                              <span className="hidden sm:inline">{horse.kishu.trim()}</span>
-                              <span className="text-slate-500 text-[9px] sm:text-sm">({horse.kinryo.trim()})</span>
                             </td>
                           </tr>
                           {expandedHorse === horse.umaban && (
