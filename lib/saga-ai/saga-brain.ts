@@ -1617,8 +1617,9 @@ export class SagaBrain {
 
     // === 5. キャリアが浅い馬への指数ベース分析（1-2走の馬向け）===
     const raceCount = input.pastRaces.length;
+    const relevantForIndex = (input.relevantRaceCount ?? 0) > 0;
     if (raceCount > 0 && raceCount <= 2) {
-      // キャリアが浅くてもT2F/L4Fがある場合は展開予想を追加
+      // キャリアが浅くてもT2F/L4Fがある場合は展開予想を追加（今回距離帯の過去走があるときのみパーセンタイルを信用）
       const t2f = input.indices?.T2F;
       const l4f = input.indices?.L4F;
       const t2fPercentile = input.memberPercentiles?.T2F || 50;
@@ -1627,18 +1628,18 @@ export class SagaBrain {
       const developmentComments: string[] = [];
 
       // T2F（前半速度）が上位なら先行予想
-      if (t2f && t2fPercentile <= 25) {
+      if (relevantForIndex && t2f && t2fPercentile <= 25) {
         developmentComments.push(`T2F上位${Math.round(t2fPercentile)}%→先行予想`);
         analysis.tags.push('先行力◎');
-      } else if (t2f && t2fPercentile <= 40) {
+      } else if (relevantForIndex && t2f && t2fPercentile <= 40) {
         developmentComments.push(`T2F中位→中団前目予想`);
       }
 
       // L4F（後半速度）が上位なら末脚期待
-      if (l4f && l4fPercentile <= 25) {
+      if (relevantForIndex && l4f && l4fPercentile <= 25) {
         developmentComments.push(`L4F上位${Math.round(l4fPercentile)}%→末脚◎`);
         analysis.tags.push('末脚◎');
-      } else if (l4f && l4fPercentile <= 40) {
+      } else if (relevantForIndex && l4f && l4fPercentile <= 40) {
         developmentComments.push(`L4F中位→堅実な脚`);
       }
 
@@ -1658,7 +1659,7 @@ export class SagaBrain {
       // コメント追加
       if (developmentComments.length > 0) {
         analysis.comments.push(`【指数分析】キャリア${raceCount}走だが指数から予想: ${developmentComments.join('、')}`);
-      } else if (t2f || l4f) {
+      } else if (relevantForIndex && (t2f || l4f)) {
         // 特筆すべき点がなくても指数があれば触れる
         const t2fStr = t2f ? `T2F${t2f.toFixed(1)}秒(${Math.round(t2fPercentile)}%)` : '';
         const l4fStr = l4f ? `L4F${l4f.toFixed(1)}秒(${Math.round(l4fPercentile)}%)` : '';
@@ -1683,12 +1684,23 @@ export class SagaBrain {
       return;
     }
 
+    /** 競馬場名の比較用（開催回・東西を除いて一致判定） */
+    const normalizeVenue = (p: string) =>
+      !p
+        ? ''
+        : p
+            .replace(/^[0-9０-９]+/, '')
+            .replace(/[0-9０-９]+$/, '')
+            .replace(/(東|西)$/, '')
+            .trim();
+
     // 新コースデータベースから詳細情報を取得（内部判断用）
     const surface = input.surface === '芝' ? '芝' : 'ダート';
     const detailedCourse = getDetailedCourseInfo(input.place, surface as '芝' | 'ダート', input.distance);
 
     const similarCourses = findSimilarCourses(input.place);
     const courseName = `${input.place}${input.surface}${input.distance}m`;
+    const inputVenueNorm = normalizeVenue(input.place);
 
     // 競走除外等（着順30以上）は除外
     const INVALID_FINISH_THRESHOLD = 30;
@@ -1707,7 +1719,7 @@ export class SagaBrain {
       // 競走除外、失格等のレースは成績評価に含めない
       if (race.finishPosition <= 0 || race.finishPosition >= INVALID_FINISH_THRESHOLD) continue;
 
-      if (race.place === input.place) {
+      if (normalizeVenue(race.place) === inputVenueNorm) {
         // 同競馬場・同馬場の場合
         samePlacePerformances.push({ finish: race.finishPosition, popularity: race.popularity, distance: race.distance });
 
@@ -1715,7 +1727,7 @@ export class SagaBrain {
         if (Math.abs(race.distance - input.distance) <= DISTANCE_TOLERANCE) {
           exactCoursePerformances.push({ finish: race.finishPosition, popularity: race.popularity, distance: race.distance });
         }
-      } else if (similarCourses.includes(race.place)) {
+      } else if (similarCourses.some((s) => normalizeVenue(s) === normalizeVenue(race.place))) {
         similarCoursePerfomances.push({ place: race.place, finish: race.finishPosition, popularity: race.popularity, distance: race.distance });
       }
     }
@@ -1820,20 +1832,27 @@ export class SagaBrain {
       reason = `${courseName}の実績なし`;
       analysis.tags.push('初コース');
 
-      // コース実績がなくても、指数が良ければプラス評価
+      // メンバー内T2F/L4Fパーセンタイルは「今回距離±200mの過去走から算出した指数」の比較に意味がある
+      const relevantRaceCount = input.relevantRaceCount ?? 0;
       const t2fPercentile = input.memberPercentiles?.T2F || 50;
       const l4fPercentile = input.memberPercentiles?.L4F || 50;
       const potential = input.indices?.potential || 0;
 
-      // 指数が上位なら「コースは未知だが能力で勝負可能」
-      if ((t2fPercentile <= 20 || l4fPercentile <= 20) && potential >= 2.0) {
+      // 今回距離帯の過去走が無いのに「2600m初走だが指数上位」と出ると誤解を招くため、relevantRaceCount>0 のときだけ指数補完を使う
+      if (relevantRaceCount > 0 && (t2fPercentile <= 20 || l4fPercentile <= 20) && potential >= 2.0) {
         rating = 'B';
         reason = `${courseName}は初だが指数上位`;
         analysis.score += 1;
-        analysis.comments.push(`【コース】${courseName}は初走だが、指数が上位（T2F:${Math.round(t2fPercentile)}%、L4F:${Math.round(l4fPercentile)}%）のため適応可能性あり。`);
-      } else if (t2fPercentile <= 30 && l4fPercentile <= 30) {
+        analysis.comments.push(
+          `【コース】${courseName}は当該距離の過去走は少ないが、今回距離帯の指数がメンバー内で上位（T2F:${Math.round(t2fPercentile)}%、L4F:${Math.round(l4fPercentile)}%）のため適応可能性あり。`
+        );
+      } else if (relevantRaceCount > 0 && t2fPercentile <= 30 && l4fPercentile <= 30) {
         reason = `${courseName}は初だが指数まずまず`;
-        analysis.comments.push(`【コース】${courseName}の実績なし。指数からは平均以上の適性がありそう。`);
+        analysis.comments.push(`【コース】${courseName}の当該コース実績なし。今回距離帯の指数からは平均以上の適性がありそう。`);
+      } else if (relevantRaceCount === 0) {
+        analysis.warnings.push(
+          `${courseName}は過去に同一条件の実績がなく、かつ今回距離±200mの過去走もないため、メンバー内のT2F/L4F順位は当てになりにくい。`
+        );
       }
     }
 
@@ -2320,7 +2339,11 @@ export class SagaBrain {
         analysis.tags.push('延長◎');
       }
       // 位置取りが前で、延長、かつL4F下位
-      else if (input.pastRaces[0]?.corner2 && input.pastRaces[0].corner2 <= 3) {
+      else if (
+        relevantRaceCount > 0 &&
+        input.pastRaces[0]?.corner2 &&
+        input.pastRaces[0].corner2 <= 3
+      ) {
         if (l4fPercentile >= 75 && l4fDataCount >= MIN_DATA_COUNT) {
           analysis.warnings.push(`前走先行。L4F下位で延長は疑問。`);
           analysis.score -= 1; // 4→1に縮小

@@ -1170,7 +1170,8 @@ export default async function handler(
 
     const raceInfo = horses[0];
     const surface = raceInfo.track_type?.includes('芝') ? '芝' : 'ダ';
-    const distance = parseInt(raceInfo.distance || '0', 10);
+    // 距離は「芝2600」「2600m」などから数値のみ抽出（parseInt("芝2600")がNaNになるのを防ぐ）
+    const distance = parseInt(String(raceInfo.distance ?? '').replace(/[^\d]/g, ''), 10) || 0;
     const place = normalizedPlace;
     
     // 牝馬限定戦・年齢条件の判定
