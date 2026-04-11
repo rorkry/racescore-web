@@ -26,6 +26,8 @@ interface PastRace {
   track_condition: string;
   place: string;
   popularity?: string;
+  horse_weight?: string;
+  weight_change?: string;
   indices?: {
     makikaeshi?: number;
     potential?: number;
@@ -238,6 +240,14 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
   // 全角数字を半角に変換
   const toHalfWidth = (str: string) => {
     return str.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+  };
+
+  /** 馬体重と増減（例: 480(+2)） */
+  const formatBodyWeightLine = (hw: string | undefined, wc: string | undefined): string => {
+    const w = (hw || '').replace(/[^\d]/g, '');
+    if (!w) return '';
+    const ch = (wc || '').trim().replace(/[＋]/g, '+').replace(/[－﹣−]/g, '-');
+    return ch ? `${w}(${ch})` : w;
   };
   
   const isGoodRun = (position: string) => {
@@ -1164,6 +1174,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
                             : '';
                           const position = toHalfWidth(race.finish_position || '');
                           const popularity = race.popularity ? toHalfWidth(race.popularity) : '';
+                          const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
                           
                           return (
                             <div 
@@ -1198,6 +1209,14 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
                                 marginFloat <= 0.3 ? 'text-green-400' : marginFloat >= 1.0 ? 'text-red-400' : 'text-slate-400'
                               }`}>
                                 {marginText}
+                              </span>
+
+                              {/* 馬体重・増減 */}
+                              <span
+                                className="text-[9px] w-[3.5rem] shrink-0 text-right tabular-nums text-slate-500"
+                                title="馬体重(増減)"
+                              >
+                                {bodyW || '—'}
                               </span>
                             </div>
                           );

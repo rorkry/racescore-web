@@ -1048,7 +1048,7 @@ function CompactRaceRow({
   const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
   const hasSummaryRow = Boolean(
     race.raceLevel?.level || race.raceLevel?.levelLabel
-    || race.jockey || kinryo || bodyW || sexAge
+    || race.jockey || kinryo || sexAge
   );
 
   return (
@@ -1120,6 +1120,14 @@ function CompactRaceRow({
         <span className="text-xs text-slate-500 w-8 text-right flex-shrink-0 tabular-nums">
           {formatMargin(race.margin)}
         </span>
+
+        {/* 馬体重・増減（着順行の続き） */}
+        <span
+          className="text-[10px] text-slate-500 w-[3.25rem] shrink-0 text-right tabular-nums"
+          title="馬体重(増減)"
+        >
+          {bodyW || '—'}
+        </span>
         
         {/* 巻き返し指数（プレミアムのみ・アイコン形式） */}
         {isPremium && race.indices?.makikaeshi != null && (
@@ -1173,7 +1181,6 @@ function CompactRaceRow({
                 {race.jockey || '-'}{kinryo ? `(${toHalfWidth(kinryo)})` : ''}
               </span>
             )}
-            {bodyW && <span className="tabular-nums">体重 {bodyW}</span>}
             {sexAge && <span className="text-slate-500">{sexAge}</span>}
           </div>
         )}
@@ -1202,6 +1209,12 @@ function CompactRaceRow({
                 <span className="text-slate-800">
                   {race.track_condition || '-'}
                   {race.indices?.cushion != null && ` / クッション ${race.indices.cushion.toFixed(1)}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-slate-500 w-12">馬体重</span>
+                <span className="text-slate-800 tabular-nums">
+                  {formatBodyWeightLine(race.horse_weight, race.weight_change) || '—'}
                 </span>
               </div>
             </div>
@@ -1408,16 +1421,13 @@ function MobileRaceCard({
             )}
           </div>
 
-          {/* 騎手・斤量・馬体重・性齢（展開前に一覧） */}
+          {/* 騎手・斤量・性齢（展開前に一覧）※馬体重は着順行に表示 */}
           <div className="text-[8px] text-slate-600 mb-1 space-y-0.5 leading-tight">
             {(race.jockey || kinryoM) && (
               <div className="truncate">
                 <span className="text-slate-500">騎</span>
                 {race.jockey || '-'}{kinryoM ? `(${toHalfWidth(kinryoM)})` : ''}
               </div>
-            )}
-            {bodyWM && (
-              <div className="tabular-nums truncate">体重 {bodyWM}</div>
             )}
             {sexAgeM && (
               <div className="text-slate-500">{sexAgeM}</div>
@@ -1440,13 +1450,21 @@ function MobileRaceCard({
             </div>
           )}
           
-          {/* 着順 + 人気 */}
-          <div className="flex items-baseline gap-1 mb-1">
-            <span className={cn('text-lg font-bold tabular-nums', getFinishColor(race.finish_position || ''))}>
-              {toHalfWidth(race.finish_position || '-')}着
-            </span>
-            <span className="text-[10px] text-slate-500">
-              {toHalfWidth(race.popularity || '-')}人
+          {/* 着順 + 人気 + 馬体重 */}
+          <div className="flex items-baseline justify-between gap-1 mb-1 min-w-0">
+            <div className="flex items-baseline gap-1 min-w-0">
+              <span className={cn('text-lg font-bold tabular-nums', getFinishColor(race.finish_position || ''))}>
+                {toHalfWidth(race.finish_position || '-')}着
+              </span>
+              <span className="text-[10px] text-slate-500">
+                {toHalfWidth(race.popularity || '-')}人
+              </span>
+            </div>
+            <span
+              className="text-[9px] text-slate-500 tabular-nums shrink-0"
+              title="馬体重(増減)"
+            >
+              {bodyWM || '—'}
             </span>
           </div>
           
@@ -1565,6 +1583,12 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
             <span className="text-slate-800 tabular-nums">
               {race.track_condition || '-'}
               {race.indices?.cushion != null && `/${race.indices.cushion.toFixed(1)}`}
+            </span>
+          </div>
+          <div className="flex justify-between gap-1 min-w-0">
+            <span className="text-slate-500 flex-shrink-0">馬体重</span>
+            <span className="text-slate-800 tabular-nums">
+              {formatBodyWeightLine(race.horse_weight, race.weight_change) || '—'}
             </span>
           </div>
 
