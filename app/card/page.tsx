@@ -206,6 +206,7 @@ export default function RaceCardPage() {
 
   const showRacePace = useFeatureAccess('race-pace');
   const showSagaAI = useFeatureAccess('saga-ai');
+  const { status: sessionStatus } = useSession();
 
   // グローバルにレース情報を共有（AIチャット用）
   useEffect(() => {
@@ -237,24 +238,47 @@ export default function RaceCardPage() {
   // ========== 今走メモ ==========
   // キー: horse_name → 今走のメモ文字列
   const [horseRaceMemosForCard, setHorseRaceMemosForCard] = useState<Map<string, string>>(new Map());
+  // 過去の別レースでレース別馬メモを一度でも付けた馬（現在のレース以外）
+  const [horsesWithPastHorseRaceMemo, setHorsesWithPastHorseRaceMemo] = useState<Set<string>>(new Set());
   // 今走メモポップアップ: 開いている馬名 + 現在の入力テキスト
   const [horseRaceMemoPopup, setHorseRaceMemoPopup] = useState<{ horseName: string; draft: string } | null>(null);
   // 各馬の過去走メモ（キー: race_key → memo）: horseNameをキーに遅延ロード
   const [horseRaceMemosCache, setHorseRaceMemosCache] = useState<Map<string, Map<string, string>>>(new Map());
 
-  // 今走メモを現在のレース全馬分ロード
+  // 今走メモ（このレース）＋ 他レースにレース別馬メモがある馬の一覧
   useEffect(() => {
     if (!selectedVenue || !selectedRace || !date) return;
-    const raceKey = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
-    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(raceKey)}`)
+    const currentRaceKeyForMemo = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
+
+    fetch(`/api/user/horse-race-memos?raceKey=${encodeURIComponent(currentRaceKeyForMemo)}`)
       .then(r => r.ok ? r.json() : { memos: [] })
       .then((data: { memos: Array<{ horse_name: string; memo: string }> }) => {
         const map = new Map<string, string>();
-        for (const m of data.memos) map.set(m.horse_name, m.memo);
+        for (const m of data.memos) map.set(normalizeHorseName(m.horse_name), m.memo);
         setHorseRaceMemosForCard(map);
       })
-      .catch(() => {});
-  }, [selectedYear, date, selectedVenue, selectedRace]);
+      .catch(() => setHorseRaceMemosForCard(new Map()));
+
+    if (sessionStatus !== 'authenticated') {
+      setHorsesWithPastHorseRaceMemo(new Set());
+      return;
+    }
+
+    fetch('/api/user/horse-race-memos?all=true')
+      .then(r => r.ok ? r.json() : { memos: [] })
+      .then((data: { memos: Array<{ horse_name: string; race_key: string; memo: string }> }) => {
+        const s = new Set<string>();
+        for (const m of data.memos || []) {
+          if (!(m.memo || '').trim()) continue;
+          const rk = (m.race_key || '').trim();
+          if (rk !== currentRaceKeyForMemo.trim()) {
+            s.add(normalizeHorseName(m.horse_name));
+          }
+        }
+        setHorsesWithPastHorseRaceMemo(s);
+      })
+      .catch(() => setHorsesWithPastHorseRaceMemo(new Set()));
+  }, [selectedYear, date, selectedVenue, selectedRace, sessionStatus]);
 
   // 馬の過去走メモを遅延ロード（過去走パネルを開いたとき）
   async function loadHorseRaceMemosFor(horseName: string) {
@@ -273,6 +297,7 @@ export default function RaceCardPage() {
   async function saveHorseRaceMemo(horseName: string, memo: string) {
     if (!selectedVenue || !selectedRace || !date) return;
     const raceKey = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
+    const nameKey = normalizeHorseName(horseName);
     await fetch('/api/user/horse-race-memos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -280,17 +305,27 @@ export default function RaceCardPage() {
     });
     setHorseRaceMemosForCard(prev => {
       const next = new Map(prev);
-      if (memo.trim()) next.set(horseName, memo.trim());
-      else next.delete(horseName);
+      if (memo.trim()) next.set(nameKey, memo.trim());
+      else next.delete(nameKey);
       return next;
     });
+    try {
+      const r = await fetch('/api/user/horse-race-memos?all=true');
+      if (!r.ok) return;
+      const data: { memos: Array<{ horse_name: string; race_key: string; memo: string }> } = await r.json();
+      const s = new Set<string>();
+      for (const m of data.memos || []) {
+        if (!(m.memo || '').trim()) continue;
+        if ((m.race_key || '').trim() !== raceKey.trim()) {
+          s.add(normalizeHorseName(m.horse_name));
+        }
+      }
+      setHorsesWithPastHorseRaceMemo(s);
+    } catch { /* noop */ }
   }
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
   const [favoriteHorseMemos, setFavoriteHorseMemos] = useState<Map<string, string>>(new Map()); // 馬名 -> メモ
-
-  // セッション状態
-  const { status: sessionStatus } = useSession();
 
   // お気に入り馬リストを取得（メモ含む）
   const fetchFavoriteHorses = async () => {
@@ -1644,6 +1679,15 @@ export default function RaceCardPage() {
                                       )}
                                       {sexStr && (
                                         <span className="flex-shrink-0 text-[9px] text-slate-600 font-normal border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexStr}</span>
+                                      )}
+                                      {horsesWithPastHorseRaceMemo.has(horseName) && (
+                                        <span
+                                          className="flex-shrink-0 inline-flex items-center justify-center size-5 sm:size-6 rounded border border-amber-200 bg-amber-50 text-sm sm:text-base leading-none"
+                                          title="過去の別レースにレース別馬メモあり（マイメモの「レース別馬メモ」でも確認できます）"
+                                          aria-label="過去レース別馬メモあり"
+                                        >
+                                          📓
+                                        </span>
                                       )}
                                     </div>
                                     <button
