@@ -72,6 +72,11 @@ interface PastRaceDetailProps {
   currentHorseName?: string;   // 展開中の馬の名前（黄色ハイライト用）
   /** モーダル内など、画面固定の閉じる FAB を出さないとき true */
   hideCollapseFab?: boolean;
+  /**
+   * レースカードなど、レイアウト全体のメインFAB（右下）と横位置をずらす
+   * （重なって押しにくいのを防ぐ）
+   */
+  collapseFabAvoidGlobalFab?: boolean;
 }
 
 // ========================================
@@ -1785,6 +1790,7 @@ function PastRaceDetailInner({
   currentRaceHorses,
   currentHorseName,
   hideCollapseFab = false,
+  collapseFabAvoidGlobalFab = false,
 }: PastRaceDetailProps) {
   const { status } = useSession();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
@@ -2021,7 +2027,13 @@ function PastRaceDetailInner({
       {!hideCollapseFab && isAnyExpanded && (
         <button
           type="button"
-          className="fixed z-40 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 flex items-center gap-1.5 rounded-full bg-emerald-600 text-white shadow-lg px-3.5 py-2.5 text-xs font-semibold hover:bg-emerald-700 active:scale-[0.98] transition-colors sm:bottom-6"
+          className={cn(
+            'fixed z-[960] flex items-center gap-1.5 rounded-full bg-emerald-600 text-white shadow-lg px-3.5 py-2.5 text-xs font-semibold hover:bg-emerald-700 active:scale-[0.98] transition-colors',
+            'bottom-[max(1rem,env(safe-area-inset-bottom,0px))] sm:bottom-6',
+            collapseFabAvoidGlobalFab
+              ? 'right-[5.75rem] sm:right-[7.25rem]'
+              : 'right-4'
+          )}
           onClick={() => {
             setExpandedIndex(null);
             setMobileExpandedIndex(null);

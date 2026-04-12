@@ -1801,23 +1801,31 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 min-w-0 max-w-0">
-                                <div className="sticky top-0 z-30 -mx-2 sm:-mx-4 px-2 sm:px-4 py-2 mb-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/90 text-xs sm:text-sm font-bold text-emerald-700 shadow-sm">
-                                  {normalizeHorseName(horse.umamei)} の過去走詳細
+                              <td colSpan={7} className="border border-slate-300 bg-slate-50 min-w-0 align-top p-0">
+                                {/*
+                                  テーブル内では sticky が効きにくいため、馬名はスクロール外・過去走のみ max-h + overflow でスクロール
+                                */}
+                                <div className="flex flex-col max-h-[min(72vh,36rem)] sm:max-h-[min(80vh,42rem)] min-h-0">
+                                  <div className="flex-shrink-0 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-bold text-emerald-800 border-b border-slate-200 bg-slate-100/95">
+                                    {normalizeHorseName(horse.umamei)} の過去走詳細
+                                  </div>
+                                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2 sm:px-3 py-2 pb-16 sm:pb-14">
+                                    <PastRaceDetail
+                                      pastRaces={horse.past}
+                                      isPremium={showSagaAI}
+                                      onDateClick={navigateToDate}
+                                      isDateClickable={isDateClickable}
+                                      raceMemos={raceMemos}
+                                      horseRaceMemos={horseRaceMemosCache.get(normalizeHorseName(horse.umamei))}
+                                      currentRaceHorses={raceCard?.horses.map(h => normalizeHorseName(h.umamei))}
+                                      currentHorseName={normalizeHorseName(horse.umamei)}
+                                      onMemoClick={(raceKey, raceTitle, memo) =>
+                                        setPastRaceMemoPopup({ raceKey, raceTitle, memo })
+                                      }
+                                      collapseFabAvoidGlobalFab
+                                    />
+                                  </div>
                                 </div>
-                                <PastRaceDetail 
-                                  pastRaces={horse.past}
-                                  isPremium={showSagaAI}
-                                  onDateClick={navigateToDate}
-                                  isDateClickable={isDateClickable}
-                                  raceMemos={raceMemos}
-                                  horseRaceMemos={horseRaceMemosCache.get(normalizeHorseName(horse.umamei))}
-                                  currentRaceHorses={raceCard?.horses.map(h => normalizeHorseName(h.umamei))}
-                                  currentHorseName={normalizeHorseName(horse.umamei)}
-                                  onMemoClick={(raceKey, raceTitle, memo) => 
-                                    setPastRaceMemoPopup({ raceKey, raceTitle, memo })
-                                  }
-                                />
                               </td>
                             </tr>
                           )}
