@@ -265,6 +265,25 @@ interface BabaMemoData {
   free_memo: string | null;
 }
 
+/** 一覧行用: 有利位置・脚質・特記（フラット除く） */
+function buildBabaMemoTagList(memo: BabaMemoData | null): string[] {
+  if (!memo) return [];
+  const tags: string[] = [];
+  if (memo.advantage_position && memo.advantage_position !== 'フラット') tags.push(memo.advantage_position);
+  if (memo.advantage_style && memo.advantage_style !== 'フラット') tags.push(memo.advantage_style);
+  if (memo.weather_note) tags.push(...memo.weather_note.split(',').filter(Boolean));
+  return tags;
+}
+
+/** 馬場メモキャッシュキー（日付MMDD+場+芝/ダ） */
+function babaMemoCacheKeyForRace(race: PastRaceData): string | null {
+  if (!race.date || !race.place) return null;
+  const { surface } = getSurfaceAndDistance(race.distance);
+  if (!surface) return null;
+  const babaDate = pastDateToBabaMemoDate(race.date);
+  return `${babaDate}::${race.place}::${surface}`;
+}
+
 function BabaMemoChip({ date, place, surface }: { date: string; place: string; surface: string }) {
   const [memo, setMemo] = useState<BabaMemoData | null>(null);
 
@@ -1062,6 +1081,10 @@ interface CompactRaceRowProps {
   onAnalysisClick?: (raceId: string) => void;
   /** ログインユーザーが当該レースでこの馬に付けた印 */
   userPredictionMark?: string | null;
+  /** 展開前のみ: 馬場メモの簡易タグ（内有利・高速馬場等） */
+  collapsedBabaTags?: string[];
+  /** 展開前のみ: 馬場メモ自由記述（タグが空のときなど） */
+  collapsedBabaFreeLine?: string | null;
 }
 
 function CompactRaceRow({ 
@@ -1083,6 +1106,8 @@ function CompactRaceRow({
   onSameRaceCountUpdate,
   onAnalysisClick,
   userPredictionMark,
+  collapsedBabaTags = [],
+  collapsedBabaFreeLine,
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1152,14 +1177,14 @@ function CompactRaceRow({
           {dist}m
         </span>
         
-        {/* レース名 + 勝ち馬名 */}
+        {/* レース名 + 勝ち馬名（馬別メモの抜粋は折りたたみ2行目へ） */}
         <span className="text-xs text-slate-800 truncate min-w-0 flex-1">
           {raceName}
           {winnerName && (
             <span className="text-slate-400 ml-1">({winnerName})</span>
           )}
-          {horseMemo && (
-                <span className="ml-1.5 text-amber-500 text-[10px]" title={horseMemo}>✏️</span>
+          {horseMemo && isExpanded && (
+            <span className="ml-1.5 text-amber-500 text-[10px]" title={horseMemo}>✏️</span>
           )}
         </span>
         
@@ -1231,6 +1256,50 @@ function CompactRaceRow({
           </a>
         )}
         </div>
+
+        {/* 展開前: 馬場メモ（簡易タグ）＋馬別メモ */}
+        {!isExpanded &&
+          (collapsedBabaTags.length > 0 ||
+            (collapsedBabaFreeLine && collapsedBabaFreeLine.trim()) ||
+            horseMemo) && (
+            <div className="px-2 sm:px-3 pb-1.5 pt-1 border-t border-dashed border-slate-100 flex flex-wrap gap-1 items-start">
+              {collapsedBabaTags.length > 0 && (
+                <span className="text-[9px] font-bold text-green-700 bg-green-50 px-1 py-0.5 rounded flex-shrink-0">
+                  🌿
+                </span>
+              )}
+              {collapsedBabaTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-800 rounded-full border border-green-200 whitespace-nowrap max-w-[8rem] truncate"
+                  title={tag}
+                >
+                  {tag}
+                </span>
+              ))}
+              {collapsedBabaFreeLine && collapsedBabaFreeLine.trim() && collapsedBabaTags.length === 0 && (
+                <span className="text-[9px] text-green-800 line-clamp-1 min-w-0 flex-1" title={collapsedBabaFreeLine}>
+                  🌿 {collapsedBabaFreeLine}
+                </span>
+              )}
+              {collapsedBabaFreeLine && collapsedBabaFreeLine.trim() && collapsedBabaTags.length > 0 && (
+                <span
+                  className="text-[9px] text-slate-500 line-clamp-1 w-full basis-full pl-0.5"
+                  title={collapsedBabaFreeLine}
+                >
+                  {collapsedBabaFreeLine}
+                </span>
+              )}
+              {horseMemo && (
+                <span
+                  className="text-[9px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded max-w-full line-clamp-2 min-w-0 flex-1 basis-full sm:basis-auto sm:max-w-[14rem]"
+                  title={horseMemo}
+                >
+                  ✏️ {horseMemo}
+                </span>
+              )}
+            </div>
+          )}
 
         {hasSummaryRow && (
           <div className="px-3 pb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-t border-slate-100 text-[10px] text-slate-600 leading-snug">
@@ -1413,6 +1482,8 @@ interface MobileRaceCardProps {
   horseMemo?: string;
   sameRaceCount?: number;
   userPredictionMark?: string | null;
+  collapsedBabaTags?: string[];
+  collapsedBabaFreeLine?: string | null;
 }
 
 function MobileRaceCard({ 
@@ -1429,6 +1500,8 @@ function MobileRaceCard({
   horseMemo,
   sameRaceCount,
   userPredictionMark,
+  collapsedBabaTags = [],
+  collapsedBabaFreeLine,
 }: MobileRaceCardProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1469,7 +1542,7 @@ function MobileRaceCard({
               )}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
-              {horseMemo && (
+              {horseMemo && isExpanded && (
                 <span className="text-[8px] bg-amber-100 text-amber-600 px-1 rounded leading-tight" title={horseMemo}>✏️</span>
               )}
               <span className="text-[9px] tabular-nums text-slate-500">
@@ -1477,6 +1550,46 @@ function MobileRaceCard({
               </span>
             </div>
           </div>
+
+          {/* 展開前: 馬場メモタグ + 馬別メモ */}
+          {!isExpanded &&
+            (collapsedBabaTags.length > 0 ||
+              (collapsedBabaFreeLine && collapsedBabaFreeLine.trim()) ||
+              horseMemo) && (
+              <div className="mb-1.5 space-y-0.5">
+                {(collapsedBabaTags.length > 0 || (collapsedBabaFreeLine && collapsedBabaTags.length === 0)) && (
+                  <div className="flex flex-wrap gap-0.5 items-center">
+                    {collapsedBabaTags.length > 0 && (
+                      <span className="text-[7px] font-bold text-green-700">🌿</span>
+                    )}
+                    {collapsedBabaTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-[7px] px-1 py-0.5 bg-green-50 text-green-800 rounded border border-green-200 max-w-[5.5rem] truncate"
+                        title={tag}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                    {collapsedBabaFreeLine && collapsedBabaTags.length === 0 && (
+                      <span className="text-[7px] text-green-800 line-clamp-2" title={collapsedBabaFreeLine}>
+                        🌿 {collapsedBabaFreeLine}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {collapsedBabaFreeLine && collapsedBabaTags.length > 0 && (
+                  <div className="text-[7px] text-slate-500 line-clamp-2" title={collapsedBabaFreeLine}>
+                    {collapsedBabaFreeLine}
+                  </div>
+                )}
+                {horseMemo && (
+                  <div className="text-[8px] text-amber-900 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded leading-tight line-clamp-3" title={horseMemo}>
+                    ✏️ {horseMemo}
+                  </div>
+                )}
+              </div>
+            )}
           
           {/* 場所 + 距離 */}
           <div className="flex items-center justify-between mb-0.5">
@@ -1802,6 +1915,8 @@ function PastRaceDetailInner({
   const [analysisRaceId, setAnalysisRaceId] = useState<string | null>(null);
   // レースキー|馬番 → ユーザーが保存した印（/api/user/predictions）
   const [userPredictionMarks, setUserPredictionMarks] = useState<Map<string, string>>(new Map());
+  // 馬場メモキャッシュキー（MMDD::場::芝|ダ）→ メモ（ログイン時のみ一括取得）
+  const [babaMemoByKey, setBabaMemoByKey] = useState<Map<string, BabaMemoData | null>>(new Map());
 
   const handleSameRaceCountUpdate = useCallback((raceId: string, count: number) => {
     setSameRaceCountMap(prev => {
@@ -1849,6 +1964,49 @@ function PastRaceDetailInner({
       .catch(() => {
         if (!cancelled) setUserPredictionMarks(new Map());
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [pastRaces, status]);
+
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      setBabaMemoByKey(new Map());
+      return;
+    }
+    const list = pastRaces || [];
+    const keys = new Set<string>();
+    for (const r of list) {
+      const k = babaMemoCacheKeyForRace(r);
+      if (k) keys.add(k);
+    }
+    if (keys.size === 0) {
+      setBabaMemoByKey(new Map());
+      return;
+    }
+    let cancelled = false;
+    const fetchOne = async (key: string): Promise<[string, BabaMemoData | null]> => {
+      const parts = key.split('::');
+      if (parts.length < 3) return [key, null];
+      const babaDate = parts[0];
+      const place = parts[1];
+      const surface = parts[2];
+      const trackType = surfaceToTrackType(surface);
+      try {
+        const res = await fetch(
+          `/api/user/baba-memos?date=${encodeURIComponent(babaDate)}&place=${encodeURIComponent(place)}&trackType=${encodeURIComponent(trackType)}`
+        );
+        if (!res.ok) return [key, null];
+        const data = (await res.json()) as { memo?: BabaMemoData | null };
+        return [key, data.memo ?? null];
+      } catch {
+        return [key, null];
+      }
+    };
+    Promise.all(Array.from(keys).map(fetchOne)).then((entries) => {
+      if (cancelled) return;
+      setBabaMemoByKey(new Map(entries));
+    });
     return () => {
       cancelled = true;
     };
@@ -1906,7 +2064,11 @@ function PastRaceDetailInner({
           const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
           const horseRaceMemoKey = deriveHorseRaceMemoKey(race);
           const horseMemo = horseRaceMemoKey ? horseRaceMemos?.get(horseRaceMemoKey) : undefined;
-          
+          const babaKey = babaMemoCacheKeyForRace(race);
+          const babaMemoRow = babaKey ? babaMemoByKey.get(babaKey) ?? null : null;
+          const collapsedBabaTags = buildBabaMemoTagList(babaMemoRow);
+          const collapsedBabaFreeLine = babaMemoRow?.free_memo?.trim() ? babaMemoRow.free_memo.trim() : null;
+
           return (
             <CompactRaceRow
               key={`${race.date}-${race.place}-${idx}`}
@@ -1936,6 +2098,8 @@ function PastRaceDetailInner({
                 }
               }}
               userPredictionMark={lookupUserPredictionMark(race, userPredictionMarks)}
+              collapsedBabaTags={collapsedBabaTags}
+              collapsedBabaFreeLine={collapsedBabaFreeLine}
             />
           );
         })}
@@ -1955,7 +2119,11 @@ function PastRaceDetailInner({
             const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
             const horseRaceMemoKey = deriveHorseRaceMemoKey(race);
             const horseMemo = horseRaceMemoKey ? horseRaceMemos?.get(horseRaceMemoKey) : undefined;
-            
+            const babaKey = babaMemoCacheKeyForRace(race);
+            const babaMemoRow = babaKey ? babaMemoByKey.get(babaKey) ?? null : null;
+            const collapsedBabaTags = buildBabaMemoTagList(babaMemoRow);
+            const collapsedBabaFreeLine = babaMemoRow?.free_memo?.trim() ? babaMemoRow.free_memo.trim() : null;
+
             return (
               <MobileRaceCard
                 key={`${race.date}-${race.place}-${idx}`}
@@ -1980,6 +2148,8 @@ function PastRaceDetailInner({
                   }
                 }}
                 userPredictionMark={lookupUserPredictionMark(race, userPredictionMarks)}
+                collapsedBabaTags={collapsedBabaTags}
+                collapsedBabaFreeLine={collapsedBabaFreeLine}
               />
             );
           })}
