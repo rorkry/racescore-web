@@ -56,6 +56,7 @@ interface PastRaceData {
   weight_change?: string;
   gender?: string; // 性別（牡牝セ）
   age?: string;     // 当時の年齢表記
+  umaban?: string;  // 当該レースの馬番（ユーザー印の照合に使用）
 }
 
 interface PastRaceDetailProps {
@@ -69,6 +70,8 @@ interface PastRaceDetailProps {
   horseRaceMemos?: Map<string, string>; // 今走メモ: race_key → memo
   currentRaceHorses?: string[]; // 今回の出走馬名リスト（対戦ハイライト用）
   currentHorseName?: string;   // 展開中の馬の名前（黄色ハイライト用）
+  /** モーダル内など、画面固定の閉じる FAB を出さないとき true */
+  hideCollapseFab?: boolean;
 }
 
 // ========================================
@@ -78,6 +81,42 @@ interface PastRaceDetailProps {
 function toHalfWidth(str: string): string {
   return str.replace(/[！-～]/g, s =>
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+
+/** 予想保存時の馬番と過去走 umadata の馬番を同じキーに揃える */
+function normalizeHorseNumberForPrediction(umaban: string | undefined): string {
+  if (!umaban) return '';
+  const n = parseInt(toHalfWidth(String(umaban)).replace(/\D/g, ''), 10);
+  return Number.isFinite(n) ? String(n) : '';
+}
+
+function userMarkChipClass(mark: string): string {
+  switch (mark) {
+    case '◎':
+      return 'bg-rose-100 text-rose-800 border border-rose-300';
+    case '○':
+      return 'bg-orange-100 text-orange-800 border border-orange-300';
+    case '▲':
+      return 'bg-amber-100 text-amber-900 border border-amber-300';
+    case '△':
+      return 'bg-lime-100 text-lime-900 border border-lime-300';
+    case '☆':
+      return 'bg-sky-100 text-sky-900 border border-sky-300';
+    case '紐':
+      return 'bg-slate-200 text-slate-800 border border-slate-400';
+    case '消':
+      return 'bg-zinc-300 text-zinc-800 border border-zinc-500';
+    default:
+      return 'bg-violet-100 text-violet-900 border border-violet-300';
+  }
+}
+
+function lookupUserPredictionMark(race: PastRaceData, map: Map<string, string>): string | null {
+  if (!race.date || !race.place || !race.race_number || !race.umaban) return null;
+  const rk = `${race.date}_${race.place}_${race.race_number}`;
+  const hn = normalizeHorseNumberForPrediction(race.umaban);
+  if (!hn) return null;
+  return map.get(`${rk}|${hn}`) ?? null;
 }
 
 // netkeibaのレース結果URLを生成
@@ -729,7 +768,7 @@ export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; 
             <div className="text-sm text-slate-400 text-center py-8">読み込み中...</div>
           )}
           {!loading && pastRaces && pastRaces.length > 0 && (
-            <PastRaceDetailInner pastRaces={pastRaces} isPremium={false} hideEntrants />
+            <PastRaceDetailInner pastRaces={pastRaces} isPremium={false} hideEntrants hideCollapseFab />
           )}
           {!loading && (!pastRaces || pastRaces.length === 0) && (
             <div className="text-sm text-slate-400 text-center py-8">過去走データなし</div>
@@ -1016,6 +1055,8 @@ interface CompactRaceRowProps {
   sameRaceCount?: number;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
   onAnalysisClick?: (raceId: string) => void;
+  /** ログインユーザーが当該レースでこの馬に付けた印 */
+  userPredictionMark?: string | null;
 }
 
 function CompactRaceRow({ 
@@ -1036,6 +1077,7 @@ function CompactRaceRow({
   sameRaceCount,
   onSameRaceCountUpdate,
   onAnalysisClick,
+  userPredictionMark,
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1052,16 +1094,17 @@ function CompactRaceRow({
   );
 
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
-      {/* ヘッダー（常に表示・クリックで開閉） */}
+    <div className="border border-slate-200 rounded-lg bg-white shadow-sm">
+      {/* ヘッダー（常に表示・クリックで開閉）展開時はスクロール中も見えるよう sticky */}
       <div
         className={cn(
           'cursor-pointer transition-colors hover:bg-slate-50',
-          isExpanded && 'bg-slate-50 border-b border-slate-200'
+          isExpanded && 'sticky top-0 z-20 rounded-t-lg bg-white border-b border-slate-200 shadow-sm hover:bg-slate-50',
+          !isExpanded && 'rounded-lg overflow-hidden'
         )}
         onClick={onToggle}
       >
-        <div className="flex items-center gap-2 px-3 py-1.5">
+        <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 flex-wrap sm:flex-nowrap">
         {/* 開閉アイコン */}
         <span className={cn(
           'text-slate-400 transition-transform text-xs flex-shrink-0',
@@ -1069,6 +1112,21 @@ function CompactRaceRow({
         )}>
           ▶
         </span>
+
+        {/* ユーザー印（一覧で常に表示） */}
+        {userPredictionMark ? (
+          <span
+            title="あなたがこのレースで付けた印"
+            className={cn(
+              'flex-shrink-0 text-[11px] font-black px-1 py-0.5 rounded leading-none tabular-nums',
+              userMarkChipClass(userPredictionMark)
+            )}
+          >
+            {userPredictionMark}
+          </span>
+        ) : (
+          <span className="w-5 flex-shrink-0" aria-hidden />
+        )}
         
         {/* レースラベル（前走/2走前...） */}
         <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded w-12 text-center flex-shrink-0">
@@ -1188,7 +1246,7 @@ function CompactRaceRow({
       
       {/* 詳細（展開時のみ表示） */}
       {isExpanded && (
-        <div className="px-4 py-3 bg-slate-50">
+        <div className="px-4 py-3 bg-slate-50 rounded-b-lg border-t border-slate-100">
           <div className="grid grid-cols-2 gap-4">
             {/* 左列：レース情報 */}
             <div className="space-y-2">
@@ -1349,6 +1407,7 @@ interface MobileRaceCardProps {
   winnerName?: string;
   horseMemo?: string;
   sameRaceCount?: number;
+  userPredictionMark?: string | null;
 }
 
 function MobileRaceCard({ 
@@ -1364,6 +1423,7 @@ function MobileRaceCard({
   winnerName,
   horseMemo,
   sameRaceCount,
+  userPredictionMark,
 }: MobileRaceCardProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1374,7 +1434,7 @@ function MobileRaceCard({
   const hasLv = Boolean(race.raceLevel?.level || race.raceLevel?.levelLabel);
   
   return (
-    <div className="flex-shrink-0 w-[10.5rem] sm:w-36 snap-start overflow-hidden">
+    <div className="flex-shrink-0 w-[11.25rem] min-w-[11.25rem] sm:w-36 snap-start overflow-hidden">
       <div 
         className={cn(
           'bg-white border rounded-xl shadow-sm transition-all duration-150 active:scale-[0.97] cursor-pointer',
@@ -1385,14 +1445,27 @@ function MobileRaceCard({
         onClick={onToggle}
       >
         <div className="p-2.5">
-          {/* ヘッダー: ラベル + 日付 + メモバッジ */}
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
-              {raceLabel}
-            </span>
-            <div className="flex items-center gap-1">
+          {/* ヘッダー: ラベル + 印 + 日付 + メモバッジ */}
+          <div className="flex items-center justify-between mb-1.5 gap-1 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.5 rounded shrink-0">
+                {raceLabel}
+              </span>
+              {userPredictionMark && (
+                <span
+                  title="あなたがこのレースで付けた印"
+                  className={cn(
+                    'text-[10px] font-black px-1 py-0.5 rounded leading-none shrink-0 tabular-nums',
+                    userMarkChipClass(userPredictionMark)
+                  )}
+                >
+                  {userPredictionMark}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-0.5 shrink-0">
               {horseMemo && (
-                <span className="text-[8px] bg-amber-100 text-amber-600 px-1 rounded leading-tight" title={horseMemo}>✏️メモ</span>
+                <span className="text-[8px] bg-amber-100 text-amber-600 px-1 rounded leading-tight" title={horseMemo}>✏️</span>
               )}
               <span className="text-[9px] tabular-nums text-slate-500">
                 {formatDate(race.date)}
@@ -1537,24 +1610,31 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
 
   return (
-    <div className="mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
-      {/* ヘッダー */}
-      <div className="bg-emerald-50 px-3 py-2 border-b border-emerald-100 flex items-center gap-2 min-w-0">
-        <span className="text-xs font-semibold text-emerald-700 flex-shrink-0">{raceLabel} 詳細</span>
-        <span className="text-[10px] text-slate-500 truncate min-w-0 flex-1">
-          {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
-        </span>
-        {race.race_id && race.race_id.length >= 16 && (
-          <a
-            href={buildNetkeibaUrl(race.race_id) ?? '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-slate-400 hover:text-blue-500 text-xs flex-shrink-0 leading-none"
-            title="netkeibaでレース結果・動画を見る"
-          >
-            📺
-          </a>
+    <div className="mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-sm">
+      {/* 馬名 + レース概要（スクロール時も見えるよう sticky。overflow-hidden は sticky を阻害するため付けない） */}
+      <div className="sticky top-0 z-20 bg-white border-b border-emerald-100 shadow-sm">
+        {currentHorseName && (
+          <div className="px-3 pt-2.5 pb-1.5 text-xs font-bold text-emerald-800 truncate bg-emerald-50/95 border-b border-emerald-100/80">
+            {currentHorseName}
+          </div>
         )}
+        <div className="bg-emerald-50 px-3 py-2 flex items-center gap-2 min-w-0">
+          <span className="text-xs font-semibold text-emerald-700 flex-shrink-0">{raceLabel} 詳細</span>
+          <span className="text-[10px] text-slate-500 truncate min-w-0 flex-1">
+            {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
+          </span>
+          {race.race_id && race.race_id.length >= 16 && (
+            <a
+              href={buildNetkeibaUrl(race.race_id) ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-400 hover:text-blue-500 text-xs flex-shrink-0 leading-none"
+              title="netkeibaでレース結果・動画を見る"
+            >
+              📺
+            </a>
+          )}
+        </div>
       </div>
 
       <div className="p-3">
@@ -1704,7 +1784,9 @@ function PastRaceDetailInner({
   horseRaceMemos,
   currentRaceHorses,
   currentHorseName,
+  hideCollapseFab = false,
 }: PastRaceDetailProps) {
+  const { status } = useSession();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
   const [mobileExpandedIndex, setMobileExpandedIndex] = useState<number | null>(null);
   const [winnersMap, setWinnersMap] = useState<Record<string, string>>({});
@@ -1712,6 +1794,8 @@ function PastRaceDetailInner({
   const [sameRaceCountMap, setSameRaceCountMap] = useState<Map<string, number>>(new Map());
   // タイム分析モーダル
   const [analysisRaceId, setAnalysisRaceId] = useState<string | null>(null);
+  // レースキー|馬番 → ユーザーが保存した印（/api/user/predictions）
+  const [userPredictionMarks, setUserPredictionMarks] = useState<Map<string, string>>(new Map());
 
   const handleSameRaceCountUpdate = useCallback((raceId: string, count: number) => {
     setSameRaceCountMap(prev => {
@@ -1720,6 +1804,79 @@ function PastRaceDetailInner({
       return next;
     });
   }, []);
+
+  // ログイン時: 過去走各行のレースについて、ユーザーが付けた印を一括取得（Hooks は早期 return の前に置く）
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      setUserPredictionMarks(new Map());
+      return;
+    }
+    const list = pastRaces || [];
+    const keys = new Set<string>();
+    for (const r of list) {
+      if (r.date && r.place && r.race_number) {
+        keys.add(`${r.date}_${r.place}_${r.race_number}`);
+      }
+    }
+    if (keys.size === 0) {
+      setUserPredictionMarks(new Map());
+      return;
+    }
+    const q = Array.from(keys).join(',');
+    let cancelled = false;
+    fetch(`/api/user/predictions?raceKeys=${encodeURIComponent(q)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.predictions?.length) {
+          if (!cancelled) setUserPredictionMarks(new Map());
+          return;
+        }
+        const m = new Map<string, string>();
+        for (const p of data.predictions as { race_key: string; horse_number: string; mark: string }[]) {
+          if (!p.race_key || p.horse_number == null || !p.mark) continue;
+          const hn = normalizeHorseNumberForPrediction(String(p.horse_number));
+          if (!hn) continue;
+          m.set(`${p.race_key}|${hn}`, p.mark);
+        }
+        setUserPredictionMarks(m);
+      })
+      .catch(() => {
+        if (!cancelled) setUserPredictionMarks(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pastRaces, status]);
+
+  // race_id が存在する過去走の勝ち馬を一括取得（1回のAPIコール）
+  useEffect(() => {
+    const list = pastRaces || [];
+    const raceIds = list
+      .map(r => r.race_id)
+      .filter((id): id is string => !!id);
+    if (raceIds.length === 0) {
+      setWinnersMap({});
+      return;
+    }
+    fetch(`/api/race-winners?raceIds=${raceIds.map(encodeURIComponent).join(',')}`)
+      .then(r => r.ok ? r.json() : { winners: {} })
+      .then(data => setWinnersMap(data.winners || {}))
+      .catch(() => {});
+  }, [pastRaces]);
+
+  const isAnyExpanded = expandedIndex !== null || mobileExpandedIndex !== null;
+
+  useEffect(() => {
+    if (!isAnyExpanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setExpandedIndex(null);
+        setMobileExpandedIndex(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isAnyExpanded]);
 
   if (!pastRaces || pastRaces.length === 0) {
     return (
@@ -1730,20 +1887,6 @@ function PastRaceDetailInner({
   }
 
   const displayRaces = pastRaces;
-
-  // race_id が存在する過去走の勝ち馬を一括取得（1回のAPIコール）
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  useEffect(() => {
-    const raceIds = displayRaces
-      .map(r => r.race_id)
-      .filter((id): id is string => !!id);
-    if (raceIds.length === 0) return;
-    fetch(`/api/race-winners?raceIds=${raceIds.map(encodeURIComponent).join(',')}`)
-      .then(r => r.ok ? r.json() : { winners: {} })
-      .then(data => setWinnersMap(data.winners || {}))
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pastRaces]);
 
   return (
     <div className="space-y-3">
@@ -1786,6 +1929,7 @@ function PastRaceDetailInner({
                   );
                 }
               }}
+              userPredictionMark={lookupUserPredictionMark(race, userPredictionMarks)}
             />
           );
         })}
@@ -1829,6 +1973,7 @@ function PastRaceDetailInner({
                     );
                   }
                 }}
+                userPredictionMark={lookupUserPredictionMark(race, userPredictionMarks)}
               />
             );
           })}
@@ -1870,6 +2015,25 @@ function PastRaceDetailInner({
           raceId={analysisRaceId}
           onClose={() => setAnalysisRaceId(null)}
         />
+      )}
+
+      {/* 展開中のみ: 詳細を閉じる（長いスクロール時も操作できるよう固定表示） */}
+      {!hideCollapseFab && isAnyExpanded && (
+        <button
+          type="button"
+          className="fixed z-40 bottom-[max(1rem,env(safe-area-inset-bottom,0px))] right-4 flex items-center gap-1.5 rounded-full bg-emerald-600 text-white shadow-lg px-3.5 py-2.5 text-xs font-semibold hover:bg-emerald-700 active:scale-[0.98] transition-colors sm:bottom-6"
+          onClick={() => {
+            setExpandedIndex(null);
+            setMobileExpandedIndex(null);
+          }}
+          title="過去走の詳細を閉じる（Esc でも閉じられます）"
+          aria-label="過去走の詳細を閉じる"
+        >
+          <span className="text-sm leading-none" aria-hidden>
+            ▲
+          </span>
+          閉じる
+        </button>
       )}
     </div>
   );

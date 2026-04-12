@@ -27,13 +27,33 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const raceKey = searchParams.get('raceKey');
+    const raceKeysParam = searchParams.get('raceKeys');
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = ?').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
     let predictions: DbPrediction[];
-    if (raceKey) {
+    if (raceKeysParam) {
+      const keys = raceKeysParam
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .slice(0, 120);
+      if (keys.length === 0) {
+        predictions = [];
+      } else {
+        const placeholders = keys.map(() => '?').join(',');
+        predictions = await db
+          .prepare(
+            `
+        SELECT p.*, (SELECT COUNT(*) FROM prediction_likes WHERE prediction_id = p.id) as like_count
+        FROM predictions p WHERE p.user_id = ? AND p.race_key IN (${placeholders})
+      `
+          )
+          .all<DbPrediction>(user.id, ...keys);
+      }
+    } else if (raceKey) {
       predictions = await db.prepare(`
         SELECT p.*, (SELECT COUNT(*) FROM prediction_likes WHERE prediction_id = p.id) as like_count
         FROM predictions p WHERE p.user_id = ? AND p.race_key = ?

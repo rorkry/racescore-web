@@ -70,6 +70,7 @@ interface PastRace {
   weight_change?: string;
   gender?: string;
   age?: string;
+  umaban?: string;
 }
 
 interface Race {
@@ -1744,8 +1745,8 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 overflow-hidden max-w-0">
-                                <div className="text-xs sm:text-sm font-bold mb-3 text-emerald-700">
+                              <td colSpan={7} className="border border-slate-300 p-2 sm:p-4 bg-slate-50 min-w-0 max-w-0">
+                                <div className="sticky top-0 z-30 -mx-2 sm:-mx-4 px-2 sm:px-4 py-2 mb-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/90 text-xs sm:text-sm font-bold text-emerald-700 shadow-sm">
                                   {normalizeHorseName(horse.umamei)} の過去走詳細
                                 </div>
                                 <PastRaceDetail 
