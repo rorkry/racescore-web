@@ -19,7 +19,8 @@ import {
   getFromIndexedDB, 
   setToIndexedDB, 
   clearExpiredCache, 
-  isIndexedDBAvailable 
+  isIndexedDBAvailable,
+  deleteFromIndexedDB,
 } from '@/lib/indexeddb-cache';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
@@ -117,6 +118,8 @@ interface Horse {
 interface RaceCard {
   isUmadataFallback?: boolean;
   isWakuUnconfirmed?: boolean;
+  /** サーバの枠・馬番ソースと一致検証用（IndexedDB の陳腐化を防ぐ） */
+  cacheRevision?: string;
   raceInfo: {
     date: string;
     place: string;
@@ -606,17 +609,43 @@ export default function RaceCardPage() {
       setLoading(false);
     }
   };
+
+  /** サーバの枠・馬番ソースリビジョン（キャッシュと突き合わせて CSV 更新を検知） */
+  const fetchRaceCardSourceRevision = async (place: string, raceNumber: string): Promise<string | null> => {
+    try {
+      const res = await fetch(
+        `/api/race-card-source-revision?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`,
+        { cache: 'no-store' }
+      );
+      if (!res.ok) return null;
+      const j = await res.json();
+      return typeof j.revision === 'string' ? j.revision : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const invalidateRaceCardCacheEntry = async (cacheKey: string) => {
+    raceCardCache.current.delete(cacheKey);
+    if (isIndexedDBAvailable()) {
+      await deleteFromIndexedDB(cacheKey).catch(() => {});
+    }
+  };
   
   // 案1: 即座にレースカードを取得（ローディング表示なし）
   const fetchRaceCardImmediate = async (place: string, raceNumber: string) => {
     const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
     
-    // メモリキャッシュチェック
+    // メモリキャッシュチェック（リビジョン一致時のみ）
     const memoryCachedData = raceCardCache.current.get(cacheKey);
     if (memoryCachedData) {
-      setRaceCard(memoryCachedData);
-      setExpandedHorse(null);
-      return;
+      const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+      if (rev !== null && memoryCachedData.cacheRevision === rev) {
+        setRaceCard(memoryCachedData);
+        setExpandedHorse(null);
+        return;
+      }
+      await invalidateRaceCardCacheEntry(cacheKey);
     }
     
     // IndexedDBキャッシュチェック
@@ -624,10 +653,14 @@ export default function RaceCardPage() {
       try {
         const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
         if (persistedData) {
-          raceCardCache.current.set(cacheKey, persistedData);
-          setRaceCard(persistedData);
-          setExpandedHorse(null);
-          return;
+          const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+          if (rev !== null && persistedData.cacheRevision === rev) {
+            raceCardCache.current.set(cacheKey, persistedData);
+            setRaceCard(persistedData);
+            setExpandedHorse(null);
+            return;
+          }
+          await invalidateRaceCardCacheEntry(cacheKey);
         }
       } catch (err) {
         console.warn('[IndexedDB] 読み取りエラー:', err);
@@ -637,7 +670,7 @@ export default function RaceCardPage() {
     // APIから取得
     try {
       const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
         raceCardCache.current.set(cacheKey, data);
@@ -657,21 +690,29 @@ export default function RaceCardPage() {
     
     const memoryCachedData = raceCardCache.current.get(cacheKey);
     if (memoryCachedData) {
-      setRaceCard(memoryCachedData);
-      setExpandedHorse(null);
-      prefetchPremiumData(place, raceNumber);
-      return;
+      const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+      if (rev !== null && memoryCachedData.cacheRevision === rev) {
+        setRaceCard(memoryCachedData);
+        setExpandedHorse(null);
+        prefetchPremiumData(place, raceNumber);
+        return;
+      }
+      await invalidateRaceCardCacheEntry(cacheKey);
     }
     
     if (isIndexedDBAvailable()) {
       try {
         const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
         if (persistedData) {
-          raceCardCache.current.set(cacheKey, persistedData);
-          setRaceCard(persistedData);
-          setExpandedHorse(null);
-          prefetchPremiumData(place, raceNumber);
-          return;
+          const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+          if (rev !== null && persistedData.cacheRevision === rev) {
+            raceCardCache.current.set(cacheKey, persistedData);
+            setRaceCard(persistedData);
+            setExpandedHorse(null);
+            prefetchPremiumData(place, raceNumber);
+            return;
+          }
+          await invalidateRaceCardCacheEntry(cacheKey);
         }
       } catch (err) {
         console.warn('[IndexedDB] 読み取りエラー:', err);
@@ -684,7 +725,7 @@ export default function RaceCardPage() {
       setLoading(true);
       setError(null);
       const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Failed to fetch race card: ${res.status}`);
@@ -826,20 +867,29 @@ export default function RaceCardPage() {
       await Promise.all(batch.map(async ({ place, raceNumber }) => {
         const cacheKey = `${selectedYear}_${date}_${place}_${raceNumber}`;
         
-        if (raceCardCache.current.has(cacheKey)) {
-          completed++;
-          setPrefetchProgress({ current: completed, total: allRaces.length });
-          return;
+        const mem = raceCardCache.current.get(cacheKey);
+        if (mem) {
+          const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+          if (rev !== null && mem.cacheRevision === rev) {
+            completed++;
+            setPrefetchProgress({ current: completed, total: allRaces.length });
+            return;
+          }
+          await invalidateRaceCardCacheEntry(cacheKey);
         }
         
         if (isIndexedDBAvailable()) {
           try {
             const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
             if (persistedData) {
-              raceCardCache.current.set(cacheKey, persistedData);
-              completed++;
-              setPrefetchProgress({ current: completed, total: allRaces.length });
-              return;
+              const rev = await fetchRaceCardSourceRevision(place, raceNumber);
+              if (rev !== null && persistedData.cacheRevision === rev) {
+                raceCardCache.current.set(cacheKey, persistedData);
+                completed++;
+                setPrefetchProgress({ current: completed, total: allRaces.length });
+                return;
+              }
+              await invalidateRaceCardCacheEntry(cacheKey);
             }
           } catch (err) {}
         }
@@ -848,7 +898,7 @@ export default function RaceCardPage() {
 
         try {
           const url = `/api/race-card-with-score?date=${date}&year=${selectedYear}&place=${encodeURIComponent(place)}&raceNumber=${raceNumber}`;
-          const res = await fetch(url, { signal });
+          const res = await fetch(url, { signal, cache: 'no-store' });
           
           if (res.ok) {
             const data = await res.json();
@@ -894,17 +944,20 @@ export default function RaceCardPage() {
         setCurrentSagaAIData(null);
       }
       
-      // メモリキャッシュチェック
+      // メモリキャッシュチェック（リビジョン一致時のみ）
       const memoryCachedData = raceCardCache.current.get(cacheKey);
       if (memoryCachedData) {
-        console.log('[useEffect] Memory cache hit:', cacheKey);
-        setRaceCard(memoryCachedData);
-        setExpandedHorse(null);
-        // SagaAI等のプレミアムデータも取得（キャッシュになければ）
-        if (!cachedSagaData) {
-          prefetchPremiumData(selectedVenue, selectedRace);
+        const rev = await fetchRaceCardSourceRevision(selectedVenue, selectedRace);
+        if (rev !== null && memoryCachedData.cacheRevision === rev) {
+          console.log('[useEffect] Memory cache hit:', cacheKey);
+          setRaceCard(memoryCachedData);
+          setExpandedHorse(null);
+          if (!cachedSagaData) {
+            prefetchPremiumData(selectedVenue, selectedRace);
+          }
+          return;
         }
-        return;
+        await invalidateRaceCardCacheEntry(cacheKey);
       }
       
       // IndexedDBキャッシュチェック
@@ -912,15 +965,18 @@ export default function RaceCardPage() {
         try {
           const persistedData = await getFromIndexedDB<RaceCard>(cacheKey);
           if (persistedData) {
-            console.log('[useEffect] IndexedDB cache hit:', cacheKey);
-            raceCardCache.current.set(cacheKey, persistedData);
-            setRaceCard(persistedData);
-            setExpandedHorse(null);
-            // SagaAI等のプレミアムデータも取得（キャッシュになければ）
-            if (!cachedSagaData) {
-              prefetchPremiumData(selectedVenue, selectedRace);
+            const rev = await fetchRaceCardSourceRevision(selectedVenue, selectedRace);
+            if (rev !== null && persistedData.cacheRevision === rev) {
+              console.log('[useEffect] IndexedDB cache hit:', cacheKey);
+              raceCardCache.current.set(cacheKey, persistedData);
+              setRaceCard(persistedData);
+              setExpandedHorse(null);
+              if (!cachedSagaData) {
+                prefetchPremiumData(selectedVenue, selectedRace);
+              }
+              return;
             }
-            return;
+            await invalidateRaceCardCacheEntry(cacheKey);
           }
         } catch (err) {
           console.warn('[useEffect] IndexedDB error:', err);

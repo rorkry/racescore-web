@@ -3,6 +3,10 @@ import { getRawDb } from '../../lib/db';
 import { computeKisoScore, KisoScoreBreakdown } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { parseFinishPosition, getCornerPositions } from '../../utils/parse-helpers';
+import {
+  revisionFromWakujunRows,
+  revisionFromUmadataFallbackRows,
+} from '../../lib/race-card-cache-revision';
 
 // ========================================
 // サーバーサイドメモリキャッシュ（高速化）
@@ -205,31 +209,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  // ========================================
-  // キャッシュチェック（ヒットすればDB問い合わせをスキップ）
-  // ========================================
   // yearFilterを文字列として扱う（wakujunテーブルのyearはTEXT型）
   const yearFilter = year ? String(year) : null;
-  const cacheKey = getCacheKey(yearFilter, String(date), String(place), String(raceNumber));
-  
-  const cachedData = getFromCache(cacheKey);
-  if (cachedData) {
-    console.log(`[race-card-with-score] キャッシュヒット: ${cacheKey}`);
-    // HTTPキャッシュヘッダーを設定（ブラウザ側でも5分間キャッシュ）
-    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
-    res.setHeader('X-Cache', 'HIT');
-    return res.status(200).json(cachedData);
-  }
 
   try {
     const db = getRawDb();
     const startTime = Date.now();
+    const baseCacheKey = getCacheKey(yearFilter, String(date), String(place), String(raceNumber));
 
     // ========================================
     // STEP 1: 出走馬を取得（1クエリ）
     // ========================================
     // 枠番が空のCSVでも ORDER BY で失敗しないよう安全なキャストを使用
-    const horses = await db.prepare(`
+    let horses = await db.prepare(`
       SELECT * FROM wakujun
       WHERE date = $1 AND place = $2 AND race_number = $3 ${yearFilter ? 'AND year = $4' : ''}
       ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 9999 END, umamei
@@ -243,7 +235,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 枠番が未設定かどうか検出（waku が全て空・"0" の場合は枠順未確定）
-    const hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
+    let hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
     if (!hasWaku && horses.length > 0) {
       // 枠番なし → 馬名五十音順に並べ直し
       horses.sort((a: any, b: any) => (a.umamei || '').localeCompare(b.umamei || '', 'ja'));
@@ -285,9 +277,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(404).json({ error: 'No horses found for this race' });
         }
 
+        const fbRevision = revisionFromUmadataFallbackRows(umadataHorses);
+        const fullFbKey = `${baseCacheKey}::${fbRevision}`;
+        const cachedFb = getFromCache(fullFbKey);
+        if (cachedFb) {
+          console.log(`[race-card-with-score] umadataフォールバック キャッシュヒット: ${fullFbKey}`);
+          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('X-Cache', 'HIT');
+          return res.status(200).json(cachedFb);
+        }
+
         const firstHorse = umadataHorses[0];
         const fallbackResult = {
           isUmadataFallback: true,
+          cacheRevision: fbRevision,
           raceInfo: {
             date: String(date),
             place: String(place),
@@ -316,9 +319,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           })),
         };
 
+        setToCache(fullFbKey, fallbackResult);
         res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Cache', 'MISS');
         return res.status(200).json(fallbackResult);
       }
+      horses = horsesWithoutYear;
+      hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
+      if (!hasWaku && horses.length > 0) {
+        horses.sort((a: any, b: any) => (a.umamei || '').localeCompare(b.umamei || '', 'ja'));
+        console.log(`[race-card-with-score] 枠番未確定のため馬名順にソート (yearなしwakujun)`);
+      }
+    }
+
+    // メイン経路: 枠・馬番・馬名の集合が変われば別キー（正式枠順アップロードで自動反映）
+    const sourceRevision = revisionFromWakujunRows(horses);
+    const fullCacheKey = `${baseCacheKey}::${sourceRevision}`;
+    const cachedFull = getFromCache(fullCacheKey);
+    if (cachedFull && !fastMode) {
+      console.log(`[race-card-with-score] キャッシュヒット: ${fullCacheKey}`);
+      res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=30');
+      res.setHeader('X-Cache', 'HIT');
+      return res.status(200).json(cachedFull);
     }
 
     // 馬名リストを作成（正規化済み）
@@ -357,6 +379,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         })),
         fastMode: true,
         isWakuUnconfirmed: !hasWaku,
+        cacheRevision: sourceRevision,
       };
       
       console.log(`[race-card-with-score] 高速モード: ${Date.now() - startTime}ms`);
@@ -657,9 +680,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       raceInfo,
       horses: horsesWithScore,
       isWakuUnconfirmed: !hasWaku,  // 枠番未確定フラグ
+      cacheRevision: sourceRevision,
     };
-    setToCache(cacheKey, responseData);
-    console.log(`[race-card-with-score] キャッシュ保存: ${cacheKey} (現在${globalThis._raceCardCache?.size || 0}件)`);
+    setToCache(fullCacheKey, responseData);
+    console.log(`[race-card-with-score] キャッシュ保存: ${fullCacheKey} (現在${globalThis._raceCardCache?.size || 0}件)`);
     
     // HTTPキャッシュヘッダーを設定（ブラウザ側でも5分間キャッシュ）
     res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
