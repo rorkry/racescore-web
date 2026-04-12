@@ -9,6 +9,11 @@ export default function AdminPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  /** 特別登録CSV（touroku*.csv）用: 開催日 MMDD・場・R（ファイル名に含めない場合は必須） */
+  const [tourokuYear, setTourokuYear] = useState(() => String(new Date().getFullYear()));
+  const [tourokuDate, setTourokuDate] = useState('');
+  const [tourokuPlace, setTourokuPlace] = useState('');
+  const [tourokuRaceNumber, setTourokuRaceNumber] = useState('');
   
   // 予想JSONアップロード
   const [predictionFile, setPredictionFile] = useState<File | null>(null);
@@ -224,8 +229,23 @@ export default function AdminPage() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const f = e.target.files[0];
+      setFile(f);
       setMessage('');
+      const name = f.name;
+      if (/touroku/i.test(name) && !/wakujun/i.test(name)) {
+        const full = name.match(/touroku(\d{4})_([^_]+?)_(\d{1,2})/i);
+        if (full) {
+          setTourokuDate(full[1]);
+          setTourokuPlace(full[2].trim());
+          setTourokuRaceNumber(String(parseInt(full[3], 10)));
+        } else {
+          const dateOnly = name.match(/touroku(\d{4})\.csv$/i);
+          if (dateOnly) {
+            setTourokuDate(dateOnly[1]);
+          }
+        }
+      }
     }
   };
 
@@ -281,12 +301,37 @@ export default function AdminPage() {
       return;
     }
 
+    if (/touroku/i.test(file.name) && !/wakujun/i.test(file.name)) {
+      const fromName = file.name.match(/touroku(\d{4})_([^_]+?)_(\d{1,2})/i);
+      const hasMeta =
+        !!fromName ||
+        (/^\d{4}$/.test(tourokuDate.trim()) &&
+          tourokuPlace.trim().length > 0 &&
+          tourokuRaceNumber.trim().length > 0);
+      if (!hasMeta) {
+        setMessage(
+          '❌ 特別登録CSV: 開催日(MMDD4桁)・場所・レース番号を入力するか、ファイル名を touroku0419_阪神_11.csv のようにしてください。'
+        );
+        return;
+      }
+      if (!/^\d{4}$/.test(tourokuYear.trim())) {
+        setMessage('❌ 特別登録CSV: 年を4桁で入力してください。');
+        return;
+      }
+    }
+
     setUploading(true);
     setMessage('アップロード中...');
 
     try {
       const formData = new FormData();
       formData.append('file', file);
+      if (/touroku/i.test(file.name) && !/wakujun/i.test(file.name)) {
+        formData.append('tourokuYear', tourokuYear);
+        formData.append('tourokuDate', tourokuDate);
+        formData.append('tourokuPlace', tourokuPlace);
+        formData.append('tourokuRaceNumber', tourokuRaceNumber);
+      }
 
       const response = await fetch('/api/upload-csv', {
         method: 'POST',
@@ -735,7 +780,7 @@ export default function AdminPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">
-                CSVファイル（umadata.csv または wakujun.csv）
+                CSVファイル（umadata / wakujun / touroku＝特別登録）
               </label>
               <input
                 type="file"
@@ -755,6 +800,62 @@ export default function AdminPage() {
             {file && (
               <div className="text-sm text-gray-600">
                 選択されたファイル: <span className="font-medium">{file.name}</span>
+              </div>
+            )}
+
+            {file && /touroku/i.test(file.name) && !/wakujun/i.test(file.name) && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 space-y-3 text-sm">
+                <p className="font-semibold text-amber-900">特別登録CSV（枠なし）</p>
+                <p className="text-amber-950/90">
+                  ファイル名が <code className="bg-white px-1 rounded">touroku0419_阪神_11.csv</code> のように
+                  開催日(MMDD)・場・レース番号を含めれば、下の入力は省略できます。
+                  <code className="bg-white px-1 rounded">touroku0419.csv</code> だけの場合は必ず入力してください。
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-600">年</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={tourokuYear}
+                      onChange={(e) => setTourokuYear(e.target.value)}
+                      className="border rounded px-2 py-1.5 text-gray-900"
+                      placeholder="2026"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-600">開催日 MMDD</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={tourokuDate}
+                      onChange={(e) => setTourokuDate(e.target.value)}
+                      className="border rounded px-2 py-1.5 text-gray-900"
+                      placeholder="0419"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-600">場所</span>
+                    <input
+                      type="text"
+                      value={tourokuPlace}
+                      onChange={(e) => setTourokuPlace(e.target.value)}
+                      className="border rounded px-2 py-1.5 text-gray-900"
+                      placeholder="阪神"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="text-xs text-gray-600">レース番号</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={tourokuRaceNumber}
+                      onChange={(e) => setTourokuRaceNumber(e.target.value)}
+                      className="border rounded px-2 py-1.5 text-gray-900"
+                      placeholder="11"
+                    />
+                  </label>
+                </div>
               </div>
             )}
 
@@ -781,9 +882,13 @@ export default function AdminPage() {
           <div className="mt-8 p-4 bg-gray-50 rounded-lg">
             <h3 className="font-bold mb-2 text-gray-900">使い方</h3>
             <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700">
-              <li>umadata.csv（過去走データ）またはwakujun.csv（当日の出走データ）を選択</li>
-              <li>「アップロード」ボタンをクリック</li>
-              <li>アップロードが完了したら、トップページで確認</li>
+              <li>
+                <strong>umadata</strong>（過去走） / <strong>wakujun</strong>（当日出走・枠順あり） /
+                <strong>touroku</strong>（特別登録・枠なし・翌週想定）
+              </li>
+              <li>touroku はファイル名に <code className="bg-gray-200 px-1 rounded text-xs">touroku</code> を含める。開催情報は
+                <code className="bg-gray-200 px-1 rounded text-xs">touroku0419_阪神_11.csv</code> 形式か、画面上の入力で指定</li>
+              <li>「アップロード」後、レースカードで枠順未確定として表示されます</li>
             </ol>
           </div>
         </div>

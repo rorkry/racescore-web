@@ -35,6 +35,11 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
+    const tourokuYear = (formData.get('tourokuYear') as string | null)?.trim() ?? '';
+    const tourokuDate = (formData.get('tourokuDate') as string | null)?.trim() ?? '';
+    const tourokuPlace = (formData.get('tourokuPlace') as string | null)?.trim() ?? '';
+    const tourokuRaceNumber = (formData.get('tourokuRaceNumber') as string | null)?.trim() ?? '';
+
     if (!file) {
       return NextResponse.json({ error: 'ファイルが選択されていません' }, { status: 400 });
     }
@@ -69,6 +74,27 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect();
 
     try {
+      const lower = file.name.toLowerCase();
+      if (lower.includes('touroku') && !lower.includes('wakujun')) {
+        const meta = resolveTourokuMeta(file.name, {
+          year: tourokuYear,
+          date: tourokuDate,
+          place: tourokuPlace,
+          raceNumber: tourokuRaceNumber,
+        });
+        const result = await importTourokuWakujun(client, data, meta);
+        client.release();
+        await pool.end();
+        return NextResponse.json({
+          success: true,
+          count: result.count,
+          table: 'wakujun',
+          date: meta.date,
+          place: meta.place,
+          raceNumber: meta.raceNumber,
+          message: `特別登録 ${meta.place} ${meta.raceNumber}R（${meta.date}）に${result.count}頭を取り込みました（枠なし・馬番順）`,
+        });
+      }
       if (file.name.includes('wakujun')) {
         const result = await importWakujun(client, data);
         client.release();
@@ -94,7 +120,7 @@ export async function POST(request: NextRequest) {
       } else {
         client.release();
         await pool.end();
-        return NextResponse.json({ error: 'ファイル名がwakujunまたはumadataを含む必要があります' }, { status: 400 });
+        return NextResponse.json({ error: 'ファイル名に touroku / wakujun / umadata のいずれかを含めてください' }, { status: 400 });
       }
     } catch (error) {
       client.release();
@@ -108,6 +134,123 @@ export async function POST(request: NextRequest) {
       stack: error?.stack,
       name: error?.name
     }, { status: 500 });
+  }
+}
+
+/** 例: touroku0419_阪神_11.csv → MMDD・場・R */
+function parseTourokuFilename(fileName: string): { date: string; place: string; raceNumber: string } | null {
+  const m = fileName.match(/touroku\s*_?(\d{4})_([^_/\\]+?)_(\d{1,2})/i);
+  if (!m) return null;
+  return {
+    date: m[1],
+    place: m[2].trim(),
+    raceNumber: String(parseInt(m[3], 10)),
+  };
+}
+
+function resolveTourokuMeta(
+  fileName: string,
+  form: { year: string; date: string; place: string; raceNumber: string }
+): { year: string; date: string; place: string; raceNumber: string } {
+  const parsed = parseTourokuFilename(fileName);
+  const year = form.year || String(new Date().getFullYear());
+  const date = form.date || parsed?.date || '';
+  const place = form.place || parsed?.place || '';
+  const raceNumber = form.raceNumber || parsed?.raceNumber || '';
+  return { year, date, place, raceNumber };
+}
+
+/**
+ * JRA 特別登録CSV（枠なし・馬番のみ・Shift_JIS）
+ * 列例: [0]=仮, [2]=馬番, [11]=馬名, [13]=性別, [14]=年齢, [17]=斤量, [20]=調教師, [22][23]=牧場, [24]=毛色, [25]=生年月日
+ */
+async function importTourokuWakujun(
+  client: any,
+  data: any[],
+  meta: { year: string; date: string; place: string; raceNumber: string }
+): Promise<{ count: number }> {
+  const { year, date, place, raceNumber } = meta;
+  if (!/^\d{4}$/.test(date)) {
+    throw new Error(
+      '特別登録CSV: 開催日（MMDD・4桁）と場所・レース番号を指定してください。ファイル名例: touroku0419_阪神_11.csv または管理画面の入力欄に入力してください。'
+    );
+  }
+  if (!place) {
+    throw new Error('特別登録CSV: 場所（例: 阪神）を入力するか、ファイル名に含めてください（touroku0419_阪神_11.csv）。');
+  }
+  if (!raceNumber) {
+    throw new Error('特別登録CSV: レース番号を入力するか、ファイル名に含めてください。');
+  }
+  if (!/^\d{4}$/.test(year)) {
+    throw new Error('特別登録CSV: 年（4桁）を指定してください。');
+  }
+
+  const validRows = data.filter((row) => Array.isArray(row) && row.length >= 12);
+  const tosuStr = String(
+    validRows.filter((row) => String((row as any[])[2] ?? '').trim() && String((row as any[])[11] ?? '').trim()).length
+  );
+
+  await client.query('BEGIN');
+  try {
+    await client.query(
+      'DELETE FROM wakujun WHERE date = $1 AND year = $2 AND place = $3 AND race_number = $4',
+      [date, year, place, raceNumber]
+    );
+
+    let count = 0;
+    for (const row of data) {
+      if (!Array.isArray(row) || row.length < 12) continue;
+      const umaban = String((row[2] ?? '').trim());
+      const umamei = String((row[11] ?? '').trim());
+      if (!umaban || !umamei) continue;
+
+      await client.query(
+        `
+            INSERT INTO wakujun (
+              year, date, place, race_number, class_name_1, class_name_2,
+              waku, umaban, kinryo, umamei, seibetsu, nenrei, nenrei_display,
+              kishu, track_type, distance, tosu,
+              shozoku, chokyoshi, shozoku_chi, umajirushi
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+          `,
+        [
+          year,
+          date,
+          place,
+          raceNumber,
+          '特別登録',
+          '',
+          '',
+          umaban,
+          String((row[17] ?? '').trim()),
+          umamei,
+          String((row[13] ?? '').trim()),
+          String((row[14] ?? '').trim()),
+          String((row[25] ?? '').trim()),
+          '',
+          '',
+          '',
+          tosuStr,
+          String((row[22] ?? '').trim()),
+          String((row[20] ?? '').trim()),
+          String((row[23] ?? '').trim()),
+          String((row[24] ?? '').trim()),
+        ]
+      );
+      count++;
+    }
+
+    if (count === 0) {
+      throw new Error(
+        '特別登録CSVから有効な行が0件でした。Shift_JISのCSVか、馬番(列3)・馬名(列12)がある行を含むか確認してください。'
+      );
+    }
+
+    await client.query('COMMIT');
+    return { count };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
   }
 }
 
