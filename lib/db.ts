@@ -330,6 +330,15 @@ async function initDb(database: DatabaseWrapper) {
     )
   `);
 
+  // ユーザー格言（自由記述・FAB「競馬の脳みそ」と連携）
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS user_maxims (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      content TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
   // 予想履歴（的中率計算用）
   await database.exec(`
     CREATE TABLE IF NOT EXISTS predictions (

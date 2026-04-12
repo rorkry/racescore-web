@@ -1086,6 +1086,25 @@ async function handleGeneralQuestion(
 ): Promise<string> {
   const db = getDb();
   const lowerMessage = message.toLowerCase();
+
+  let maximsBlock = '';
+  if (userId) {
+    try {
+      const row = await db
+        .prepare(`SELECT content FROM user_maxims WHERE user_id = ?`)
+        .get<{ content: string }>(userId);
+      const c = row?.content?.trim();
+      if (c) {
+        maximsBlock = `【ユーザー格言・メモ】
+（形式は不問。一文ごとのルール・コメント・メモが混在してよい）
+${c}
+
+`;
+      }
+    } catch (e) {
+      console.error('[AI Chat] user_maxims fetch:', e);
+    }
+  }
   
   // メモ更新要求の検出
   if (lowerMessage.includes('メモ') && (lowerMessage.includes('更新') || lowerMessage.includes('登録') || lowerMessage.includes('追加'))) {
@@ -1100,6 +1119,7 @@ async function handleGeneralQuestion(
   
   // レースコンテキストがある場合は、そのレースの全データを取得してAIに渡す
   let raceDataContext = '';
+  let racePremiseBlock = '';
   let favoriteContext = '';
   let horseList: Array<{ name: string; number: number; waku: number; jockey: string }> = [];
   
@@ -1126,7 +1146,45 @@ async function handleGeneralQuestion(
                       trackType.includes('ダ') ? 'ダ' :
                       distanceStr.includes('芝') ? '芝' : 'ダ';
       const className = horses[0]?.class_name_1 || horses[0]?.class_name || '';
-      
+      const trackTypeForMemo = surface === '芝' ? '芝' : 'ダート';
+      const babaDateStr = String(date || '');
+      if (userId && babaDateStr) {
+        try {
+          const bm = await db
+            .prepare(
+              `SELECT advantage_position, advantage_style, weather_note, free_memo, course_condition
+               FROM baba_memos
+               WHERE user_id = ? AND date = ? AND place = ? AND track_type = ?`
+            )
+            .get<{
+              advantage_position: string | null;
+              advantage_style: string | null;
+              weather_note: string | null;
+              free_memo: string | null;
+              course_condition: string | null;
+            }>(userId, babaDateStr, place, trackTypeForMemo);
+          if (bm) {
+            const bits: string[] = [];
+            if (bm.course_condition) bits.push(`馬場状態=${bm.course_condition}`);
+            if (bm.advantage_position && bm.advantage_position !== 'フラット') {
+              bits.push(`位置=${bm.advantage_position}`);
+            }
+            if (bm.advantage_style && bm.advantage_style !== 'フラット') {
+              bits.push(`脚質=${bm.advantage_style}`);
+            }
+            if (bm.weather_note) bits.push(`特記=${bm.weather_note}`);
+            if (bm.free_memo) bits.push(`自由=${bm.free_memo}`);
+            if (bits.length > 0) {
+              racePremiseBlock += `【当日・当場・今回${surface}のユーザー馬場メモ】${bits.join(' / ')}\n`;
+            }
+          }
+        } catch (e) {
+          console.error('[AI Chat] baba premise:', e);
+        }
+      }
+      const looks2yo = /2歳|新馬/.test(className);
+      racePremiseBlock += `【レースの目安】${surface}${distance}m / ${className}${looks2yo ? '（2歳・新馬系の条件の可能性）' : ''}\n`;
+
       raceDataContext = `
 【今回のレース】
 ${place} ${raceNumber}R ${surface}${distance}m ${className}
@@ -1149,7 +1207,7 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
         const pastRaces = await db.prepare(`
           SELECT race_id, umaban, date, place, distance, class_name, 
                  finish_position, finish_time, margin, track_condition,
-                 last_3f, popularity, lap_time, corner_4, field_size
+                 last_3f, popularity, lap_time, corner_4, field_size, sire
           FROM umadata
           WHERE (TRIM(horse_name) = $1
              OR REPLACE(REPLACE(horse_name, '*', ''), '$', '') = $1)
@@ -1157,8 +1215,9 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
           ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
           LIMIT 15
         `).all<any>(horseName, targetDateInt);
-        
-        raceDataContext += `\n**${horseNumber}番 ${horseName}** (${waku}枠, ${jockey})\n`;
+
+        const sireFirst = (pastRaces[0] as { sire?: string } | undefined)?.sire?.trim();
+        raceDataContext += `\n**${horseNumber}番 ${horseName}** (${waku}枠, ${jockey})${sireFirst ? ` 父:${sireFirst}` : ''}\n`;
         
         // 各過去走の詳細とindicesを取得
         for (let i = 0; i < pastRaces.length; i++) {
@@ -1316,8 +1375,17 @@ ${place} ${raceNumber}R ${surface}${distance}m ${className}
   
   // コンテキスト情報を構築
   let context = '';
+  if (maximsBlock) {
+    context += maximsBlock;
+  }
+  if (racePremiseBlock) {
+    context += racePremiseBlock + '\n';
+  }
   if (raceContext) {
-    context = `現在表示中のレース: ${raceContext.place} ${raceContext.raceNumber}R\n`;
+    context += `現在表示中のレース: ${raceContext.place} ${raceContext.raceNumber}R\n`;
+    if (raceContext.baba || raceContext.pace) {
+      context += `【レースカードの前提トグル】馬場=${raceContext.baba || '未設定'}, 展開=${raceContext.pace || '未設定'}\n`;
+    }
   }
   if (favoriteContext) {
     context += favoriteContext;

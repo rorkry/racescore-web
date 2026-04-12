@@ -42,6 +42,7 @@ const ALLOWED_TABLES = [
   'user_badges',
   'login_history',
   'favorite_horses',
+  'user_maxims',
   'prediction_likes',
   'notifications',
   'races',

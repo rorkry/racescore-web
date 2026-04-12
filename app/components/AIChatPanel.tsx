@@ -52,8 +52,8 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           id: 'welcome',
           role: 'assistant',
           content: raceContext 
-            ? `${raceContext.place} ${raceContext.raceNumber}Rの予想をお手伝いします。\n「予想」と入力するとAI予想を生成します。`
-            : '競馬に関する質問にお答えします。\nレースカードを開いた状態で「予想」と入力すると、AI予想を生成します。',
+            ? `${raceContext.place} ${raceContext.raceNumber}Rの予想をお手伝いします。\n「予想」でAI予想。「展開」で展開予想。\nマイページの「格言・自分ルール」に書いた内容を踏まえて、「高速馬場でどう狙う？」などと聞くと、このレースの出走馬と照らして答えます。`
+            : '競馬に関する質問にお答えします。\nレースカードを開いた状態で「予想」と入力すると、AI予想を生成します。\n格言はマイページ「格言・自分ルール」で編集できます。',
           timestamp: new Date(),
         };
         setMessages([welcomeMessage]);

@@ -311,6 +311,27 @@ export default function MyPage() {
           </div>
         </div>
 
+        {/* 格言（FAB連携） */}
+        <div className="bg-white rounded-xl shadow-lg p-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-xl">📜</span> 格言・自分ルール
+          </h2>
+          <div className="text-center py-2">
+            <p className="text-gray-600 mb-4 text-pretty text-sm leading-relaxed">
+              自由記述の格言を保存。レースカード表示中にFABの「競馬の脳みそ」へ質問すると、
+              出走馬と照らして解釈して答えます。
+            </p>
+          </div>
+          <div className="mt-2">
+            <Link
+              href="/mypage/maxims"
+              className="block w-full py-3 text-center bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-900 transition-colors"
+            >
+              格言を編集する →
+            </Link>
+          </div>
+        </div>
+
         {/* 馬分析 */}
         <div className="bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">

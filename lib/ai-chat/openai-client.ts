@@ -189,7 +189,8 @@ export async function answerQuestion(
   apiKey: string
 ): Promise<string> {
   const hasRaceData = context.includes('【出走馬データ】');
-  
+  const hasUserMaxims = context.includes('【ユーザー格言・メモ】');
+
   const systemPrompt = `あなたは競馬の専門家です。
 ユーザーの質問に対して、専門的かつ分かりやすく回答してください。
 
@@ -214,6 +215,13 @@ ${hasRaceData ? `
 - 質問に簡潔に回答してください
 - データがない場合は一般的な知識で回答してください
 `}
+${hasUserMaxims ? `
+【ユーザー格言の扱い】
+- 「【ユーザー格言・メモ】」に書かれた内容は**形式不問**（一文ごとのルール、メモ、コメントの混在もある）
+- 質問が「どう狙う」「パターン」「高速」「馬場」「2歳」などのときは、格言を**解釈**し、今回のレース前提・出走馬データと照らして**名指しで答える**
+- 産駒・枠・脚質・距離など、格言に現れた軸で出走表の「父名・枠・指数」を突き合わせる
+- 格言に合致しない馬は「外す」「紐」なども明示してよい
+` : ''}
 
 ## 参考情報
 ${context}`;
@@ -232,7 +240,7 @@ ${context}`;
           { role: 'user', content: question },
         ],
         temperature: 0.5,
-        max_tokens: 1000,
+        max_tokens: hasRaceData || hasUserMaxims ? 1800 : 1000,
       }),
     });
 
