@@ -889,7 +889,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
         <div className="absolute inset-0 bg-black/80" />
         
         <motion.div 
-          className="relative w-full max-w-4xl max-h-[95vh] overflow-y-auto rounded-2xl border border-cyan-500/40 shadow-[0_0_40px_rgba(6,182,212,0.3),0_0_80px_rgba(168,85,247,0.15)]"
+          className="relative w-full max-w-4xl max-h-[95vh] flex flex-col rounded-2xl border border-cyan-500/40 shadow-[0_0_40px_rgba(6,182,212,0.3),0_0_80px_rgba(168,85,247,0.15)]"
           variants={modalVariants}
           initial="hidden"
           animate="visible"
@@ -900,7 +900,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           }}
         >
           {/* ヘッダー */}
-          <div className="px-4 py-3 border-b border-cyan-500/30 flex items-center justify-between">
+          <div className="flex-shrink-0 px-4 py-3 border-b border-cyan-500/30 flex items-center justify-between">
             <div>
               <h2 
                 className="text-xl md:text-2xl font-black text-white"
@@ -913,7 +913,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
               </p>
             </div>
             <motion.button 
-              className="w-10 h-10 rounded-full bg-black/50 text-cyan-400 text-xl flex items-center justify-center border border-cyan-500/40 hover:bg-cyan-500/20 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+              className="w-10 h-10 rounded-full bg-black/50 text-cyan-400 text-xl items-center justify-center border border-cyan-500/40 hover:bg-cyan-500/20 transition-all shadow-[0_0_15px_rgba(6,182,212,0.3)] hidden sm:flex"
               onClick={onClose}
               whileHover={{ scale: 1.1, rotate: 90, boxShadow: '0 0 25px rgba(6,182,212,0.5)' }}
               whileTap={{ scale: 0.9 }}
@@ -923,7 +923,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           </div>
 
           {/* タブ */}
-          <div className="px-4 flex gap-2 border-b border-cyan-500/25 pb-0">
+          <div className="flex-shrink-0 px-4 flex gap-2 border-b border-cyan-500/25 pb-0">
             <button
               type="button"
               onClick={() => setMainTab('detail')}
@@ -948,7 +948,8 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
             </button>
           </div>
 
-          {/* メインコンテンツ */}
+          {/* メインコンテンツ（スクロール領域） */}
+          <div className="flex-1 overflow-y-auto">
           <div className="p-3 md:p-4">
             {mainTab === 'sire' ? (
               <div className="space-y-3">
@@ -1332,6 +1333,19 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
                 </p>
               </div>
             )}
+          </div>
+          </div>{/* end scroll area */}
+
+          {/* スマホ用 閉じるボタン（右下固定） */}
+          <div className="sm:hidden flex-shrink-0 flex justify-end px-4 py-3 border-t border-cyan-500/25">
+            <motion.button
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+              onClick={onClose}
+              whileTap={{ scale: 0.92 }}
+            >
+              <span>✕</span>
+              <span>閉じる</span>
+            </motion.button>
           </div>
         </motion.div>
       </motion.div>

@@ -1638,8 +1638,7 @@ export default function RaceCardPage() {
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-[8%] sm:w-10 font-semibold">馬番</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 w-[10%] sm:w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-[9%] sm:w-10 font-semibold">印</th>
-                      <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-[7%] sm:w-10 font-semibold" title="お気に入り">★</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold w-[33%] sm:w-auto">馬名</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold w-[40%] sm:w-auto">馬名</th>
                       <th className="border-2 border-emerald-800 px-0.5 sm:px-3 py-2 sm:py-3 font-semibold w-[17%] sm:w-auto text-center sm:text-left sm:whitespace-nowrap">騎手<span className="hidden sm:inline">(斤量)</span><span className="sm:hidden"><br/>(斤量)</span></th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold w-[16%] sm:w-auto sm:min-w-[5rem]">調教師</th>
                     </tr>
@@ -1685,38 +1684,6 @@ export default function RaceCardPage() {
                               ) : (
                                 <span className="text-slate-400 text-lg">-</span>
                               )}
-                            </td>
-                            {/* ★ お気に入り */}
-                            <td className="border border-slate-300 px-1 py-1 text-center">
-                              {(() => {
-                                const horseName = normalizeHorseName(horse.umamei);
-                                const isFavorite = favoriteHorses.includes(horseName);
-                                return (
-                                  <motion.button
-                                    onClick={() => setHorseActionTarget({ 
-                                      name: horseName, 
-                                      number: horse.umaban 
-                                    })}
-                                    className={`text-lg ${
-                                      isFavorite 
-                                        ? 'text-amber-500' 
-                                        : 'text-slate-300 hover:text-amber-400'
-                                    }`}
-                                    title="お気に入り・メモ"
-                                    // アニメーション: ホバー時に拡大、クリック時に縮小
-                                    whileHover={{ scale: 1.15 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    // お気に入り登録時に星が回転＆拡大
-                                    animate={isFavorite ? {
-                                      rotate: [0, -15, 15, 0],
-                                      scale: [1, 1.3, 1],
-                                    } : {}}
-                                    transition={{ duration: 0.4, ease: 'easeOut' }}
-                                  >
-                                    {isFavorite ? '★' : '☆'}
-                                  </motion.button>
-                                );
-                              })()}
                             </td>
                             {/* 馬名 */}
                             {(() => {
@@ -1804,7 +1771,7 @@ export default function RaceCardPage() {
                           </tr>
                           {expandedHorse === horse.umaban && (
                             <tr key={`${horse.umaban}-detail`} className="relative z-[1]">
-                              <td colSpan={7} className="border border-slate-300 bg-slate-50 min-w-0 align-top p-0 relative">
+                              <td colSpan={6} className="border border-slate-300 bg-slate-50 min-w-0 align-top p-0 relative">
                                 {/*
                                   テーブル内では sticky が効きにくいため、馬名はスクロール外・過去走のみ max-h + overflow でスクロール
                                 */}

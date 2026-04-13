@@ -425,13 +425,18 @@ function HorseAnalysisPage() {
                     <div key={horse.id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50">
                       <button
                         onClick={() => openHorseDetail(normalized)}
-                        className="flex items-center gap-3 text-left hover:text-green-700"
+                        className="flex items-center gap-3 text-left hover:text-green-700 flex-1 min-w-0"
                         disabled={loadingHorseDetail}
                       >
-                        <span className="text-lg">🏇</span>
-                        <div>
+                        <span className="text-lg flex-shrink-0">🏇</span>
+                        <div className="min-w-0">
                           <span className="font-bold text-amber-600">{normalized}</span>
-                          <p className="text-xs text-gray-400">
+                          {horse.note && (
+                            <p className="text-xs text-gray-600 mt-0.5 line-clamp-2 whitespace-pre-wrap break-words">
+                              📝 {horse.note}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-0.5">
                             登録日: {new Date(horse.created_at).toLocaleDateString('ja-JP')}
                           </p>
                         </div>
