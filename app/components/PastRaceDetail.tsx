@@ -1722,9 +1722,10 @@ interface MobileDetailPanelProps {
   currentHorseName?: string;
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
   onAnalysisClick?: (raceId: string) => void;
+  onClose: () => void;
 }
 
-function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate, onAnalysisClick }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate, onAnalysisClick, onClose }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1732,203 +1733,232 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
   const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
 
   return (
-    <div className="mt-2 w-full bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
-      {/* ─── sticky ヘッダー ─── */}
-      <div className="sticky top-0 z-20 bg-white border-b border-emerald-100 shadow-sm">
-        {/* 馬名行 */}
-        {currentHorseName && (
-          <div className="px-3 pt-2 pb-1 text-[11px] font-bold text-emerald-800 truncate bg-emerald-50 border-b border-emerald-100">
-            {currentHorseName}
+    /* ── フルスクリーンオーバーレイ（ボトムシート） ── */
+    <div className="fixed inset-0 z-[900] flex flex-col justify-end">
+      {/* 背景タップで閉じる */}
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+
+      {/* パネル本体（画面下から75vh） */}
+      <div
+        className="relative flex flex-col bg-white rounded-t-2xl shadow-2xl overflow-hidden"
+        style={{ height: '78svh', maxHeight: '78svh' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ─── ヘッダー（常に見える・flex-shrink-0）─── */}
+        <div className="flex-shrink-0 bg-white border-b border-emerald-100">
+          {/* ドラッグハンドル */}
+          <div className="flex justify-center pt-2 pb-1">
+            <div className="w-10 h-1 bg-slate-300 rounded-full" />
           </div>
-        )}
-        {/* レース概要行: ラベル + 日付/場所/クラス + 📺 */}
-        <div className="bg-emerald-50 px-3 py-1.5 flex items-center gap-1.5 min-w-0">
-          <span className="text-[10px] font-semibold text-emerald-700 shrink-0">{raceLabel}</span>
-          <span className="text-[9px] text-slate-500 truncate min-w-0 flex-1">
-            {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
-          </span>
-          {race.race_id && race.race_id.length >= 16 && (
-            <a
-              href={buildNetkeibaUrl(race.race_id) ?? '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-slate-400 text-[11px] shrink-0 leading-none"
-              title="netkeibaで動画を見る"
-              onClick={e => e.stopPropagation()}
-            >
-              📺
-            </a>
-          )}
-        </div>
-        {/* 着順・人気・着差・タイム 一覧行 */}
-        <div className="px-3 py-1.5 flex items-center gap-3 bg-white border-t border-slate-100 flex-wrap">
-          <span className={cn('text-xl font-bold tabular-nums leading-none', getFinishColor(race.finish_position || ''))}>
-            {toHalfWidth(race.finish_position || '-')}着
-          </span>
-          <span className="text-xs text-slate-500 tabular-nums">
-            {toHalfWidth(race.popularity || '-')}人気
-          </span>
-          <span className="text-xs text-slate-500 tabular-nums">
-            {formatMargin(race.margin) !== '-' ? formatMargin(race.margin) : ''}
-          </span>
-          <span className="text-xs font-medium text-slate-700 tabular-nums ml-auto">
-            {formatFinishTime(race.finish_time) || '-'}
-          </span>
-        </div>
-      </div>
 
-      {/* ─── ボディ ─── */}
-      <div className="p-3 space-y-2.5">
-
-        {/* 今走メモ */}
-        {horseMemo && (
-          <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap leading-snug">
-            <span className="font-semibold mr-1">✏️</span>{horseMemo}
-          </div>
-        )}
-
-        {/* ── 基本情報グリッド（2列）── */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-          {race.jockey && (
-            <div className="flex items-baseline gap-1 min-w-0">
-              <span className="text-slate-400 shrink-0 w-8">騎手</span>
-              <span className="text-slate-800 truncate font-medium">{race.jockey}</span>
+          {/* 馬名行 */}
+          {currentHorseName && (
+            <div className="px-4 pb-1 text-[11px] font-bold text-emerald-800 truncate bg-emerald-50">
+              {currentHorseName}
             </div>
           )}
-          <div className="flex items-baseline gap-1 min-w-0">
-            <span className="text-slate-400 shrink-0 w-8">通過</span>
-            <span className="text-slate-800 tabular-nums">{getPassingOrder(race)}</span>
-          </div>
-          <div className="flex items-baseline gap-1 min-w-0">
-            <span className="text-slate-400 shrink-0 w-8">馬場</span>
-            <span className="text-slate-800">
-              {race.track_condition || '-'}
-              {race.indices?.cushion != null && (
-                <span className="text-slate-500"> / {race.indices.cushion.toFixed(1)}</span>
-              )}
+
+          {/* レース概要行 */}
+          <div className="bg-emerald-50 px-4 py-1.5 flex items-center gap-2 min-w-0">
+            <span className="text-[10px] font-semibold text-emerald-700 shrink-0">{raceLabel}</span>
+            <span className="text-[9px] text-slate-500 truncate min-w-0 flex-1">
+              {formatDateFull(race.date)}　{race.place}　{race.class_name || race.race_name || ''}
             </span>
+            {race.race_id && race.race_id.length >= 16 && (
+              <a
+                href={buildNetkeibaUrl(race.race_id) ?? '#'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-400 text-[11px] shrink-0 leading-none"
+                title="netkeibaで動画を見る"
+                onClick={e => e.stopPropagation()}
+              >
+                📺
+              </a>
+            )}
           </div>
-          {bodyW && (
-            <div className="flex items-baseline gap-1 min-w-0">
-              <span className="text-slate-400 shrink-0 w-8">体重</span>
-              <span className="text-slate-800 tabular-nums">{bodyW}</span>
-            </div>
-          )}
+
+          {/* 着順・人気・着差・タイム行 */}
+          <div className="px-4 py-2 flex items-center gap-3 bg-white flex-wrap">
+            <span className={cn('text-2xl font-bold tabular-nums leading-none', getFinishColor(race.finish_position || ''))}>
+              {toHalfWidth(race.finish_position || '-')}着
+            </span>
+            <span className="text-xs text-slate-500 tabular-nums">
+              {toHalfWidth(race.popularity || '-')}人気
+            </span>
+            {formatMargin(race.margin) !== '-' && (
+              <span className="text-xs text-slate-500 tabular-nums">
+                {formatMargin(race.margin)}
+              </span>
+            )}
+            <span className="text-sm font-semibold text-slate-700 tabular-nums ml-auto">
+              {formatFinishTime(race.finish_time) || '-'}
+            </span>
+            <button
+              onClick={onClose}
+              className="ml-1 shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 text-base leading-none"
+              aria-label="閉じる"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
-        {/* ── 指数チップ（プレミアム）── */}
-        {isPremium && (
-          <div className="flex gap-1.5 flex-wrap">
-            {race.indices?.makikaeshi != null && (
-              <div className="flex-1 min-w-[3.5rem] bg-white border border-slate-200 rounded-lg px-2 py-1 text-center">
-                <div className="text-[9px] text-slate-400 leading-none mb-0.5">巻返し</div>
-                <div className={cn('text-sm font-bold tabular-nums leading-none', getMakikaeshiColor(race.indices.makikaeshi))}>
-                  {race.indices.makikaeshi.toFixed(1)}
-                </div>
+        {/* ─── スクロール可能なボディ ─── */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3"
+          style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+        >
+          {/* 今走メモ */}
+          {horseMemo && (
+            <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 whitespace-pre-wrap leading-snug">
+              <span className="font-semibold mr-1">✏️</span>{horseMemo}
+            </div>
+          )}
+
+          {/* 基本情報グリッド（2列） */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+            {race.jockey && (
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-slate-400 shrink-0 w-8">騎手</span>
+                <span className="text-slate-800 truncate font-medium">{race.jockey}</span>
               </div>
             )}
-            {race.indices?.L4F != null && (
-              <div className="flex-1 min-w-[3.5rem] bg-white border border-slate-200 rounded-lg px-2 py-1 text-center">
-                <div className="text-[9px] text-slate-400 leading-none mb-0.5">L4F</div>
-                <div className="text-sm font-bold tabular-nums text-slate-700 leading-none">
-                  {race.indices.L4F.toFixed(1)}
-                </div>
-              </div>
-            )}
-            {race.indices?.T2F != null && (
-              <div className="flex-1 min-w-[3.5rem] bg-white border border-slate-200 rounded-lg px-2 py-1 text-center">
-                <div className="text-[9px] text-slate-400 leading-none mb-0.5">T2F</div>
-                <div className="text-sm font-bold tabular-nums text-slate-700 leading-none">
-                  {race.indices.T2F.toFixed(1)}
-                </div>
-              </div>
-            )}
-            {race.indices?.potential != null && (
-              <div className="flex-1 min-w-[3.5rem] bg-white border border-slate-200 rounded-lg px-2 py-1 text-center">
-                <div className="text-[9px] text-slate-400 leading-none mb-0.5">ポテ</div>
-                <div className="text-sm font-bold tabular-nums text-slate-700 leading-none">
-                  {race.indices.potential.toFixed(1)}
-                </div>
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-slate-400 shrink-0 w-8">通過</span>
+              <span className="text-slate-800 tabular-nums">{getPassingOrder(race)}</span>
+            </div>
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-slate-400 shrink-0 w-8">馬場</span>
+              <span className="text-slate-800">
+                {race.track_condition || '-'}
+                {race.indices?.cushion != null && (
+                  <span className="text-slate-500"> / {race.indices.cushion.toFixed(1)}</span>
+                )}
+              </span>
+            </div>
+            {bodyW && (
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-slate-400 shrink-0 w-8">体重</span>
+                <span className="text-slate-800 tabular-nums">{bodyW}</span>
               </div>
             )}
           </div>
-        )}
 
-        {/* ── ラップタイム ── */}
-        {race.lap_time && lapData.all.length > 0 && (
-          <div className="pt-2 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] text-slate-500 font-medium">ラップ</span>
-              {race.race_id && onAnalysisClick && (
-                <button
-                  onClick={e => { e.stopPropagation(); onAnalysisClick(race.race_id!); }}
-                  className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200"
-                >
-                  📊 タイム分析
-                </button>
+          {/* 指数チップ（プレミアム） */}
+          {isPremium && (
+            <div className="flex gap-2">
+              {race.indices?.makikaeshi != null && (
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-center">
+                  <div className="text-[9px] text-slate-400 leading-none mb-1">巻返し</div>
+                  <div className={cn('text-base font-bold tabular-nums leading-none', getMakikaeshiColor(race.indices.makikaeshi))}>
+                    {race.indices.makikaeshi.toFixed(1)}
+                  </div>
+                </div>
+              )}
+              {race.indices?.L4F != null && (
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-center">
+                  <div className="text-[9px] text-slate-400 leading-none mb-1">L4F</div>
+                  <div className="text-base font-bold tabular-nums text-slate-700 leading-none">
+                    {race.indices.L4F.toFixed(1)}
+                  </div>
+                </div>
+              )}
+              {race.indices?.T2F != null && (
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-center">
+                  <div className="text-[9px] text-slate-400 leading-none mb-1">T2F</div>
+                  <div className="text-base font-bold tabular-nums text-slate-700 leading-none">
+                    {race.indices.T2F.toFixed(1)}
+                  </div>
+                </div>
+              )}
+              {race.indices?.potential != null && (
+                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-center">
+                  <div className="text-[9px] text-slate-400 leading-none mb-1">ポテ</div>
+                  <div className="text-base font-bold tabular-nums text-slate-700 leading-none">
+                    {race.indices.potential.toFixed(1)}
+                  </div>
+                </div>
               )}
             </div>
-            {/* サマリーバッジ */}
-            <div className="flex flex-wrap gap-1 mb-1.5">
-              {lapData.first3Sum != null && (
-                <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
-                  前3F {lapData.first3Sum.toFixed(1)}
-                </span>
-              )}
-              {lapData.first5Sum != null && (
-                <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
-                  前5F {lapData.first5Sum.toFixed(1)}
-                </span>
-              )}
-              {lapData.last4Sum != null && (
-                <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
-                  後4F {lapData.last4Sum.toFixed(1)}
-                </span>
-              )}
-              {lapData.last5Sum != null && (
-                <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
-                  後5F {lapData.last5Sum.toFixed(1)}
-                </span>
-              )}
-            </div>
-            {/* ラップ数列（このdivだけ横スクロール許可） */}
-            <div className="overflow-x-auto scrollbar-hide -mx-0.5 px-0.5">
-              <div className="text-[11px] font-mono whitespace-nowrap leading-relaxed">
-                {lapData.first.length > 0 && (
-                  <span className="text-slate-400">
-                    {lapData.first.map(l => l.toFixed(1)).join('-')}-
+          )}
+
+          {/* ラップタイム */}
+          {race.lap_time && lapData.all.length > 0 && (
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] text-slate-500 font-medium">ラップ</span>
+                {race.race_id && onAnalysisClick && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onAnalysisClick(race.race_id!); }}
+                    className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200"
+                  >
+                    📊 タイム分析
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {lapData.first3Sum != null && (
+                  <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
+                    前3F {lapData.first3Sum.toFixed(1)}
                   </span>
                 )}
-                {lapData.last4.length > 0 && (
-                  <span className="text-emerald-700 font-semibold">
-                    {lapData.last4.map(l => l.toFixed(1)).join('-')}
+                {lapData.first5Sum != null && (
+                  <span className="text-[10px] bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded">
+                    前5F {lapData.first5Sum.toFixed(1)}
+                  </span>
+                )}
+                {lapData.last4Sum != null && (
+                  <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
+                    後4F {lapData.last4Sum.toFixed(1)}
+                  </span>
+                )}
+                {lapData.last5Sum != null && (
+                  <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded">
+                    後5F {lapData.last5Sum.toFixed(1)}
                   </span>
                 )}
               </div>
+              <div className="overflow-x-auto scrollbar-hide">
+                <div className="text-[11px] font-mono whitespace-nowrap">
+                  {lapData.first.length > 0 && (
+                    <span className="text-slate-400">
+                      {lapData.first.map(l => l.toFixed(1)).join('-')}-
+                    </span>
+                  )}
+                  {lapData.last4.length > 0 && (
+                    <span className="text-emerald-700 font-semibold">
+                      {lapData.last4.map(l => l.toFixed(1)).join('-')}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 評価バッジ */}
-        {isPremium && badges.length > 0 && (
-          <div className="pt-2 border-t border-slate-100">
-            <BadgeLabels badges={badges} />
-          </div>
-        )}
+          {/* 評価バッジ */}
+          {isPremium && badges.length > 0 && (
+            <div className="pt-2 border-t border-slate-100">
+              <BadgeLabels badges={badges} />
+            </div>
+          )}
 
-        {/* 馬場メモ */}
-        <BabaMemoChip date={race.date} place={race.place} surface={surface} />
+          {/* 馬場メモ */}
+          <BabaMemoChip date={race.date} place={race.place} surface={surface} />
 
-        {/* 出走馬一覧 */}
-        {!hideEntrants && race.race_id && (
-          <RaceEntrantsSection
-            raceId={race.race_id}
-            raceKey={deriveHorseRaceMemoKey(race)}
-            currentRaceHorses={currentRaceHorses}
-            currentHorseName={currentHorseName}
-            onCountUpdate={onSameRaceCountUpdate}
-          />
-        )}
+          {/* 出走馬一覧 */}
+          {!hideEntrants && race.race_id && (
+            <RaceEntrantsSection
+              raceId={race.race_id}
+              raceKey={deriveHorseRaceMemoKey(race)}
+              currentRaceHorses={currentRaceHorses}
+              currentHorseName={currentHorseName}
+              onCountUpdate={onSameRaceCountUpdate}
+            />
+          )}
+
+          {/* 下部の余白（safe area inset 対応） */}
+          <div style={{ height: 'max(1rem, env(safe-area-inset-bottom, 0px))' }} />
+        </div>
       </div>
     </div>
   );
@@ -2202,6 +2232,10 @@ function PastRaceDetailInner({
           })}
         </div>
 
+        <p className="text-[10px] text-slate-400 text-center mt-1">
+          ← スワイプして前後を確認 →
+        </p>
+
         {mobileExpandedIndex !== null && displayRaces[mobileExpandedIndex] && (
           <MobileDetailPanel
             race={displayRaces[mobileExpandedIndex]}
@@ -2216,12 +2250,9 @@ function PastRaceDetailInner({
             currentHorseName={currentHorseName}
             onSameRaceCountUpdate={handleSameRaceCountUpdate}
             onAnalysisClick={setAnalysisRaceId}
+            onClose={() => setMobileExpandedIndex(null)}
           />
         )}
-
-        <p className="text-[10px] text-slate-400 text-center mt-1">
-          {mobileExpandedIndex === null ? '← スワイプして前後を確認 →' : '← カードをもう一度タップで閉じる →'}
-        </p>
       </div>
 
       {!isPremium && (
