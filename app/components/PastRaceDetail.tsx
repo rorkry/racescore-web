@@ -730,7 +730,8 @@ function HorseFavoriteSection({ horseName }: { horseName: string }) {
             value={noteText}
             onChange={e => setNoteText(e.target.value)}
             placeholder="メモを入力..."
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 resize-none h-14 focus:outline-none focus:border-emerald-300"
+            className="w-full border border-slate-200 rounded px-2 py-1.5 resize-none h-14 focus:outline-none focus:border-emerald-300"
+            style={{ fontSize: '16px' }}
           />
           <div className="flex gap-2 mt-1">
             <button
@@ -1025,7 +1026,8 @@ export function RaceEntrantsSection({
               <button onClick={() => setMemoPopup(null)} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
             </div>
             <textarea
-              className="w-full border border-slate-200 rounded-lg p-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-300"
+              className="w-full border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-amber-300"
+              style={{ fontSize: '16px' }}
               rows={4}
               placeholder="このレースでのメモ..."
               value={memoPopup.draft}

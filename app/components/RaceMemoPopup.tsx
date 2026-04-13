@@ -168,6 +168,7 @@ export default function RaceMemoPopup({ raceKey, raceName, onClose }: RaceMemoPo
                 onKeyDown={handleKeyDown}
                 placeholder="レースの回顧や予想メモを入力...&#10;&#10;例：&#10;・逃げ馬有利の展開になりそう&#10;・外枠不利のコース&#10;・穴馬に注目"
                 className="w-full h-48 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-800"
+                style={{ fontSize: '16px' }}
                 maxLength={MAX_LENGTH}
               />
               <div className="flex items-center justify-between mt-2 text-xs text-gray-500">

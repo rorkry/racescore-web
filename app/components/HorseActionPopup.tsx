@@ -227,9 +227,10 @@ export default function HorseActionPopup({
                   value={memo}
                   onChange={(e) => setMemo(e.target.value.slice(0, 200))}
                   placeholder="この馬についてメモ..."
-                  className={`w-full h-24 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-gray-900 text-sm ${
+                  className={`w-full h-24 p-3 border rounded-lg resize-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-gray-900 ${
                     isFavorite ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50'
                   }`}
+                  style={{ fontSize: '16px' }}
                   disabled={saving || !isFavorite}
                 />
                 <div className="flex items-center justify-between">

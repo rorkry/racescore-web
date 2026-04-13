@@ -103,7 +103,8 @@ export default function InlineMemo({
               onChange={(e) => setMemo(e.target.value.slice(0, maxLength))}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className="w-full h-24 p-2 text-sm border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900"
+              className="w-full h-24 p-2 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900"
+              style={{ fontSize: '16px' }}
               disabled={saving}
             />
             <div className="flex items-center justify-between mt-2">

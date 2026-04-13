@@ -1996,7 +1996,8 @@ export default function RaceCardPage() {
               </div>
               <div className="p-4">
                 <textarea
-                  className="w-full border border-slate-300 rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-slate-300 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  style={{ fontSize: '16px' }}
                   rows={5}
                   placeholder="この馬の今走についてメモを書く&#10;（例: 外枠不利、斤量増、輸送明け...）"
                   value={horseRaceMemoPopup.draft}

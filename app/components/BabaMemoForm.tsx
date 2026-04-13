@@ -214,7 +214,8 @@ export default function BabaMemoForm({ date, trackType, place, onSaved }: BabaMe
           value={freeMemo}
           onChange={(e) => setFreeMemo(e.target.value.slice(0, 200))}
           placeholder="その他気づいたことがあれば..."
-          className="w-full h-20 p-3 text-sm border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900"
+          className="w-full h-20 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-gray-900"
+          style={{ fontSize: '16px' }}
         />
         <p className="text-xs text-gray-400 mt-1">{freeMemo.length}/200</p>
       </div>

@@ -122,7 +122,8 @@ export default function RaceMemoForm({ raceKey, raceTitle, onSaved }: RaceMemoFo
           value={memo}
           onChange={(e) => setMemo(e.target.value.slice(0, 500))}
           placeholder="このレースの気づき、展開予想、気になる馬など..."
-          className="w-full h-32 p-3 text-sm border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none text-gray-900"
+          className="w-full h-32 p-3 border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 outline-none text-gray-900"
+          style={{ fontSize: '16px' }}
         />
         <p className="text-xs text-gray-400 mt-1">{memo.length}/500</p>
       </div>
