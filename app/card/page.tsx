@@ -1631,7 +1631,10 @@ export default function RaceCardPage() {
                 )}
               </div>
 
-              <div className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0">
+              <div
+                className="table-scroll-container -mx-3 sm:mx-0 px-3 sm:px-0"
+                style={expandedHorse ? { overflowX: 'hidden' } : undefined}
+              >
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
@@ -1641,7 +1644,7 @@ export default function RaceCardPage() {
                       <th className="border-2 border-emerald-800 px-1 py-2 sm:py-3 w-6 sm:w-10 font-semibold" title="お気に入り">★</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold min-w-0">馬名</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold whitespace-nowrap min-w-0">騎手<span className="hidden sm:inline">(斤量)</span></th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold min-w-[3.5rem] sm:min-w-[5rem] max-w-[5.5rem] sm:max-w-none">調教師</th>
+                      <th className="hidden sm:table-cell border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold min-w-[3.5rem] sm:min-w-[5rem] max-w-[5.5rem] sm:max-w-none">調教師</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1789,8 +1792,8 @@ export default function RaceCardPage() {
                               <span className="hidden sm:inline">{horse.kishu.trim()}</span>
                               <span className="text-slate-500 text-[9px] sm:text-sm">({horse.kinryo.trim()})</span>
                             </td>
-                            {/* 調教師 */}
-                            <td className="border border-slate-300 px-1 sm:px-2 py-1.5 sm:py-2 text-slate-700 align-middle min-w-0 max-w-[5rem] sm:max-w-[9rem]">
+                            {/* 調教師（スマホ非表示） */}
+                            <td className="hidden sm:table-cell border border-slate-300 px-1 sm:px-2 py-1.5 sm:py-2 text-slate-700 align-middle min-w-0 max-w-[5rem] sm:max-w-[9rem]">
                               <div
                                 className="text-[9px] sm:text-sm leading-tight line-clamp-2 sm:line-clamp-none break-words hyphens-auto"
                                 title={(horse.chokyoshi || '').trim() || undefined}
