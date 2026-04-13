@@ -1732,11 +1732,39 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
   const { surface } = getSurfaceAndDistance(race.distance);
   const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
 
+  // ── body スクロールロック（iOS Safari 対応）──
+  // fixed overlay だけでは iOS は背後の body スクロールを通してしまうため、
+  // シートが開いている間は body を position:fixed + top で固定する
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const prev = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+    };
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = prev.overflow;
+      document.body.style.position = prev.position;
+      document.body.style.top = prev.top;
+      document.body.style.width = prev.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
   return (
     /* ── フルスクリーンオーバーレイ（ボトムシート） ── */
     <div className="fixed inset-0 z-[900] flex flex-col justify-end">
-      {/* 背景タップで閉じる */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      {/* 背景タップで閉じる（touch スクロールも止める） */}
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        onTouchMove={e => e.preventDefault()}
+      />
 
       {/* パネル本体（画面下から75vh） */}
       <div
