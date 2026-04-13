@@ -1806,8 +1806,8 @@ export default function RaceCardPage() {
                             </td>
                           </tr>
                           {expandedHorse === horse.umaban && (
-                            <tr key={`${horse.umaban}-detail`}>
-                              <td colSpan={7} className="border border-slate-300 bg-slate-50 min-w-0 align-top p-0">
+                            <tr key={`${horse.umaban}-detail`} className="relative z-[1]">
+                              <td colSpan={7} className="border border-slate-300 bg-slate-50 min-w-0 align-top p-0 relative">
                                 {/*
                                   テーブル内では sticky が効きにくいため、馬名はスクロール外・過去走のみ max-h + overflow でスクロール
                                 */}
