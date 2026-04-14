@@ -425,7 +425,7 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center"
+      className="fixed inset-0 bg-black/50 z-[1000] flex items-end sm:items-center justify-center"
       onClick={onClose}
     >
       <div
