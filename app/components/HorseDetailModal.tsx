@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
 import { getCourseData, COURSE_DATABASE } from '@/lib/course-data/index';
@@ -235,6 +236,7 @@ const modalVariants = {
 };
 
 export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluation, lapEvaluation, isPremium = false }: Props) {
+  useBodyScrollLock();
   // === ヘルパー関数（メモ化の外で定義） ===
   
   // 全角数字を半角に変換

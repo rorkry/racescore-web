@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from './Providers';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 interface HorseActionPopupProps {
   horseName: string;
@@ -21,6 +22,7 @@ export default function HorseActionPopup({
   onClose,
   onFavoriteChange
 }: HorseActionPopupProps) {
+  useBodyScrollLock();
   const { status } = useSession();
   const [isFavorite, setIsFavorite] = useState(false);
   const [memo, setMemo] = useState('');

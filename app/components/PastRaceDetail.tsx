@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { useSession } from '@/app/components/Providers';
 import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 // ========================================
 // 型定義
@@ -755,6 +756,7 @@ function HorseFavoriteSection({ horseName }: { horseName: string }) {
 }
 
 export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; onClose: () => void }) {
+  useBodyScrollLock();
   const [pastRaces, setPastRaces] = useState<PastRaceData[] | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1733,28 +1735,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
   const bodyW = formatBodyWeightLine(race.horse_weight, race.weight_change);
 
   // ── body スクロールロック（iOS Safari 対応）──
-  // fixed overlay だけでは iOS は背後の body スクロールを通してしまうため、
-  // シートが開いている間は body を position:fixed + top で固定する
-  useEffect(() => {
-    const scrollY = window.scrollY;
-    const prev = {
-      overflow: document.body.style.overflow,
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    };
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${scrollY}px`;
-    document.body.style.width = '100%';
-    return () => {
-      document.body.style.overflow = prev.overflow;
-      document.body.style.position = prev.position;
-      document.body.style.top = prev.top;
-      document.body.style.width = prev.width;
-      window.scrollTo(0, scrollY);
-    };
-  }, []);
+  useBodyScrollLock();
 
   return (
     /* ── フルスクリーンオーバーレイ（ボトムシート） ── */

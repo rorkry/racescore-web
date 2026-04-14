@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { RaceEntrantsSection } from '@/app/components/PastRaceDetail';
 import type { RaceTimeAnalysisResponse, RaceTimeInfo } from '@/app/api/race-time-analysis/route';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 // ========================================
 // ユーティリティ
@@ -403,6 +404,7 @@ interface RaceTimeAnalysisModalProps {
 }
 
 export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnalysisModalProps) {
+  useBodyScrollLock();
   const [data, setData] = useState<RaceTimeAnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
