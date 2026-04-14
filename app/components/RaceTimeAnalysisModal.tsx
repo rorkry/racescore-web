@@ -504,7 +504,7 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
         </div>
 
         {/* コンテンツ */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
           {loading && (
             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
               読み込み中...

@@ -1917,7 +1917,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
                 <span className="text-[11px] text-slate-500 font-medium">ラップ</span>
                 {race.race_id && onAnalysisClick && (
                   <button
-                    onClick={e => { e.stopPropagation(); onAnalysisClick(race.race_id!); }}
+                    onClick={e => { e.stopPropagation(); onClose(); onAnalysisClick(race.race_id!); }}
                     className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200"
                   >
                     📊 タイム分析
