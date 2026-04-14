@@ -429,7 +429,7 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
       onClick={onClose}
     >
       <div
-        className="bg-white w-full max-w-2xl max-h-[90vh] rounded-t-2xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+        className="bg-white w-full max-w-2xl max-h-[90dvh] rounded-t-2xl sm:rounded-2xl flex flex-col min-h-0 shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -504,7 +504,7 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
         </div>
 
         {/* コンテンツ */}
-        <div className="flex-1 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4" style={{ WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' } as React.CSSProperties}>
           {loading && (
             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
               読み込み中...

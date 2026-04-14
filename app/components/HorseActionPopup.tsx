@@ -152,7 +152,7 @@ export default function HorseActionPopup({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60" onClick={onClose} />
       
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90dvh] flex flex-col overflow-hidden">
         {/* ヘッダー */}
         <div className="bg-emerald-700 px-5 py-3">
           <div className="flex items-center justify-between">
@@ -175,7 +175,7 @@ export default function HorseActionPopup({
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4">
           {status !== 'authenticated' ? (
             <div className="text-center py-6 text-gray-500">
               <span className="text-3xl">🔐</span>

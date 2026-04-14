@@ -788,7 +788,7 @@ export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; 
         {/* お気に入り・メモ */}
         <HorseFavoriteSection horseName={horseName} />
         {/* コンテンツ */}
-        <div className="overflow-y-auto flex-1 p-4">
+        <div className="overflow-y-auto flex-1 min-h-0 p-4" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
           {loading && (
             <div className="text-sm text-slate-400 text-center py-8">読み込み中...</div>
           )}
@@ -1758,7 +1758,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
 
   return (
     /* ── フルスクリーンオーバーレイ（ボトムシート） ── */
-    <div className="fixed inset-0 z-[900] flex flex-col justify-end">
+    <div className="fixed inset-0 z-[970] flex flex-col justify-end">
       {/* 背景タップで閉じる（touch スクロールも止める） */}
       <div
         className="absolute inset-0 bg-black/40"
@@ -1833,8 +1833,8 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
         </div>
 
         {/* ─── スクロール可能なボディ ─── */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3"
-          style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3"
+          style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } as React.CSSProperties}
         >
           {/* 今走メモ */}
           {horseMemo && (

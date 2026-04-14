@@ -949,7 +949,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           </div>
 
           {/* メインコンテンツ（スクロール領域） */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-3 md:p-4">
             {mainTab === 'sire' ? (
               <div className="space-y-3">
