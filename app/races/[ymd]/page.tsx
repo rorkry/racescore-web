@@ -29,6 +29,13 @@ interface TimeHighlight {
   bestTimeDiff: number;
 }
 
+interface UserHighlight {
+  place: string;
+  raceNumber: string;
+  favoriteHorses: string[];
+  memoHorses: string[];
+}
+
 /**
  * /races/[ymd] — その開催日の「場所別レース番号一覧」を表示
  */
@@ -52,7 +59,14 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     fetcher,
     { revalidateOnFocus: false }
   );
-  
+
+  // ユーザー固有ハイライト（お気に入り馬・メモ馬が出走するレース）
+  const { data: userHighlightData } = useSWR(
+    ymd ? `/api/user/race-highlights?ymd=${ymd}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
   const router = useRouter();
 
   if (error) return <p className="p-4 text-red-600">⚠️ エラーが発生しました</p>;
@@ -72,6 +86,18 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     }
     return map;
   }, [highlightData]);
+
+  // ユーザー固有ハイライトをMap化
+  const userHighlightMap = useMemo(() => {
+    const map = new Map<string, UserHighlight>();
+    if (userHighlightData?.highlights) {
+      for (const h of userHighlightData.highlights as UserHighlight[]) {
+        const key = `${h.place}_${h.raceNumber}`;
+        map.set(key, h);
+      }
+    }
+    return map;
+  }, [userHighlightData]);
 
   // 時計ハイライトの目印を取得
   const getHighlightBadge = (courseName: string, raceNo: number) => {
@@ -106,6 +132,37 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     );
   };
 
+  // ユーザー固有バッジ（お気に入り・メモ馬）
+  const getUserBadges = (courseName: string, raceNo: number) => {
+    const key = `${courseName}_${raceNo}`;
+    const item = userHighlightMap.get(key);
+    if (!item) return null;
+    const badges: React.ReactNode[] = [];
+    if (item.favoriteHorses.length > 0) {
+      badges.push(
+        <span
+          key="fav"
+          className="ml-1 text-xs bg-amber-500 text-white px-1 rounded"
+          title={`お気に入り馬出走: ${item.favoriteHorses.join(', ')}`}
+        >
+          ★{item.favoriteHorses.length}
+        </span>
+      );
+    }
+    if (item.memoHorses.length > 0) {
+      badges.push(
+        <span
+          key="memo"
+          className="ml-1 text-xs bg-emerald-600 text-white px-1 rounded"
+          title={`メモ済み馬出走: ${item.memoHorses.join(', ')}`}
+        >
+          📓{item.memoHorses.length}
+        </span>
+      );
+    }
+    return badges.length > 0 ? <>{badges}</> : null;
+  };
+
   return (
     <main className="p-6 space-y-6">
       <h1 className="text-xl font-bold">
@@ -113,7 +170,7 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
       </h1>
       
       {/* 凡例 */}
-      <div className="text-sm text-gray-600 flex gap-4 items-center">
+      <div className="text-sm text-gray-600 flex gap-3 items-center flex-wrap">
         <span>凡例:</span>
         <span className="flex items-center gap-1">
           <span className="bg-red-500 text-white px-1 rounded text-xs">🔥</span>
@@ -126,6 +183,14 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
         <span className="flex items-center gap-1">
           <span className="bg-yellow-500 text-white px-1 rounded text-xs">⏱️</span>
           1秒以内
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="bg-amber-500 text-white px-1 rounded text-xs">★</span>
+          お気に入り馬
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="bg-emerald-600 text-white px-1 rounded text-xs">📓</span>
+          メモ済み馬
         </span>
       </div>
 
@@ -143,15 +208,18 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
                 // raceKey: YYYYMMDD + 2桁course + 2桁raceNo
                 const raceKey = `${ymd}${course.padStart(2, '0')}${String(no).padStart(2, '0')}`;
                 const badge = getHighlightBadge(courseName, no);
-                
+                const userBadges = getUserBadges(courseName, no);
+                const hasAnyBadge = Boolean(badge) || Boolean(userBadges);
+
                 return (
                   <button
                     key={no}
                     onClick={() => router.push(`/race/${raceKey}`)}
-                    className={`px-3 py-1 border rounded hover:bg-gray-100 flex items-center ${badge ? 'border-orange-300' : ''}`}
+                    className={`px-3 py-1 border rounded hover:bg-gray-100 flex items-center ${hasAnyBadge ? 'border-orange-300' : ''}`}
                   >
                     {no}R
                     {badge}
+                    {userBadges}
                   </button>
                 );
               })}
