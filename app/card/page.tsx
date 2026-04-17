@@ -1713,9 +1713,9 @@ export default function RaceCardPage() {
                                       {expandedHorse === horse.umaban ? '▲' : '▼'}
                                     </button>
 
-                                    {/* スマホ: 固定幅名前ゾーン（性齢を2行目に縦積み） */}
+                                    {/* スマホ: 名前ゾーン（flex-1で残り幅を最大活用・性齢を2行目縦積み） */}
                                     <div
-                                      className="flex-shrink-0 sm:hidden w-[90px] cursor-pointer leading-tight"
+                                      className="flex-1 min-w-0 sm:hidden cursor-pointer leading-tight"
                                       onClick={() => setSelectedHorseDetail(horse)}
                                       title="馬の詳細情報を表示"
                                     >
@@ -1727,18 +1727,16 @@ export default function RaceCardPage() {
                                       )}
                                     </div>
 
-                                    {/* スマホ: 右寄せバッジゾーン */}
-                                    <div className="sm:hidden flex-1 min-w-0 flex items-center justify-end gap-0.5">
-                                      {horsesWithPastHorseRaceMemo.has(horseName) && (
-                                        <span
-                                          className="flex-shrink-0 text-[11px] leading-none"
-                                          title="過去の別レースにレース別馬メモあり"
-                                          aria-label="過去レース別馬メモあり"
-                                        >
-                                          📓
-                                        </span>
-                                      )}
-                                    </div>
+                                    {/* スマホ: 📓バッジ（右端固定） */}
+                                    {horsesWithPastHorseRaceMemo.has(horseName) && (
+                                      <span
+                                        className="flex-shrink-0 sm:hidden text-[11px] leading-none"
+                                        title="過去の別レースにレース別馬メモあり"
+                                        aria-label="過去レース別馬メモあり"
+                                      >
+                                        📓
+                                      </span>
+                                    )}
 
                                     {/* PC: 従来の横並びレイアウト */}
                                     <div className="hidden sm:flex flex-1 min-w-0 items-center gap-1 flex-wrap">
