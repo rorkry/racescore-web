@@ -112,7 +112,7 @@ export default function RaceMemoPopup({ raceKey, raceName, onClose }: RaceMemoPo
     return (
       <div 
         ref={popupRef}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-[940] flex items-center justify-center bg-black/50 p-4"
       >
         <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full">
           <p className="text-center text-gray-600">
@@ -130,7 +130,7 @@ export default function RaceMemoPopup({ raceKey, raceName, onClose }: RaceMemoPo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[940] flex items-center justify-center bg-black/50 p-4">
       <div 
         ref={popupRef}
         className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"

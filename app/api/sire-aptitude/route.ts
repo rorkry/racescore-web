@@ -213,7 +213,10 @@ export async function GET(req: NextRequest) {
       {
         success: false,
         error: 'internal_error',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        // 内部エラーの詳細は本番クライアントに漏らさない
+        details: process.env.NODE_ENV === 'production'
+          ? undefined
+          : (error instanceof Error ? error.message : 'Unknown error'),
       },
       { status: 500 }
     );

@@ -11,8 +11,12 @@ export async function GET(request: Request) {
     // 管理者がいない初期状態では秘密鍵による認証を許可
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
-    const adminSecret = process.env.ADMIN_SECRET || 'make-admin-2026';
-    
+    const adminSecret = process.env.ADMIN_SECRET;
+
+    // env 未設定時はソースコードのデフォルト値を使わない
+    if (!adminSecret) {
+      return NextResponse.json({ error: 'ADMIN_SECRET is not configured' }, { status: 503 });
+    }
     if (secret !== adminSecret) {
       return NextResponse.json({ error: 'Unauthorized - Admin access required' }, { status: 401 });
     }

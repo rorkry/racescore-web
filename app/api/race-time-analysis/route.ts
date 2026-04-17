@@ -93,21 +93,25 @@ export async function GET(request: NextRequest) {
       ORDER BY race_id, finish_time
     `, [base.place, dateYYYYMMDD]);
 
-    // 同コース全期間（同会場・同距離）勝ち馬時計
+    // 同コース全期間（同会場・同距離）勝ち馬時計 - 直近200件に制限しレスポンス肥大化を防ぐ
     const sameCourseRows = await db.query<RaceTimeInfo>(`
-      SELECT DISTINCT ON (race_id)
-        race_id, place, date,
-        COALESCE(class_name,'') AS class_name,
-        COALESCE(race_name,'') AS race_name,
-        COALESCE(distance,'') AS distance,
-        finish_time AS winner_time,
-        COALESCE(track_condition,'') AS track_condition,
-        COALESCE(lap_time,'') AS lap_time
-      FROM umadata
-      WHERE place = $1
-        AND distance = $2
-        AND finish_position IN ('1', '１')
-      ORDER BY race_id, finish_time
+      SELECT * FROM (
+        SELECT DISTINCT ON (race_id)
+          race_id, place, date,
+          COALESCE(class_name,'') AS class_name,
+          COALESCE(race_name,'') AS race_name,
+          COALESCE(distance,'') AS distance,
+          finish_time AS winner_time,
+          COALESCE(track_condition,'') AS track_condition,
+          COALESCE(lap_time,'') AS lap_time
+        FROM umadata
+        WHERE place = $1
+          AND distance = $2
+          AND finish_position IN ('1', '１')
+        ORDER BY race_id, finish_time
+      ) AS t
+      ORDER BY race_id DESC
+      LIMIT 200
     `, [base.place, base.distance]);
 
     // 新しい順でソート

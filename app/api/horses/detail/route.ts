@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { toHalfWidth } from '@/utils/parse-helpers';
 import { auth } from '@/lib/auth';
+import { isPremiumUser } from '@/lib/premium';
 import { SagaBrain, HorseAnalysisInput, PastRaceInfo, TimeComparisonRace, PastRaceTimeComparison } from '@/lib/saga-ai/saga-brain';
 import { getAgeCategoryForLap, type HistoricalLapRecord } from '@/lib/saga-ai/lap-analyzer';
 
@@ -378,23 +379,19 @@ export async function GET(request: NextRequest) {
           isFavorite = true;
         }
         
-        // プレミアム判定
-        const subscription = await db.prepare(`
-          SELECT plan, status FROM subscriptions WHERE user_id = $1
-        `).get<{ plan: string; status: string }>(userId);
-        
-        isPremium = subscription?.plan === 'premium' && subscription?.status === 'active';
+        // プレミアム判定（管理者・premium_for_all も考慮する公式ロジック）
+        isPremium = await isPremiumUser(userId);
       }
     } catch (authError) {
       // 認証エラーは無視（ログインしていない場合など）
       console.log('Auth check skipped:', authError);
     }
 
-    // おれAI分析を実行（プレミアム会員 または enableSagaAIフラグがオンのログインユーザー）
+    // おれAI分析を実行（プレミアム会員のみ。enableSagaAI は表示トグル用であり権限昇格はしない）
     let timeEvaluation: string | undefined;
     let lapEvaluation: string | undefined;
-    
-    const shouldRunSagaAI = (isPremium || (enableSagaAI && userId)) && pastRacesRaw.length > 0;
+
+    const shouldRunSagaAI = isPremium && enableSagaAI && pastRacesRaw.length > 0;
     if (shouldRunSagaAI) {
       try {
         // 過去走を SagaBrain用の形式に変換（/api/saga-aiと同じ形式）

@@ -92,13 +92,17 @@ export default function HorseActionPopup({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ horseName: normalizedName, notifyOnRace: true })
         });
-        const data = await res.json();
         if (res.ok) {
           setIsFavorite(true);
           setMessage('お気に入りに追加しました！');
           onFavoriteChange?.();
         } else {
-          setMessage(data.error || '追加に失敗しました');
+          let msg = `追加に失敗しました (HTTP ${res.status})`;
+          try {
+            const data = await res.json();
+            msg = data.error || msg;
+          } catch { /* JSON でない応答 */ }
+          setMessage(msg);
         }
       }
     } catch {
@@ -133,12 +137,16 @@ export default function HorseActionPopup({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ horseName: normalizedName, note: memo.trim() })
       });
-      const data = await res.json();
       if (res.ok) {
         setExistingMemo(memo.trim());
         setMessage('メモを保存しました！');
       } else {
-        setMessage(data.error || '保存に失敗しました');
+        let msg = `保存に失敗しました (HTTP ${res.status})`;
+        try {
+          const data = await res.json();
+          msg = data.error || msg;
+        } catch { /* JSON でない応答 */ }
+        setMessage(msg);
       }
     } catch (err) {
       console.error('[HorseActionPopup] Save error:', err);
@@ -151,7 +159,7 @@ export default function HorseActionPopup({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[945] flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/60" onClick={onClose} />
       
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90dvh] flex flex-col overflow-hidden">

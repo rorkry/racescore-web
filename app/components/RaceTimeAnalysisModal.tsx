@@ -451,7 +451,8 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
             </div>
             <button
               onClick={onClose}
-              className="text-slate-300 hover:text-white text-xl leading-none px-1"
+              aria-label="閉じる"
+              className="flex-shrink-0 flex items-center justify-center min-w-11 min-h-11 rounded-full text-slate-300 hover:text-white hover:bg-white/10 text-2xl leading-none"
             >×</button>
           </div>
 

@@ -99,12 +99,20 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
         }),
       });
       
-      const data = await response.json();
-      
+      // エラー応答はHTMLの場合があるので res.ok を先に判定
       if (!response.ok) {
-        throw new Error(data.message || data.error || 'エラーが発生しました');
+        let errMsg = 'エラーが発生しました';
+        try {
+          const errData = await response.json();
+          errMsg = errData.message || errData.error || errMsg;
+        } catch {
+          errMsg = `${errMsg} (HTTP ${response.status})`;
+        }
+        throw new Error(errMsg);
       }
-      
+
+      const data = await response.json();
+
       // AI応答を追加
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,

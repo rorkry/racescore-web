@@ -10,8 +10,12 @@ export async function GET(request: Request) {
   if (!(await isAdminRequest(request))) {
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
-    const initSecret = process.env.INIT_DB_SECRET || 'init-stride-2026';
-    
+    const initSecret = process.env.INIT_DB_SECRET;
+
+    // env 未設定時は管理者認証のみ。ソースのデフォルト値を使わない
+    if (!initSecret) {
+      return NextResponse.json({ error: 'INIT_DB_SECRET is not configured' }, { status: 503 });
+    }
     if (secret !== initSecret) {
       return NextResponse.json({ error: 'Unauthorized - Admin access required' }, { status: 401 });
     }
@@ -22,8 +26,9 @@ export async function GET(request: Request) {
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   });
 
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
     
     // テーブル作成SQL
     await client.query(`
@@ -257,18 +262,21 @@ export async function GET(request: Request) {
       );
     `);
     
-    client.release();
-    await pool.end();
-
     return NextResponse.json({ 
       success: true, 
       message: 'All tables created successfully!' 
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Init DB error:', error);
     return NextResponse.json({ 
       error: 'Failed to create tables', 
-      details: error.message 
+      details: process.env.NODE_ENV === 'production' ? undefined : message,
     }, { status: 500 });
+  } finally {
+    if (client) {
+      try { client.release(); } catch { /* ignore */ }
+    }
+    try { await pool.end(); } catch { /* ignore */ }
   }
 }

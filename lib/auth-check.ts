@@ -9,22 +9,25 @@ import { auth } from './auth';
  * リクエストが管理者からのものかチェック
  * Next-AuthのCookieセッションを使用
  */
-export async function isAdminRequest(request?: Request): Promise<boolean> {
-  // 開発環境では常に許可（オプション）
-  if (process.env.NODE_ENV === 'development' && process.env.SKIP_AUTH === 'true') {
+export async function isAdminRequest(_request?: Request): Promise<boolean> {
+  // 開発環境のみ SKIP_AUTH を許可。本番では絶対に素通りさせない
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.NODE_ENV === 'development' &&
+    process.env.SKIP_AUTH === 'true'
+  ) {
     return true;
   }
 
   try {
-    // Next-Authのセッションを取得
     const session = await auth();
-    
+
     if (!session?.user) {
       return false;
     }
 
-    // ユーザーのroleがadminかチェック
-    return (session.user as any).role === 'admin';
+    const role = (session.user as { role?: string }).role;
+    return role === 'admin';
   } catch (error) {
     console.error('Admin check error:', error);
     return false;

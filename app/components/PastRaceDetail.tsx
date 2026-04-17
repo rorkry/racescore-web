@@ -917,8 +917,9 @@ export function RaceEntrantsSection({
                 ? e.horse_name.trim() === currentHorseName.trim()
                 : false;
               const isOtherCurrentHorse = !isViewingHorse && normalizedCurrent.includes(e.horse_name.trim());
+              const stableKey = `${e.horse_name ?? ''}-${e.finish_position ?? ''}-${i}`;
               return (
-                <React.Fragment key={i}>
+                <React.Fragment key={stableKey}>
                   <tr
                     className={cn(
                       isViewingHorse
@@ -2212,7 +2213,7 @@ function PastRaceDetailInner({
 
             return (
               <MobileRaceCard
-                key={`${race.date}-${race.place}-${idx}`}
+                key={race.race_id || `${race.date}-${race.place}-${race.race_number ?? idx}`}
                 race={race}
                 index={idx}
                 isPremium={isPremium}

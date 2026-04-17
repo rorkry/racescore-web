@@ -887,11 +887,24 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
     setSireErr(null);
     fetch(`/api/sire-aptitude?horseName=${encodeURIComponent(name)}`)
       .then(async (r) => {
-        const j = (await r.json()) as { success?: boolean; message?: string; details?: string } & Partial<SireAptitudePayload>;
         if (cancelled) return;
+        // エラー応答は HTML の場合もあるため res.ok を先に判定
         if (!r.ok) {
+          let msg = `サーバーエラー (HTTP ${r.status})`;
+          try {
+            const errJson = await r.json() as { message?: string; details?: string };
+            msg = errJson.message || errJson.details || msg;
+          } catch { /* JSON ではない応答 */ }
           setSirePayload(null);
-          setSireErr(j.details || j.message || 'サーバーエラー');
+          setSireErr(msg);
+          return;
+        }
+        let j: { success?: boolean; message?: string } & Partial<SireAptitudePayload>;
+        try {
+          j = await r.json();
+        } catch {
+          setSirePayload(null);
+          setSireErr('応答の解析に失敗しました');
           return;
         }
         if (!j.success) {
@@ -928,7 +941,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
   return (
     <AnimatePresence>
       <motion.div 
-        className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4"
+        className="fixed inset-0 z-[965] flex items-center justify-center p-2 md:p-4"
         variants={overlayVariants}
         initial="hidden"
         animate="visible"

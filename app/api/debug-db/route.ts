@@ -36,26 +36,21 @@ export async function GET(request: Request) {
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   });
 
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
-    const client = await pool.connect();
-    
-    // テーブルの行数を取得（テーブル名は検証済み）
+    client = await pool.connect();
+
     const countResult = await client.query(`SELECT COUNT(*) as count FROM "${table}"`);
     const count = countResult.rows[0].count;
-    
-    // サンプルデータを取得（テーブル名は検証済み、limitは数値検証済み）
+
     const sampleResult = await client.query(`SELECT * FROM "${table}" LIMIT ${limit}`);
-    
-    // カラム情報を取得
+
     const columnsResult = await client.query(`
       SELECT column_name, data_type 
       FROM information_schema.columns 
       WHERE table_name = $1 
       ORDER BY ordinal_position
     `, [table]);
-    
-    client.release();
-    await pool.end();
 
     return NextResponse.json({
       table,
@@ -63,9 +58,14 @@ export async function GET(request: Request) {
       columns: columnsResult.rows.map(r => r.column_name),
       sample: sampleResult.rows
     });
-  } catch (error: any) {
-    return NextResponse.json({ 
-      error: error.message 
-    }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    // 例外の有無に関わらず確実に解放する
+    if (client) {
+      try { client.release(); } catch { /* ignore */ }
+    }
+    try { await pool.end(); } catch { /* ignore */ }
   }
 }

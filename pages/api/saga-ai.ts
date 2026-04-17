@@ -11,6 +11,8 @@ import { toHalfWidth, parseFinishPosition, getCornerPositions } from '../../util
 import { computeKisoScore } from '../../utils/getClusterData';
 import type { RecordRow } from '../../types/record';
 import { checkRateLimit, normalRateLimit } from '../../lib/rate-limit';
+import { auth } from '../../lib/auth';
+import { isPremiumUserByEmail } from '../../lib/premium';
 
 // PostgreSQL用のDB型（lib/db-new.tsのRawDatabaseWrapper互換）
 type DbWrapper = ReturnType<typeof getRawDb>;
@@ -1090,6 +1092,18 @@ export default async function handler(
 
     if (!year || !date || !rawPlace || !raceNumber) {
       return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // 認証・プレミアムチェック（OpenAI を呼ぶリクエストは必ずプレミアム限定）
+    if (useAI) {
+      const session = await auth();
+      if (!session?.user?.email) {
+        return res.status(401).json({ error: '認証が必要です' });
+      }
+      const isPremium = await isPremiumUserByEmail(session.user.email);
+      if (!isPremium) {
+        return res.status(403).json({ error: 'この機能はプレミアム会員限定です' });
+      }
     }
 
     const normalizePlace = (p: string): string => {
