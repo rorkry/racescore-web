@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
+import { useSession } from './Providers';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
