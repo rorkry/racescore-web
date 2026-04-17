@@ -53,10 +53,8 @@ export async function GET(request: NextRequest) {
     }
 
     const year = ymd.slice(0, 4);
-    const month = ymd.slice(4, 6);
-    const day = ymd.slice(6, 8);
-    // wakujun.date は "YYYY.MM.DD" 形式（他 API と統一）
-    const dateForDb = `${year}.${month}.${day}`;
+    // wakujun.date は "MMDD" 形式（year は別カラム）
+    const dateForDb = ymd.slice(4, 8);
 
     const db = getDb();
 
@@ -71,8 +69,8 @@ export async function GET(request: NextRequest) {
       db.prepare(`
         SELECT DISTINCT race_number, place, TRIM(umamei) AS horse_name
         FROM wakujun
-        WHERE date = $1
-      `).all<EntryRow>(dateForDb),
+        WHERE date = $1 AND year = $2
+      `).all<EntryRow>(dateForDb, year),
     ]);
 
     const favSet = new Set(favorites.map(r => normalizeHorseName(r.horse_name)));
@@ -112,7 +110,24 @@ export async function GET(request: NextRequest) {
       h => h.favoriteHorses.length > 0 || h.memoHorses.length > 0
     );
 
-    return NextResponse.json({ highlights });
+    // デバッグ情報（ログインユーザー自身のデータなので露出しても問題なし）
+    return NextResponse.json(
+      {
+        highlights,
+        _debug: {
+          favCount: favSet.size,
+          memoCount: memoSet.size,
+          entriesCount: entries.length,
+          matchedRaces: highlights.length,
+        },
+      },
+      {
+        headers: {
+          // ブラウザ・CDN キャッシュは使わず、ページ再読み込みで必ず再計算させる
+          'Cache-Control': 'no-store, must-revalidate',
+        },
+      }
+    );
   } catch (error) {
     console.error('[user/race-highlights] Error:', error);
     return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 });

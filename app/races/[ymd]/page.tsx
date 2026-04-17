@@ -61,10 +61,16 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
   );
 
   // ユーザー固有ハイライト（お気に入り馬・メモ馬が出走するレース）
+  // - キャッシュ即表示（revalidateIfStale = true がデフォルト）
+  // - 再読み込み時に再計算（revalidateOnMount = true がデフォルト）
   const { data: userHighlightData } = useSWR(
     ymd ? `/api/user/race-highlights?ymd=${ymd}` : null,
     fetcher,
-    { revalidateOnFocus: false }
+    {
+      revalidateOnFocus: false,
+      revalidateOnMount: true,
+      revalidateIfStale: true,
+    }
   );
 
   const router = useRouter();
@@ -203,7 +209,8 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
               {courseName}
             </h2>
 
-            <div className="flex flex-wrap gap-2">
+            {/* スマホ: 3列グリッドで各ボタンに余裕を持たせる / PC: 従来の flex-wrap */}
+            <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2">
               {races.map(no => {
                 // raceKey: YYYYMMDD + 2桁course + 2桁raceNo
                 const raceKey = `${ymd}${course.padStart(2, '0')}${String(no).padStart(2, '0')}`;
@@ -215,9 +222,9 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
                   <button
                     key={no}
                     onClick={() => router.push(`/race/${raceKey}`)}
-                    className={`px-3 py-1 border rounded hover:bg-gray-100 flex items-center ${hasAnyBadge ? 'border-orange-300' : ''}`}
+                    className={`px-2 sm:px-3 py-1.5 sm:py-1 border rounded hover:bg-gray-100 flex flex-wrap items-center justify-center gap-x-0.5 gap-y-1 min-h-[36px] text-sm ${hasAnyBadge ? 'border-orange-400 bg-orange-50' : ''}`}
                   >
-                    {no}R
+                    <span className="font-semibold">{no}R</span>
                     {badge}
                     {userBadges}
                   </button>
