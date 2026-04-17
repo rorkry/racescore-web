@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
@@ -810,6 +811,59 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
     diagnoses: string[];
   };
 
+  const { status: sessionStatus } = useSession();
+
+  // お気に入り関連
+  const [isFav, setIsFav] = useState(false);
+  const [favLoading, setFavLoading] = useState(false);
+  const [favSaving, setFavSaving] = useState(false);
+  const [favErrMsg, setFavErrMsg] = useState<string | null>(null);
+
+  const horseName = horse ? normalizeHorseName(horse.umamei) : '';
+
+  // お気に入り状態を取得
+  const fetchFavStatus = useCallback(async (name: string) => {
+    if (!name || sessionStatus !== 'authenticated') return;
+    setFavLoading(true);
+    try {
+      const res = await fetch('/api/user/favorites');
+      if (res.ok) {
+        const data = await res.json();
+        const found = (data.favorites as { horse_name: string }[]).some(f => f.horse_name === name);
+        setIsFav(found);
+      }
+    } catch { /* ignore */ } finally {
+      setFavLoading(false);
+    }
+  }, [sessionStatus]);
+
+  const toggleFavorite = async () => {
+    if (!horseName || favSaving) return;
+    setFavSaving(true);
+    setFavErrMsg(null);
+    try {
+      if (isFav) {
+        const res = await fetch('/api/user/favorites', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ horseName }),
+        });
+        if (res.ok) setIsFav(false);
+        else { const d = await res.json(); setFavErrMsg(d.error || '削除失敗'); }
+      } else {
+        const res = await fetch('/api/user/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ horseName }),
+        });
+        if (res.ok) setIsFav(true);
+        else { const d = await res.json(); setFavErrMsg(d.error || '登録失敗'); }
+      }
+    } catch { setFavErrMsg('通信エラー'); } finally {
+      setFavSaving(false);
+    }
+  };
+
   const [mainTab, setMainTab] = useState<'detail' | 'sire'>('detail');
   const [sireLoading, setSireLoading] = useState(false);
   const [sirePayload, setSirePayload] = useState<SireAptitudePayload | null>(null);
@@ -819,7 +873,10 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
     setMainTab('detail');
     setSirePayload(null);
     setSireErr(null);
-  }, [horse?.umamei]);
+    setIsFav(false);
+    setFavErrMsg(null);
+    if (horse) fetchFavStatus(normalizeHorseName(horse.umamei));
+  }, [horse?.umamei, fetchFavStatus]);
 
   useEffect(() => {
     if (mainTab !== 'sire' || !horse) return;
@@ -1338,10 +1395,32 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           </div>
           </div>{/* end scroll area */}
 
-          {/* スマホ用 閉じるボタン（右下固定） */}
-          <div className="sm:hidden flex-shrink-0 flex justify-end px-4 py-3 border-t border-cyan-500/25">
+          {/* フッター（スマホ: お気に入りボタン＋閉じる / PC: お気に入りボタン） */}
+          <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-t border-cyan-500/25 gap-3">
+            {/* お気に入りボタン */}
+            {sessionStatus === 'authenticated' ? (
+              <motion.button
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-full border font-bold text-sm transition-colors ${
+                  isFav
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                    : 'bg-black/30 text-slate-400 border-slate-600/50 hover:text-amber-300 hover:border-amber-500/40'
+                }`}
+                onClick={toggleFavorite}
+                disabled={favLoading || favSaving}
+                whileTap={{ scale: 0.93 }}
+              >
+                <span>{isFav ? '★' : '☆'}</span>
+                <span>{favLoading ? '…' : isFav ? 'お気に入り済' : 'お気に入り登録'}</span>
+              </motion.button>
+            ) : (
+              <div />
+            )}
+            {favErrMsg && (
+              <span className="text-xs text-red-400 flex-1 text-center">{favErrMsg}</span>
+            )}
+            {/* 閉じるボタン（スマホのみ右下） */}
             <motion.button
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+              className="sm:hidden flex items-center gap-2 px-5 py-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.2)]"
               onClick={onClose}
               whileTap={{ scale: 0.92 }}
             >

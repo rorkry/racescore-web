@@ -2288,7 +2288,7 @@ function PastRaceDetailInner({
             'fixed z-[960] flex items-center gap-1.5 rounded-full bg-emerald-600 text-white shadow-lg px-3.5 py-2.5 text-xs font-semibold hover:bg-emerald-700 active:scale-[0.98] transition-colors',
             'bottom-[max(1rem,env(safe-area-inset-bottom,0px))] sm:bottom-6',
             collapseFabAvoidGlobalFab
-              ? 'right-[5.75rem] sm:right-[7.25rem]'
+              ? 'left-1/2 -translate-x-1/2 sm:translate-x-0 sm:left-auto sm:right-[7.25rem]'
               : 'right-4'
           )}
           onClick={() => {

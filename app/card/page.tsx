@@ -1637,10 +1637,10 @@ export default function RaceCardPage() {
                     <tr className="bg-emerald-700 text-white text-xs sm:text-base">
                       <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-[8%] sm:w-10 font-semibold">馬番</th>
                       <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 w-[10%] sm:w-14 font-semibold">競う<br className="sm:hidden"/>スコア</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-[9%] sm:w-10 font-semibold">印</th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold w-[40%] sm:w-auto">馬名</th>
-                      <th className="border-2 border-emerald-800 px-0.5 sm:px-3 py-2 sm:py-3 font-semibold w-[17%] sm:w-auto text-center sm:text-left sm:whitespace-nowrap">騎手<span className="hidden sm:inline">(斤量)</span><span className="sm:hidden"><br/>(斤量)</span></th>
-                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold w-[16%] sm:w-auto sm:min-w-[5rem]">調教師</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 w-[8%] sm:w-10 font-semibold">印</th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-3 py-2 sm:py-3 font-semibold w-[46%] sm:w-auto">馬名</th>
+                      <th className="border-2 border-emerald-800 px-0.5 sm:px-3 py-2 sm:py-3 font-semibold w-[14%] sm:w-auto text-center sm:text-left sm:whitespace-nowrap">騎手<span className="hidden sm:inline">(斤量)</span><span className="sm:hidden"><br/>(斤量)</span></th>
+                      <th className="border-2 border-emerald-800 px-1 sm:px-2 py-2 sm:py-3 font-semibold w-[14%] sm:w-auto sm:min-w-[5rem]">調教師</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1693,7 +1693,8 @@ export default function RaceCardPage() {
                               const sexAgeStr = formatSexAgeCompact(horse.seibetsu, horse.nenrei_display, horse.nenrei);
                               return (
                                 <td className={`border border-slate-300 px-1 sm:px-3 py-1.5 sm:py-2 font-semibold overflow-hidden ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
-                                  <div className="flex items-center gap-1 w-full min-w-0">
+                                  <div className="flex items-center gap-0.5 sm:gap-1 w-full">
+                                    {/* ▼ 展開ボタン */}
                                     <button
                                       className={`
                                         flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
@@ -1711,9 +1712,38 @@ export default function RaceCardPage() {
                                     >
                                       {expandedHorse === horse.umaban ? '▲' : '▼'}
                                     </button>
-                                    <div className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
-                                      <span 
-                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors text-[11px] sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+
+                                    {/* スマホ: 固定幅名前ゾーン（性齢を2行目に縦積み） */}
+                                    <div
+                                      className="flex-shrink-0 sm:hidden w-[90px] cursor-pointer leading-tight"
+                                      onClick={() => setSelectedHorseDetail(horse)}
+                                      title="馬の詳細情報を表示"
+                                    >
+                                      <div className={`truncate text-[11px] font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}>
+                                        {horseName}
+                                      </div>
+                                      {sexAgeStr && (
+                                        <div className="text-[9px] text-slate-500 font-normal tabular-nums leading-tight">{sexAgeStr}</div>
+                                      )}
+                                    </div>
+
+                                    {/* スマホ: 右寄せバッジゾーン */}
+                                    <div className="sm:hidden flex-1 min-w-0 flex items-center justify-end gap-0.5">
+                                      {horsesWithPastHorseRaceMemo.has(horseName) && (
+                                        <span
+                                          className="flex-shrink-0 text-[11px] leading-none"
+                                          title="過去の別レースにレース別馬メモあり"
+                                          aria-label="過去レース別馬メモあり"
+                                        >
+                                          📓
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* PC: 従来の横並びレイアウト */}
+                                    <div className="hidden sm:flex flex-1 min-w-0 items-center gap-1 flex-wrap">
+                                      <span
+                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
                                         onClick={() => setSelectedHorseDetail(horse)}
                                         title="馬の詳細情報を表示"
                                       >
@@ -1725,15 +1755,17 @@ export default function RaceCardPage() {
                                       {horsesWithPastHorseRaceMemo.has(horseName) && (
                                         <span
                                           className="flex-shrink-0 inline-flex items-center justify-center size-5 sm:size-6 rounded border border-amber-200 bg-amber-50 text-sm sm:text-base leading-none"
-                                          title="過去の別レースにレース別馬メモあり（マイメモの「レース別馬メモ」でも確認できます）"
+                                          title="過去の別レースにレース別馬メモあり"
                                           aria-label="過去レース別馬メモあり"
                                         >
                                           📓
                                         </span>
                                       )}
                                     </div>
+
+                                    {/* ✏️ 今走メモボタン */}
                                     <button
-                                      className={`flex-shrink-0 text-[11px] sm:text-xs px-1 py-0.5 rounded transition-colors ${
+                                      className={`flex-shrink-0 text-[11px] sm:text-xs px-0.5 sm:px-1 py-0 sm:py-0.5 rounded transition-colors ${
                                         hasHorseRaceMemo
                                           ? 'bg-amber-100 text-amber-600 border border-amber-300'
                                           : 'bg-slate-100 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-500'
