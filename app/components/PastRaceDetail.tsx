@@ -174,7 +174,7 @@ function formatDateFull(dateStr: string): string {
 function getFinishColor(finish: string): string {
   const finishNum = parseInt(toHalfWidth(finish));
   if (finishNum === 1) return 'text-amber-500';
-  if (finishNum === 2) return 'text-slate-400';
+  if (finishNum === 2) return 'text-sky-500';
   if (finishNum === 3) return 'text-orange-500';
   if (finishNum <= 5) return 'text-emerald-600';
   return 'text-slate-600';
@@ -1585,31 +1585,31 @@ function MobileRaceCard({
                 {(collapsedBabaTags.length > 0 || (collapsedBabaFreeLine && collapsedBabaTags.length === 0)) && (
                   <div className="flex flex-wrap gap-0.5 items-center">
                     {collapsedBabaTags.length > 0 && (
-                      <span className="text-[7px] font-bold text-green-700">🌿</span>
+                      <span className="text-[9px] font-bold text-green-700">🌿</span>
                     )}
                     {collapsedBabaTags.map((tag) => (
                       <span
                         key={tag}
-                        className="text-[7px] px-1 py-0.5 bg-green-50 text-green-800 rounded border border-green-200 max-w-[5.5rem] truncate"
+                        className="text-[9px] px-1 py-0.5 bg-green-50 text-green-800 rounded border border-green-200 max-w-[5.5rem] truncate"
                         title={tag}
                       >
                         {tag}
                       </span>
                     ))}
                     {collapsedBabaFreeLine && collapsedBabaTags.length === 0 && (
-                      <span className="text-[7px] text-green-800 line-clamp-2" title={collapsedBabaFreeLine}>
+                      <span className="text-[9px] text-green-800 line-clamp-2" title={collapsedBabaFreeLine}>
                         🌿 {collapsedBabaFreeLine}
                       </span>
                     )}
                   </div>
                 )}
                 {collapsedBabaFreeLine && collapsedBabaTags.length > 0 && (
-                  <div className="text-[7px] text-slate-500 line-clamp-2" title={collapsedBabaFreeLine}>
+                  <div className="text-[9px] text-slate-500 line-clamp-2" title={collapsedBabaFreeLine}>
                     {collapsedBabaFreeLine}
                   </div>
                 )}
                 {horseMemo && (
-                  <div className="text-[8px] text-amber-900 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded leading-tight line-clamp-3" title={horseMemo}>
+                  <div className="text-[9px] text-amber-900 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded leading-tight line-clamp-3" title={horseMemo}>
                     ✏️ {horseMemo}
                   </div>
                 )}
@@ -1631,14 +1631,14 @@ function MobileRaceCard({
               {race.race_name || race.class_name || ''}
             </div>
             {hasLv && (
-              <div className={cn('text-[8px] font-medium px-1 py-0.5 rounded inline-block max-w-full truncate', getBadgeColor(raceLevelToBadgeLevel(race.raceLevel)))}>
+              <div className={cn('text-[9px] font-medium px-1 py-0.5 rounded inline-block max-w-full truncate', getBadgeColor(raceLevelToBadgeLevel(race.raceLevel)))}>
                 Lv{race.raceLevel!.levelLabel || race.raceLevel!.level}
               </div>
             )}
           </div>
 
           {/* 騎手・斤量・性齢（展開前に一覧）※馬体重は着順行に表示 */}
-          <div className="text-[8px] text-slate-600 mb-1 space-y-0.5 leading-tight">
+          <div className="text-[9px] text-slate-600 mb-1 space-y-0.5 leading-tight">
             {(race.jockey || kinryoM) && (
               <div className="truncate">
                 <span className="text-slate-500">騎</span>
@@ -1660,7 +1660,7 @@ function MobileRaceCard({
           {/* 同走バッジ */}
           {sameRaceCount != null && sameRaceCount > 0 && (
             <div className="mb-1">
-              <span className="text-[8px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 py-0.5 rounded-full font-bold leading-tight">
+              <span className="text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 py-0.5 rounded-full font-bold leading-tight">
                 {sameRaceCount}頭同走
               </span>
             </div>
@@ -1843,7 +1843,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
             </span>
             <button
               onClick={onClose}
-              className="ml-1 shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 text-base leading-none"
+              className="ml-1 shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 text-base leading-none"
               aria-label="閉じる"
             >
               ×

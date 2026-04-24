@@ -2021,7 +2021,7 @@ export default function RaceCardPage() {
                   </h2>
                   <button
                     onClick={() => setShowBabaMemo(false)}
-                    className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                    className="size-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
                     aria-label="閉じる"
                   >
                     <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2055,7 +2055,7 @@ export default function RaceCardPage() {
                 </h2>
                 <button
                   onClick={() => setShowRaceMemo(false)}
-                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  className="size-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
                   aria-label="閉じる"
                 >
                   <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2087,7 +2087,7 @@ export default function RaceCardPage() {
                 </h2>
                 <button
                   onClick={() => setPastRaceMemoPopup(null)}
-                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  className="size-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
                   aria-label="閉じる"
                 >
                   <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2120,7 +2120,7 @@ export default function RaceCardPage() {
                 </h2>
                 <button
                   onClick={() => setHorseRaceMemoPopup(null)}
-                  className="size-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                  className="size-10 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
                   aria-label="閉じる"
                 >
                   <svg className="size-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">

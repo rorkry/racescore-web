@@ -378,7 +378,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           padding: 12px 16px;
           border: 1px solid rgba(255, 255, 255, 0.2);
           border-radius: 12px;
-          font-size: 14px;
+          font-size: 16px;
           outline: none;
           transition: all 0.2s;
           color: #ffffff;
