@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 // jspdf / html2canvas はPDF生成時のみ動的ロード（初期バンドルサイズ削減）
 async function loadPdfLibs() {
   const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
@@ -177,6 +176,27 @@ function formatSexAgeCompact(
 }
 
 // normalizeHorseNameは@/utils/normalize-horse-nameからインポート
+
+/**
+ * 直近2走以内の最高巻き返し指数に応じたオーラ（text-shadow）クラスを返す。
+ * 9以上: 赤 / 8以上: オレンジ / 7以上: 黄 / 6以上: 緑 / 5以上: 薄緑 / それ未満: なし
+ * データ未取得でも past が空配列なら '' を返すので既存表示に影響しない。
+ */
+function getMakikaeshiAuraClass(past: PastRace[] | undefined): string {
+  if (!past || past.length === 0) return '';
+  let maxVal = -Infinity;
+  for (let i = 0; i < Math.min(2, past.length); i++) {
+    const v = past[i]?.indices?.makikaeshi;
+    if (typeof v === 'number' && isFinite(v) && v > maxVal) maxVal = v;
+  }
+  if (!isFinite(maxVal)) return '';
+  if (maxVal >= 9) return 'horse-aura-red';
+  if (maxVal >= 8) return 'horse-aura-orange';
+  if (maxVal >= 7) return 'horse-aura-yellow';
+  if (maxVal >= 6) return 'horse-aura-green';
+  if (maxVal >= 5) return 'horse-aura-lightgreen';
+  return '';
+}
 
 function formatDateForQuery(dateStr: string): string {
   const match = dateStr.match(/(\d{4})\.?\s*(\d{1,2})\.?\s*(\d{1,2})/);
@@ -1614,15 +1634,10 @@ export default function RaceCardPage() {
         )}
 
         {raceCard && !loading && (
-          <AnimatePresence mode="wait">
-            <motion.div 
-              key={`${selectedVenue}_${selectedRace}`}
-              className="space-y-6"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.15, ease: 'easeOut' }}
-            >
+          <div
+            key={`${selectedVenue}_${selectedRace}`}
+            className="space-y-6 racecard-fadein"
+          >
             {selectedRace && showRacePace && (
               <div id="race-pace-card">
                 <CourseStyleRacePace
@@ -1789,6 +1804,7 @@ export default function RaceCardPage() {
                               const isFavorite = favoriteHorses.includes(horseName);
                               const hasHorseRaceMemo = horseRaceMemosForCard.has(horseName);
                               const sexAgeStr = formatSexAgeCompact(horse.seibetsu, horse.nenrei_display, horse.nenrei);
+                              const auraClass = getMakikaeshiAuraClass(horse.past);
                               return (
                                 <td className={`border border-slate-300 px-1 sm:px-3 py-1.5 sm:py-2 font-semibold overflow-hidden ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
                                   <div className="flex items-center gap-0.5 sm:gap-1 w-full">
@@ -1822,7 +1838,7 @@ export default function RaceCardPage() {
                                       title="馬の詳細情報を表示"
                                       aria-label={`${horseName} の詳細を表示`}
                                     >
-                                      <div className={`truncate text-[11px] font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}>
+                                      <div className={`truncate text-[11px] font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'} ${auraClass}`}>
                                         {horseName}
                                       </div>
                                       {sexAgeStr && (
@@ -1845,7 +1861,7 @@ export default function RaceCardPage() {
                                     <div className="hidden sm:flex flex-1 min-w-0 items-center gap-1 flex-wrap">
                                       <button
                                         type="button"
-                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors sm:text-sm font-semibold text-left bg-transparent p-0 border-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded ${isFavorite ? 'text-amber-600 hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors sm:text-sm font-semibold text-left bg-transparent p-0 border-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded ${isFavorite ? 'text-amber-600 hover:text-amber-700' : 'hover:text-emerald-600'} ${auraClass}`}
                                         onClick={() => setSelectedHorseDetail(horse)}
                                         title="馬の詳細情報を表示"
                                         aria-label={`${horseName} の詳細を表示`}
@@ -1942,8 +1958,7 @@ export default function RaceCardPage() {
                 </table>
               </div>
             </div>
-            </motion.div>
-          </AnimatePresence>
+          </div>
         )}
         
         {selectedHorseDetail && (() => {

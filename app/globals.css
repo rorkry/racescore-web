@@ -384,6 +384,56 @@ textarea {
   display: none;
 }
 
+/* ==========================================================================
+ * レースカードのフェードイン（framer-motion 代替）
+ *
+ * framer-motion の motion.div を使うと、transform プロパティが常に適用され、
+ * その内部の position: fixed が viewport ではなく motion.div 内に
+ * 閉じ込められる（CSS仕様）。これがモバイルで以下を引き起こしていた：
+ *   - モーダル（MobileDetailPanel 等）の fixed inset-0 が画面全体を覆えず
+ *     背景が透けて見える
+ *   - スクロール位置が親の transform により歪む
+ *
+ * transform を一切使わず opacity のみで遷移する CSS アニメに置き換える。
+ * ========================================================================== */
+@keyframes racecard-fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.racecard-fadein {
+  animation: racecard-fadein 0.15s ease-out;
+}
+
+/* ==========================================================================
+ * 巻き返し指数オーラ（馬名テキスト光彩）
+ * text-shadow だけで表現するためレイアウトへの影響ゼロ。
+ * ========================================================================== */
+.horse-aura-red {
+  text-shadow:
+    0 0 4px rgba(239, 68, 68, 0.95),
+    0 0 10px rgba(239, 68, 68, 0.55);
+}
+.horse-aura-orange {
+  text-shadow:
+    0 0 4px rgba(249, 115, 22, 0.95),
+    0 0 10px rgba(249, 115, 22, 0.55);
+}
+.horse-aura-yellow {
+  text-shadow:
+    0 0 4px rgba(234, 179, 8, 0.95),
+    0 0 10px rgba(234, 179, 8, 0.55);
+}
+.horse-aura-green {
+  text-shadow:
+    0 0 4px rgba(34, 197, 94, 0.9),
+    0 0 10px rgba(34, 197, 94, 0.5);
+}
+.horse-aura-lightgreen {
+  text-shadow:
+    0 0 3px rgba(132, 204, 22, 0.85),
+    0 0 8px rgba(132, 204, 22, 0.45);
+}
+
 @media (max-width: 640px) {
   .mobile-card {
     padding: 12px !important;
