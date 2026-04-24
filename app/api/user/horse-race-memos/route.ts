@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,24 +82,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'horseName and raceKey are required' }, { status: 400 });
     }
 
+    // 馬名を正規化（$・* などの先頭記号を除去）してDBに保存
+    // race-highlights API の wakujun 照合と一致させるため
+    const normalizedHorseName = normalizeHorseName(horseName);
+    if (!normalizedHorseName) {
+      return NextResponse.json({ error: 'horseName is invalid' }, { status: 400 });
+    }
+
     const db = getDb();
 
     if (!memo || memo.trim() === '') {
-      // メモが空なら削除
+      // メモが空なら削除（正規化前・正規化後の両方を削除して整合性を確保）
       await db.query(
-        `DELETE FROM horse_race_memos WHERE user_id = $1 AND horse_name = $2 AND race_key = $3`,
-        [userId, horseName.trim(), raceKey]
+        `DELETE FROM horse_race_memos WHERE user_id = $1 AND (horse_name = $2 OR horse_name = $3) AND race_key = $4`,
+        [userId, normalizedHorseName, horseName.trim(), raceKey]
       );
       return NextResponse.json({ deleted: true });
     }
 
-    const id = `hrm_${userId}_${horseName.trim()}_${raceKey}_${Date.now()}`.replace(/[^a-zA-Z0-9_]/g, '_');
+    const id = `hrm_${userId}_${normalizedHorseName}_${raceKey}_${Date.now()}`.replace(/[^a-zA-Z0-9_]/g, '_');
     await db.query(
       `INSERT INTO horse_race_memos (id, user_id, horse_name, race_key, memo, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
        ON CONFLICT (user_id, horse_name, race_key)
        DO UPDATE SET memo = EXCLUDED.memo, updated_at = NOW()`,
-      [id, userId, horseName.trim(), raceKey, memo.trim()]
+      [id, userId, normalizedHorseName, raceKey, memo.trim()]
     );
 
     return NextResponse.json({ success: true });
@@ -124,9 +132,10 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const db = getDb();
+    const normalizedName = normalizeHorseName(horseName);
     await db.query(
-      `DELETE FROM horse_race_memos WHERE user_id = $1 AND horse_name = $2 AND race_key = $3`,
-      [userId, horseName.trim(), raceKey]
+      `DELETE FROM horse_race_memos WHERE user_id = $1 AND (horse_name = $2 OR horse_name = $3) AND race_key = $4`,
+      [userId, normalizedName, horseName.trim(), raceKey]
     );
     return NextResponse.json({ success: true });
   } catch (error) {

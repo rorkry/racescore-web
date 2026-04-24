@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { use as usePromise, useMemo } from 'react';
 import useSWR from 'swr';
+import { useSession } from 'next-auth/react';
 
 // API fetch helper
 const fetcher = (url: string) => fetch(url).then(r => r.json());
@@ -41,6 +42,8 @@ interface UserHighlight {
  */
 export default function RacesByDay({ params }: { params: Promise<{ ymd: string }> }) {
   const { ymd } = usePromise(params);
+  const { status: authStatus } = useSession();
+
   const { data, error } = useSWR(
     ymd ? `/api/races-by-day?ymd=${ymd}` : null,
     fetcher
@@ -61,10 +64,10 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
   );
 
   // ユーザー固有ハイライト（お気に入り馬・メモ馬が出走するレース）
-  // - キャッシュ即表示（revalidateIfStale = true がデフォルト）
-  // - 再読み込み時に再計算（revalidateOnMount = true がデフォルト）
+  // authStatus === 'authenticated' を条件にすることで、セッション確立前のフェッチを防ぐ
+  // （未認証時に空データがキャッシュされると再フェッチされない問題を回避）
   const { data: userHighlightData } = useSWR(
-    ymd ? `/api/user/race-highlights?ymd=${ymd}` : null,
+    ymd && authStatus === 'authenticated' ? `/api/user/race-highlights?ymd=${ymd}` : null,
     fetcher,
     {
       revalidateOnFocus: false,
@@ -75,13 +78,7 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
 
   const router = useRouter();
 
-  if (error) return <p className="p-4 text-red-600">⚠️ エラーが発生しました</p>;
-  if (!data)  return <p className="p-4">loading…</p>;
-
-  // 型を付けておく
-  const courseMap = data as Record<string, number[]>;
-  
-  // ハイライト情報をMap化
+  // ハイライト情報をMap化（Rules of Hooks: early return より前に配置）
   const highlightMap = useMemo(() => {
     const map = new Map<string, TimeHighlight>();
     if (highlightData?.highlights) {
@@ -93,7 +90,7 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     return map;
   }, [highlightData]);
 
-  // ユーザー固有ハイライトをMap化
+  // ユーザー固有ハイライトをMap化（Rules of Hooks: early return より前に配置）
   const userHighlightMap = useMemo(() => {
     const map = new Map<string, UserHighlight>();
     if (userHighlightData?.highlights) {
@@ -104,6 +101,12 @@ export default function RacesByDay({ params }: { params: Promise<{ ymd: string }
     }
     return map;
   }, [userHighlightData]);
+
+  if (error) return <p className="p-4 text-red-600">⚠️ エラーが発生しました</p>;
+  if (!data)  return <p className="p-4">loading…</p>;
+
+  // 型を付けておく
+  const courseMap = data as Record<string, number[]>;
 
   // 時計ハイライトの目印を取得
   const getHighlightBadge = (courseName: string, raceNo: number) => {

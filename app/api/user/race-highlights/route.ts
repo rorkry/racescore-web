@@ -65,7 +65,8 @@ export async function GET(request: NextRequest) {
     // お気に入り馬 + メモ済み馬リストを並列取得
     const [favorites, memoed, entries] = await Promise.all([
       db.prepare('SELECT horse_name FROM favorite_horses WHERE user_id = $1').all<NameRow>(user.id),
-      db.prepare('SELECT DISTINCT horse_name FROM horse_race_memos WHERE user_id = $1').all<NameRow>(user.id),
+      // memo IS NOT NULL AND memo <> '' で空メモを除外（DELETE漏れ対策）
+      db.prepare("SELECT DISTINCT horse_name FROM horse_race_memos WHERE user_id = $1 AND memo IS NOT NULL AND memo <> ''").all<NameRow>(user.id),
       db.prepare(`
         SELECT DISTINCT race_number, place, TRIM(umamei) AS horse_name
         FROM wakujun
@@ -119,6 +120,9 @@ export async function GET(request: NextRequest) {
           memoCount: memoSet.size,
           entriesCount: entries.length,
           matchedRaces: highlights.length,
+          // 照合失敗時の診断用（先頭5件のみ）
+          sampleMemoNames: Array.from(memoSet).slice(0, 5),
+          sampleEntryNames: entries.slice(0, 5).map(e => normalizeHorseName(e.horse_name)),
         },
       },
       {
