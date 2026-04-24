@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { use as usePromise, useMemo } from 'react';
 import useSWR from 'swr';
-import { useSession } from 'next-auth/react';
+import { useSession } from '@/app/components/Providers';
 
 // API fetch helper
 const fetcher = (url: string) => fetch(url).then(r => r.json());
