@@ -20,6 +20,7 @@ import InlineMarkSelector, { type MarkType, getMarkColor } from '@/app/component
 import { useFeatureAccess } from '@/app/components/FloatingActionButton';
 import PastRaceDetail from '@/app/components/PastRaceDetail';
 import { useRacePredictions } from '@/hooks/useRacePredictions';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { useSession } from '@/app/components/Providers';
 import { 
   getFromIndexedDB, 
@@ -254,6 +255,12 @@ const RaceButton = React.memo(function RaceButton({
   );
 });
 
+/** モーダル表示中に背景スクロールを禁止するラッパー（iOS Safari 対応） */
+function ScrollLockedModal({ children }: { children: React.ReactNode }) {
+  useBodyScrollLock();
+  return <>{children}</>;
+}
+
 export default function RaceCardPage() {
   // SSRハイドレーション対応: 初期値は固定値を使用
   const [selectedYear, setSelectedYear] = useState<number>(2026);
@@ -417,7 +424,7 @@ export default function RaceCardPage() {
         const memoMap = new Map<string, string>();
         (data.favorites || []).forEach((f: { horse_name: string; note?: string }) => {
           if (f.note) {
-            memoMap.set(f.horse_name, f.note);
+            memoMap.set(normalizeHorseName(f.horse_name), f.note);
           }
         });
         setFavoriteHorseMemos(memoMap);
@@ -1916,6 +1923,7 @@ export default function RaceCardPage() {
           const isShiba = raceCard.raceInfo.trackType.includes('芝');
           const trackType = isShiba ? '芝' : 'ダート';
           return (
+            <ScrollLockedModal>
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="fixed inset-0 bg-black/60" onClick={() => setShowBabaMemo(false)} />
               <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
@@ -1943,11 +1951,13 @@ export default function RaceCardPage() {
                 </div>
               </div>
             </div>
+            </ScrollLockedModal>
           );
         })()}
 
         {/* レースメモフォーム */}
         {showRaceMemo && raceCard && (
+          <ScrollLockedModal>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/60" onClick={() => setShowRaceMemo(false)} />
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
@@ -1974,10 +1984,12 @@ export default function RaceCardPage() {
               </div>
             </div>
           </div>
+          </ScrollLockedModal>
         )}
 
         {/* 過去走レースメモ表示ポップアップ */}
         {pastRaceMemoPopup && (
+          <ScrollLockedModal>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/60" onClick={() => setPastRaceMemoPopup(null)} />
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
@@ -2005,10 +2017,12 @@ export default function RaceCardPage() {
               </div>
             </div>
           </div>
+          </ScrollLockedModal>
         )}
 
         {/* 今走メモ編集ポップアップ */}
         {horseRaceMemoPopup && (
+          <ScrollLockedModal>
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-black/60" onClick={() => setHorseRaceMemoPopup(null)} />
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
@@ -2066,6 +2080,7 @@ export default function RaceCardPage() {
               </div>
             </div>
           </div>
+          </ScrollLockedModal>
         )}
       </div>
     </div>

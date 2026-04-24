@@ -287,11 +287,18 @@ function babaMemoCacheKeyForRace(race: PastRaceData): string | null {
   return `${babaDate}::${race.place}::${surface}`;
 }
 
-function BabaMemoChip({ date, place, surface }: { date: string; place: string; surface: string }) {
-  const [memo, setMemo] = useState<BabaMemoData | null>(null);
+function BabaMemoChip({ date, place, surface, preloaded }: {
+  date: string;
+  place: string;
+  surface: string;
+  /** 親でプリフェッチ済みのデータがあれば渡す（個別fetchをスキップ） */
+  preloaded?: BabaMemoData | null;
+}) {
+  const [fetchedMemo, setFetchedMemo] = useState<BabaMemoData | null>(null);
+  const shouldFetch = preloaded === undefined;
 
   useEffect(() => {
-    if (!date || !place) return;
+    if (!shouldFetch || !date || !place) return;
     const fetchMemo = async () => {
       try {
         const babaMemoDate = pastDateToBabaMemoDate(date);
@@ -301,14 +308,16 @@ function BabaMemoChip({ date, place, surface }: { date: string; place: string; s
         );
         if (res.ok) {
           const data = await res.json();
-          setMemo(data.memo || null);
+          setFetchedMemo(data.memo || null);
         }
       } catch {
         // 未ログイン等は無視
       }
     };
     fetchMemo();
-  }, [date, place, surface]);
+  }, [date, place, surface, shouldFetch]);
+
+  const memo = preloaded !== undefined ? preloaded : fetchedMemo;
 
   if (!memo) return null;
 
@@ -1092,6 +1101,8 @@ interface CompactRaceRowProps {
   collapsedBabaTags?: string[];
   /** 展開前のみ: 馬場メモ自由記述（タグが空のときなど） */
   collapsedBabaFreeLine?: string | null;
+  /** 展開後の馬場メモ表示用（プリフェッチ済み。渡せばBabaMemoChipの個別fetchをスキップ） */
+  babaMemoRow?: BabaMemoData | null;
 }
 
 function CompactRaceRow({ 
@@ -1115,6 +1126,7 @@ function CompactRaceRow({
   userPredictionMark,
   collapsedBabaTags = [],
   collapsedBabaFreeLine,
+  babaMemoRow,
 }: CompactRaceRowProps) {
   const { surface, dist } = getSurfaceAndDistance(race.distance);
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
@@ -1445,7 +1457,7 @@ function CompactRaceRow({
           {/* 馬場メモ（当該レース日・開催場・芝ダートに紐づく） */}
           {(() => {
             const { surface } = getSurfaceAndDistance(race.distance);
-            return <BabaMemoChip date={race.date} place={race.place} surface={surface} />;
+            return <BabaMemoChip date={race.date} place={race.place} surface={surface} preloaded={babaMemoRow} />;
           })()}
 
           {/* 今走メモ */}
@@ -1741,9 +1753,11 @@ interface MobileDetailPanelProps {
   onSameRaceCountUpdate?: (raceId: string, count: number) => void;
   onAnalysisClick?: (raceId: string) => void;
   onClose: () => void;
+  /** プリフェッチ済み馬場メモ（渡せばBabaMemoChipの個別fetchをスキップ） */
+  babaMemoRow?: BabaMemoData | null;
 }
 
-function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate, onAnalysisClick, onClose }: MobileDetailPanelProps) {
+function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, currentRaceHorses, currentHorseName, onSameRaceCountUpdate, onAnalysisClick, onClose, babaMemoRow }: MobileDetailPanelProps) {
   const badges = useMemo(() => isPremium ? calculateEvaluationBadges(race) : [], [race, isPremium]);
   const lapData = parseLapTime(race.lap_time);
   const raceLabel = index === 0 ? '前走' : `${index + 1}走前`;
@@ -1978,7 +1992,7 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
           )}
 
           {/* 馬場メモ */}
-          <BabaMemoChip date={race.date} place={race.place} surface={surface} />
+          <BabaMemoChip date={race.date} place={race.place} surface={surface} preloaded={babaMemoRow} />
 
           {/* 出走馬一覧 */}
           {!hideEntrants && race.race_id && (
@@ -2212,6 +2226,7 @@ function PastRaceDetailInner({
               userPredictionMark={lookupUserPredictionMark(race, userPredictionMarks)}
               collapsedBabaTags={collapsedBabaTags}
               collapsedBabaFreeLine={collapsedBabaFreeLine}
+              babaMemoRow={babaMemoRow}
             />
           );
         })}
@@ -2271,23 +2286,29 @@ function PastRaceDetailInner({
           ← スワイプして前後を確認 →
         </p>
 
-        {mobileExpandedIndex !== null && displayRaces[mobileExpandedIndex] && (
-          <MobileDetailPanel
-            race={displayRaces[mobileExpandedIndex]}
-            index={mobileExpandedIndex}
-            isPremium={isPremium}
-            hideEntrants={hideEntrants}
-            horseMemo={(() => {
-              const key = deriveHorseRaceMemoKey(displayRaces[mobileExpandedIndex]);
-              return key ? horseRaceMemos?.get(key) : undefined;
-            })()}
-            currentRaceHorses={currentRaceHorses}
-            currentHorseName={currentHorseName}
-            onSameRaceCountUpdate={handleSameRaceCountUpdate}
-            onAnalysisClick={setAnalysisRaceId}
-            onClose={() => setMobileExpandedIndex(null)}
-          />
-        )}
+        {mobileExpandedIndex !== null && displayRaces[mobileExpandedIndex] && (() => {
+          const expandedRace = displayRaces[mobileExpandedIndex];
+          const expandedBabaKey = babaMemoCacheKeyForRace(expandedRace);
+          const expandedBabaMemoRow = expandedBabaKey ? babaMemoByKey.get(expandedBabaKey) ?? null : null;
+          return (
+            <MobileDetailPanel
+              race={expandedRace}
+              index={mobileExpandedIndex}
+              isPremium={isPremium}
+              hideEntrants={hideEntrants}
+              horseMemo={(() => {
+                const key = deriveHorseRaceMemoKey(expandedRace);
+                return key ? horseRaceMemos?.get(key) : undefined;
+              })()}
+              currentRaceHorses={currentRaceHorses}
+              currentHorseName={currentHorseName}
+              onSameRaceCountUpdate={handleSameRaceCountUpdate}
+              onAnalysisClick={setAnalysisRaceId}
+              onClose={() => setMobileExpandedIndex(null)}
+              babaMemoRow={expandedBabaMemoRow}
+            />
+          );
+        })()}
       </div>
 
       {!isPremium && (

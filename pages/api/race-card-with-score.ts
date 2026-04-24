@@ -227,19 +227,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 9999 END, umamei
     `).all(...(yearFilter ? [date, place, raceNumber, yearFilter] : [date, place, raceNumber])) as any[];
 
-    // デバッグ：取得された馬の数を確認
-    console.log(`[race-card-with-score] date=${date}, place=${place}, race_number=${raceNumber}, year=${yearFilter}`);
-    console.log(`[race-card-with-score] 取得馬数: ${horses.length}頭`);
-    if (horses.length > 0) {
-      console.log(`[race-card-with-score] 馬番範囲: ${horses[0].umaban} - ${horses[horses.length - 1].umaban}`);
-    }
-
     // 枠番が未設定かどうか検出（waku が全て空・"0" の場合は枠順未確定）
     let hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
     if (!hasWaku && horses.length > 0) {
       // 枠番なし → 馬名五十音順に並べ直し
       horses.sort((a: any, b: any) => (a.umamei || '').localeCompare(b.umamei || '', 'ja'));
-      console.log(`[race-card-with-score] 枠番未確定のため馬名順にソート`);
     }
 
     if (!horses || horses.length === 0) {
@@ -249,7 +241,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         WHERE date = $1 AND place = $2 AND race_number = $3
         ORDER BY CASE WHEN umaban ~ '^[0-9]+$' THEN umaban::INTEGER ELSE 9999 END, umamei
       `).all(date, place, raceNumber) as any[];
-      console.log(`[race-card-with-score] yearフィルタなしでの馬数: ${horsesWithoutYear.length}頭`);
 
       if (horsesWithoutYear.length === 0) {
         // ======================================================
@@ -271,8 +262,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ORDER BY horse_name ASC
         `).all(yyyymmdd, place, raceNumPadded) as any[];
 
-        console.log(`[race-card-with-score] umadataフォールバック: ${umadataHorses.length}頭`);
-
         if (!umadataHorses || umadataHorses.length === 0) {
           return res.status(404).json({ error: 'No horses found for this race' });
         }
@@ -281,7 +270,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const fullFbKey = `${baseCacheKey}::${fbRevision}`;
         const cachedFb = getFromCache(fullFbKey);
         if (cachedFb) {
-          console.log(`[race-card-with-score] umadataフォールバック キャッシュヒット: ${fullFbKey}`);
           res.setHeader('Cache-Control', 'no-store');
           res.setHeader('X-Cache', 'HIT');
           return res.status(200).json(cachedFb);
@@ -328,7 +316,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       hasWaku = horses.length > 0 && horses.some((h: any) => h.waku && h.waku !== '' && h.waku !== '0');
       if (!hasWaku && horses.length > 0) {
         horses.sort((a: any, b: any) => (a.umamei || '').localeCompare(b.umamei || '', 'ja'));
-        console.log(`[race-card-with-score] 枠番未確定のため馬名順にソート (yearなしwakujun)`);
       }
     }
 
@@ -337,7 +324,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const fullCacheKey = `${baseCacheKey}::${sourceRevision}`;
     const cachedFull = getFromCache(fullCacheKey);
     if (cachedFull && !fastMode) {
-      console.log(`[race-card-with-score] キャッシュヒット: ${fullCacheKey}`);
       res.setHeader('Cache-Control', 'public, max-age=120, stale-while-revalidate=30');
       res.setHeader('X-Cache', 'HIT');
       return res.status(200).json(cachedFull);
@@ -382,7 +368,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cacheRevision: sourceRevision,
       };
       
-      console.log(`[race-card-with-score] 高速モード: ${Date.now() - startTime}ms`);
       res.setHeader('Cache-Control', 'public, max-age=60');
       return res.status(200).json(fastResult);
     }
@@ -404,7 +389,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // （当日や未来のデータを含めると、結果を知った上での評価になってしまう）
     // ========================================
     const currentRaceDateNum = getCurrentRaceDateNumber(String(date), yearFilter ? parseInt(yearFilter, 10) : null);
-    console.log(`[race-card-with-score] 現在のレース日付: ${currentRaceDateNum} - この日付より前のデータのみ使用`);
 
     // 馬名をキーにしてMapに振り分け（日付フィルタリング適用）
     const pastRacesByHorse = new Map<string, any[]>();
@@ -429,7 +413,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     
     if (filteredOutCount > 0) {
-      console.log(`[race-card-with-score] ${filteredOutCount}件の未来データを除外しました`);
     }
 
     // ========================================
@@ -543,9 +526,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             aiComment: lv.ai_comment || '',
           });
         }
-        console.log(`[race-card-with-score] レースレベル取得: ${allLevels.length}件`);
-      } catch (err) {
-        console.log('[race-card-with-score] レースレベル取得スキップ:', err);
+      } catch {
+        // レースレベル取得失敗は無視（任意データ）
       }
     }
 
@@ -672,16 +654,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     };
 
     // ========================================
-    // デバッグ用ログ（確認後に削除可能）
-    // ========================================
-    const endTime = Date.now();
-    console.log(`[race-card-with-score] 最適化版: ${horses.length}頭, 処理時間=${endTime - startTime}ms`);
-    console.log(`[race-card-with-score] クエリ数: 3回 (wakujun=1, umadata=1, indices=1)`);
-    if (horsesWithScore.length > 0) {
-      const firstHorse = horsesWithScore[0];
-      console.log(`[race-card-with-score] 検証: 馬名=${firstHorse.umamei}, 過去走数=${firstHorse.past?.length || 0}, スコア=${firstHorse.score}`);
-    }
-
     // レスポンスをキャッシュに保存
     const responseData = {
       raceInfo,
@@ -690,7 +662,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       cacheRevision: sourceRevision,
     };
     setToCache(fullCacheKey, responseData);
-    console.log(`[race-card-with-score] キャッシュ保存: ${fullCacheKey} (現在${globalThis._raceCardCache?.size || 0}件)`);
     
     // HTTPキャッシュヘッダーを設定（ブラウザ側でも5分間キャッシュ）
     res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
