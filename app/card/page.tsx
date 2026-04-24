@@ -402,6 +402,19 @@ export default function RaceCardPage() {
     } catch { /* noop */ }
   }
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
+
+  // 表示順と同じソート済み馬リスト（上下ナビゲーションに使用）
+  const sortedHorsesForNav = React.useMemo(() => {
+    if (!raceCard) return [];
+    return [...raceCard.horses].sort((a, b) => {
+      if (sortMode === 'umaban') return parseInt(a.umaban) - parseInt(b.umaban);
+      if (a.hasData && !b.hasData) return -1;
+      if (!a.hasData && b.hasData) return 1;
+      if (a.hasData && b.hasData) return b.score - a.score;
+      return parseInt(a.umaban) - parseInt(b.umaban);
+    });
+  }, [raceCard, sortMode]);
+
   const [favoriteHorses, setFavoriteHorses] = useState<string[]>([]); // お気に入り馬リスト
   const [favoriteHorseMemos, setFavoriteHorseMemos] = useState<Map<string, string>>(new Map()); // 馬名 -> メモ
 
@@ -1135,6 +1148,36 @@ export default function RaceCardPage() {
 
   const toggleHorseExpand = (umaban: string) => {
     setExpandedHorse(expandedHorse === umaban ? null : umaban);
+  };
+
+  // 馬上下ナビゲーション（過去走展開中 or 馬詳細モーダル表示中に機能）
+  const currentNavUmaban = expandedHorse ?? selectedHorseDetail?.umaban ?? null;
+  const currentNavIdx = currentNavUmaban
+    ? sortedHorsesForNav.findIndex(h => h.umaban === currentNavUmaban)
+    : -1;
+  const prevNavHorse = currentNavIdx > 0 ? sortedHorsesForNav[currentNavIdx - 1] : null;
+  const nextNavHorse = currentNavIdx >= 0 && currentNavIdx < sortedHorsesForNav.length - 1
+    ? sortedHorsesForNav[currentNavIdx + 1]
+    : null;
+
+  const handleNavPrev = () => {
+    if (!prevNavHorse) return;
+    if (expandedHorse) {
+      setExpandedHorse(prevNavHorse.umaban);
+      loadHorseRaceMemosFor(normalizeHorseName(prevNavHorse.umamei));
+    } else if (selectedHorseDetail) {
+      setSelectedHorseDetail(prevNavHorse);
+    }
+  };
+
+  const handleNavNext = () => {
+    if (!nextNavHorse) return;
+    if (expandedHorse) {
+      setExpandedHorse(nextNavHorse.umaban);
+      loadHorseRaceMemosFor(normalizeHorseName(nextNavHorse.umamei));
+    } else if (selectedHorseDetail) {
+      setSelectedHorseDetail(nextNavHorse);
+    }
   };
 
   const navigateToDate = (pastDate: string) => {
@@ -1916,6 +1959,50 @@ export default function RaceCardPage() {
             onClose={() => setHorseActionTarget(null)}
             onFavoriteChange={fetchFavoriteHorses}
           />
+        )}
+
+        {/* 馬上下ナビゲーション（過去走展開中 or 馬詳細モーダル表示中に浮かぶ矢印ボタン） */}
+        {currentNavIdx >= 0 && (
+          <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[975] flex flex-col gap-2 pointer-events-none">
+            {/* 上ボタン */}
+            <button
+              onClick={handleNavPrev}
+              disabled={!prevNavHorse}
+              aria-label="前の馬"
+              className={`pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all duration-100 active:scale-95 ${
+                prevNavHorse
+                  ? 'bg-white/90 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+                  : 'bg-white/50 border-slate-200 text-slate-300 cursor-not-allowed'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" />
+              </svg>
+            </button>
+
+            {/* 現在の馬番インジケーター */}
+            <div className="pointer-events-none text-center">
+              <span className="text-[10px] font-bold text-slate-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-slate-200">
+                {currentNavIdx + 1}/{sortedHorsesForNav.length}
+              </span>
+            </div>
+
+            {/* 下ボタン */}
+            <button
+              onClick={handleNavNext}
+              disabled={!nextNavHorse}
+              aria-label="次の馬"
+              className={`pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all duration-100 active:scale-95 ${
+                nextNavHorse
+                  ? 'bg-white/90 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+                  : 'bg-white/50 border-slate-200 text-slate-300 cursor-not-allowed'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
         )}
 
         {/* 馬場メモフォーム */}
