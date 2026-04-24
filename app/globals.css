@@ -327,6 +327,16 @@ html, body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* スマホではテーブルは table-fixed で画面内に収まるので横スクロールを無効化。
+   overflow-x: auto があると iOS Safari が縦スワイプを一時的に横スクロール候補として
+   判定し、ページの縦スクロールが「レースカード内で固定される」状態を引き起こすため。 */
+@media (max-width: 640px) {
+  .table-scroll-container {
+    overflow-x: visible;
+    -webkit-overflow-scrolling: auto;
+  }
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
