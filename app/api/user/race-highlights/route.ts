@@ -11,7 +11,6 @@ import { getDb } from '@/lib/db';
  * を返す。/races/[ymd] 画面で各レースボタンに目印を付けるため。
  */
 
-interface DbUser { id: string; }
 interface EntryRow {
   race_number: string;
   place: string;
@@ -41,10 +40,13 @@ function normalizeHorseName(name: string): string {
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user?.email) {
+    // session.user.id を直接使う（horse-race-memos 等の他APIと統一）
+    // email lookup で別のIDを取得するとuser_idが不一致になるケースがあるため
+    if (!session?.user?.id) {
       // 未ログインは空配列返却（エラーにしない: UI側で何も表示しないだけ）
       return NextResponse.json({ highlights: [] });
     }
+    const userId = (session.user as { id: string }).id;
 
     const searchParams = request.nextUrl.searchParams;
     const ymd = searchParams.get('ymd');
@@ -58,15 +60,11 @@ export async function GET(request: NextRequest) {
 
     const db = getDb();
 
-    // ユーザーID取得
-    const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
-    if (!user) return NextResponse.json({ highlights: [] });
-
     // お気に入り馬 + メモ済み馬リストを並列取得
     const [favorites, memoed, entries] = await Promise.all([
-      db.prepare('SELECT horse_name FROM favorite_horses WHERE user_id = $1').all<NameRow>(user.id),
+      db.prepare('SELECT horse_name FROM favorite_horses WHERE user_id = $1').all<NameRow>(userId),
       // memo IS NOT NULL AND memo <> '' で空メモを除外（DELETE漏れ対策）
-      db.prepare("SELECT DISTINCT horse_name FROM horse_race_memos WHERE user_id = $1 AND memo IS NOT NULL AND memo <> ''").all<NameRow>(user.id),
+      db.prepare("SELECT DISTINCT horse_name FROM horse_race_memos WHERE user_id = $1 AND memo IS NOT NULL AND memo <> ''").all<NameRow>(userId),
       db.prepare(`
         SELECT DISTINCT race_number, place, TRIM(umamei) AS horse_name
         FROM wakujun
@@ -78,7 +76,11 @@ export async function GET(request: NextRequest) {
     const memoSet = new Set(memoed.map(r => normalizeHorseName(r.horse_name)));
 
     if (favSet.size === 0 && memoSet.size === 0) {
-      return NextResponse.json({ highlights: [] });
+      // デバッグ用: なぜ0なのかを知るため userId を含める
+      return NextResponse.json({
+        highlights: [],
+        _debug: { favCount: 0, memoCount: 0, entriesCount: entries.length, matchedRaces: 0, userId },
+      });
     }
 
     // レース単位に集計
@@ -116,6 +118,7 @@ export async function GET(request: NextRequest) {
       {
         highlights,
         _debug: {
+          userId,
           favCount: favSet.size,
           memoCount: memoSet.size,
           entriesCount: entries.length,
