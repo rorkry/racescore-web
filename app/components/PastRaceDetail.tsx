@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useSession } from '@/app/components/Providers';
 import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
@@ -1424,7 +1424,7 @@ function CompactRaceRow({
                     <span className="text-[10px] bg-emerald-50 text-emerald-600 border border-emerald-200 px-1 py-0.5 rounded">後半5F {last5Sum.toFixed(1)}</span>
                   )}
                 </div>
-                <div className="text-xs font-mono overflow-x-auto whitespace-nowrap bg-white rounded px-2 py-1 border border-slate-200">
+                <div className="text-[10px] sm:text-xs font-mono overflow-x-auto whitespace-nowrap bg-white rounded px-2 py-1 border border-slate-200 leading-relaxed">
                   {first.length > 0 && (
                     <span className="text-slate-500">
                       {first.map(l => l.toFixed(1)).join('-')}-
@@ -1547,8 +1547,13 @@ function MobileRaceCard({
               )}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
-              {horseMemo && isExpanded && (
-                <span className="text-[8px] bg-amber-100 text-amber-600 px-1 rounded leading-tight" title={horseMemo}>✏️</span>
+              {horseMemo && (
+                <span
+                  className="text-[8px] bg-amber-200 text-amber-700 font-bold px-1 py-0.5 rounded leading-tight border border-amber-300"
+                  title={`レース別馬メモ: ${horseMemo}`}
+                >
+                  ✏️メモ
+                </span>
               )}
               <span className="text-[9px] tabular-nums text-slate-500">
                 {formatDate(race.date)}
@@ -1646,15 +1651,20 @@ function MobileRaceCard({
             </div>
           )}
           
-          {/* 着順 + 人気 + 馬体重 */}
+          {/* 着順 + 人気 + 通過順 + 馬体重 */}
           <div className="flex items-baseline justify-between gap-1 mb-1 min-w-0">
-            <div className="flex items-baseline gap-1 min-w-0">
+            <div className="flex items-baseline gap-1 min-w-0 flex-wrap">
               <span className={cn('text-lg font-bold tabular-nums', getFinishColor(race.finish_position || ''))}>
                 {toHalfWidth(race.finish_position || '-')}着
               </span>
               <span className="text-[10px] text-slate-500">
                 {toHalfWidth(race.popularity || '-')}人
               </span>
+              {getPassingOrder(race) !== '-' && (
+                <span className="text-[9px] text-slate-400 tabular-nums">
+                  通{getPassingOrder(race)}
+                </span>
+              )}
             </div>
             <span
               className="text-[9px] text-slate-500 tabular-nums shrink-0"
@@ -1738,6 +1748,14 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
   // ── body スクロールロック（iOS Safari 対応）──
   useBodyScrollLock();
 
+  // マウント時にスクロール位置を先頭に戻す
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollBodyRef.current) {
+      scrollBodyRef.current.scrollTop = 0;
+    }
+  }, [race.race_id]);
+
   return (
     /* ── フルスクリーンオーバーレイ（ボトムシート） ── */
     <div className="fixed inset-0 z-[970] flex flex-col justify-end">
@@ -1815,7 +1833,9 @@ function MobileDetailPanel({ race, index, isPremium, hideEntrants, horseMemo, cu
         </div>
 
         {/* ─── スクロール可能なボディ ─── */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3"
+        <div
+          ref={scrollBodyRef}
+          className="flex-1 min-h-0 overflow-y-auto overscroll-y-none p-4 space-y-3"
           style={{ WebkitOverflowScrolling: 'touch', paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } as React.CSSProperties}
         >
           {/* 今走メモ */}

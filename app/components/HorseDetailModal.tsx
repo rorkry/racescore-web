@@ -1409,38 +1409,40 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           </div>{/* end scroll area */}
 
           {/* フッター（スマホ: お気に入り=左 / 閉じる=中央 / PC: お気に入りのみ） */}
-          <div className="relative flex-shrink-0 flex items-center px-4 py-3 border-t border-cyan-500/25 gap-3 min-h-[60px]">
-            {/* お気に入りボタン（左寄せ） */}
-            {sessionStatus === 'authenticated' ? (
-              <motion.button
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-full border font-bold text-xs sm:text-sm transition-colors ${
-                  isFav
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
-                    : 'bg-black/30 text-slate-400 border-slate-600/50 hover:text-amber-300 hover:border-amber-500/40'
-                }`}
-                onClick={toggleFavorite}
-                disabled={favLoading || favSaving}
-                whileTap={{ scale: 0.93 }}
-              >
-                <span>{isFav ? '★' : '☆'}</span>
-                <span className="hidden sm:inline">{favLoading ? '…' : isFav ? 'お気に入り済' : 'お気に入り登録'}</span>
-                <span className="sm:hidden">{favLoading ? '…' : isFav ? '登録済' : '登録'}</span>
-              </motion.button>
-            ) : (
-              <div />
-            )}
-            {favErrMsg && (
-              <span className="text-[10px] text-red-400 flex-1 text-right">{favErrMsg}</span>
-            )}
-            {/* 閉じるボタン（スマホのみ・画面中央に絶対配置） */}
+          <div className="flex-shrink-0 flex items-center px-4 py-3 border-t border-cyan-500/25 min-h-[60px]">
+            {/* 左ゾーン（お気に入り） */}
+            <div className="flex-1 flex items-center gap-2">
+              {sessionStatus === 'authenticated' ? (
+                <motion.button
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-full border font-bold text-xs sm:text-sm transition-colors ${
+                    isFav
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                      : 'bg-black/30 text-slate-400 border-slate-600/50 hover:text-amber-300 hover:border-amber-500/40'
+                  }`}
+                  onClick={toggleFavorite}
+                  disabled={favLoading || favSaving}
+                  whileTap={{ scale: 0.93 }}
+                >
+                  <span>{isFav ? '★' : '☆'}</span>
+                  <span className="hidden sm:inline">{favLoading ? '…' : isFav ? 'お気に入り済' : 'お気に入り登録'}</span>
+                  <span className="sm:hidden">{favLoading ? '…' : isFav ? '登録済' : '登録'}</span>
+                </motion.button>
+              ) : null}
+              {favErrMsg && (
+                <span className="text-[10px] text-red-400">{favErrMsg}</span>
+              )}
+            </div>
+            {/* 中央ゾーン: 閉じるボタン（スマホのみ）— absolute を使わず inline 配置で ghost 防止 */}
             <motion.button
-              className="sm:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-5 py-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+              className="sm:hidden flex items-center gap-2 px-5 py-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.2)]"
               onClick={onClose}
               whileTap={{ scale: 0.92 }}
             >
               <span>✕</span>
               <span>閉じる</span>
             </motion.button>
+            {/* 右ゾーン（バランス用、スマホのみ） */}
+            <div className="flex-1 sm:hidden" />
           </div>
         </motion.div>
       </motion.div>
