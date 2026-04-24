@@ -1915,7 +1915,7 @@ export default function RaceCardPage() {
                                   <div className="flex-shrink-0 px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-bold text-emerald-800 border-b border-slate-200 bg-slate-100">
                                     {normalizeHorseName(horse.umamei)} の過去走詳細
                                   </div>
-                                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-2 sm:px-3 py-2 pb-16 sm:pb-14">
+                                  <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden sm:overscroll-contain px-2 sm:px-3 py-2 pb-16 sm:pb-14">
                                     <PastRaceDetail
                                       pastRaces={horse.past}
                                       isPremium={showSagaAI}

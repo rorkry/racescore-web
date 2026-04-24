@@ -2244,7 +2244,7 @@ function PastRaceDetailInner({
       <div className="sm:hidden overflow-hidden">
         <div
           className="flex gap-2 overflow-x-scroll pb-2 snap-x snap-mandatory scrollbar-hide"
-          style={{ overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+          style={{ overscrollBehaviorX: 'contain' }}
         >
           {displayRaces.map((race, idx) => {
             // race_memos.race_key は "MMDD_場_R" 形式で保存されている
