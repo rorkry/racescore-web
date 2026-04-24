@@ -1165,7 +1165,8 @@ export default function RaceCardPage() {
     if (expandedHorse) {
       setExpandedHorse(prevNavHorse.umaban);
       loadHorseRaceMemosFor(normalizeHorseName(prevNavHorse.umamei));
-    } else if (selectedHorseDetail) {
+    }
+    if (selectedHorseDetail) {
       setSelectedHorseDetail(prevNavHorse);
     }
   };
@@ -1175,7 +1176,8 @@ export default function RaceCardPage() {
     if (expandedHorse) {
       setExpandedHorse(nextNavHorse.umaban);
       loadHorseRaceMemosFor(normalizeHorseName(nextNavHorse.umamei));
-    } else if (selectedHorseDetail) {
+    }
+    if (selectedHorseDetail) {
       setSelectedHorseDetail(nextNavHorse);
     }
   };
