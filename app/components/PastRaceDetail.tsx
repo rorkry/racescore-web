@@ -138,7 +138,9 @@ function deriveHorseRaceMemoKey(race: PastRaceData): string | null {
   if (!race.race_id) return null;
   const yyyymmdd = race.race_id.substring(0, 8);
   const place = (race.place || '').replace(/[0-9０-９]+回.*$/, '').trim();
-  const raceNum = race.race_number || '';
+  // race_number が未設定の場合は race_id 末尾2桁から導出（umadataにカラムなし対策）
+  const raceNum = race.race_number
+    || (race.race_id.length >= 2 ? String(parseInt(race.race_id.slice(-2), 10)) : '');
   if (!yyyymmdd || !place || !raceNum) return null;
   return `${yyyymmdd}-${place}-${raceNum}`;
 }

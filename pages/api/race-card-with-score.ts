@@ -569,9 +569,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         const raceIndices = indicesMap.get(fullRaceId) || null;
         const raceLevel = raceLevelMap.get(raceIdBase) || null;
+
+        // umadataにrace_numberカラムが存在しないため race_id 末尾2桁から導出
+        // deriveHorseRaceMemoKey がこれを使うため必須（なければメモ表示不可）
+        const raceNumber = raceIdBase.length >= 2
+          ? String(parseInt(raceIdBase.slice(-2), 10))
+          : '';
         
         return {
           ...race,
+          race_number: raceNumber,
           indices: raceIndices,
           indexRaceId: fullRaceId,
           raceLevel: raceLevel,
