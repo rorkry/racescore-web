@@ -6,6 +6,7 @@ import { useSession } from '@/app/components/Providers';
 import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { pastDateToMMDD, buildPastRaceKey } from '@/utils/race-key';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 // ========================================
 // 型定義
@@ -863,7 +864,10 @@ export function RaceEntrantsSection({
       .then(data => {
         const map = new Map<string, string>();
         for (const m of data.memos || []) {
-          map.set(m.horse_name, m.memo);
+          // 正規化名・生名の両方でアクセスできるよう両キーを登録
+          const normalized = normalizeHorseName(m.horse_name);
+          map.set(normalized, m.memo);
+          if (m.horse_name !== normalized) map.set(m.horse_name, m.memo);
         }
         setMemosMap(map);
       })

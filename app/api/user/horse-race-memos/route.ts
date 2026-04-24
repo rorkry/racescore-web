@@ -48,11 +48,14 @@ export async function GET(request: NextRequest) {
         [userId, raceKey]
       );
     } else {
+      // 正規化前・正規化後の両方でマッチ（既存データの後方互換性確保）
+      const rawName = horseName!.trim();
+      const normalizedName = normalizeHorseName(rawName);
       rows = await db.query<{ horse_name: string; race_key: string; memo: string }>(
         `SELECT horse_name, race_key, memo FROM horse_race_memos
-         WHERE user_id = $1 AND horse_name = $2
+         WHERE user_id = $1 AND (horse_name = $2 OR horse_name = $3)
          ORDER BY race_key DESC`,
-        [userId, horseName!.trim()]
+        [userId, normalizedName, rawName]
       );
     }
 
