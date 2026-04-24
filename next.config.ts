@@ -8,7 +8,15 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['recharts', 'framer-motion', 'lucide-react'],
   },
-  
+
+  // 本番ビルドで console.* を削除（error/warn は残す：重要なエラーは監視したい）
+  // 開発時は全ログが出る。console 起因の JS 実行コスト・バンドルサイズ削減。
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production'
+      ? { exclude: ['error', 'warn'] }
+      : false,
+  },
+
   // TypeScriptエラーを無視（開発時）
   typescript: {
     ignoreBuildErrors: true,

@@ -76,26 +76,38 @@ export default function MyMemosPage() {
   };
 
   const deleteRaceMemo = async (id: string) => {
+    if (!window.confirm('このレースメモを削除します。よろしいですか？')) return;
     try {
-      await fetch('/api/user/race-memos', {
+      const res = await fetch('/api/user/race-memos', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       });
+      if (!res.ok) {
+        alert('削除に失敗しました。時間をおいて再度お試しください。');
+        return;
+      }
       setRaceMemos(prev => prev.filter(m => m.id !== id));
     } catch {
       console.error('Failed to delete memo');
+      alert('削除に失敗しました。通信状態をご確認ください。');
     }
   };
 
   const deleteHorseRaceMemo = async (horseName: string, raceKey: string) => {
+    if (!window.confirm(`${horseName} のこのレースのメモを削除します。よろしいですか？`)) return;
     try {
-      await fetch(`/api/user/horse-race-memos?horseName=${encodeURIComponent(horseName)}&raceKey=${encodeURIComponent(raceKey)}`, {
+      const res = await fetch(`/api/user/horse-race-memos?horseName=${encodeURIComponent(horseName)}&raceKey=${encodeURIComponent(raceKey)}`, {
         method: 'DELETE',
       });
+      if (!res.ok) {
+        alert('削除に失敗しました。時間をおいて再度お試しください。');
+        return;
+      }
       setHorseMemos(prev => prev.filter(m => !(m.horse_name === horseName && m.race_key === raceKey)));
     } catch {
       console.error('Failed to delete horse race memo');
+      alert('削除に失敗しました。通信状態をご確認ください。');
     }
   };
 

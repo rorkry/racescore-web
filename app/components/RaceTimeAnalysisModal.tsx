@@ -410,6 +410,15 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'nearby' | 'same'>('nearby');
 
+  // Escapeキーで閉じる
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -429,6 +438,9 @@ export default function RaceTimeAnalysisModal({ raceId, onClose }: RaceTimeAnaly
     <div
       className="fixed inset-0 bg-black/50 z-[1000] flex items-end sm:items-center justify-center"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="タイム分析"
     >
       <div
         className="bg-white w-full max-w-2xl max-h-[90dvh] rounded-t-2xl sm:rounded-2xl flex flex-col min-h-0 shadow-2xl overflow-hidden"

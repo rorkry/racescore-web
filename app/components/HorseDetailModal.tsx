@@ -238,6 +238,16 @@ const modalVariants = {
 
 export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluation, lapEvaluation, isPremium = false }: Props) {
   useBodyScrollLock();
+
+  // Escapeキーでモーダルを閉じる（アクセシビリティ）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   // === ヘルパー関数（メモ化の外で定義） ===
   
   // 全角数字を半角に変換
@@ -849,7 +859,15 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           body: JSON.stringify({ horseName }),
         });
         if (res.ok) setIsFav(false);
-        else { const d = await res.json(); setFavErrMsg(d.error || '削除失敗'); }
+        else {
+          const d = await res.json().catch(() => ({}));
+          // 404：既にDBに存在しない → state 同期（削除済み扱い）
+          if (res.status === 404) {
+            setIsFav(false);
+          } else {
+            setFavErrMsg(d.error || '削除失敗');
+          }
+        }
       } else {
         const res = await fetch('/api/user/favorites', {
           method: 'POST',
@@ -857,7 +875,15 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
           body: JSON.stringify({ horseName }),
         });
         if (res.ok) setIsFav(true);
-        else { const d = await res.json(); setFavErrMsg(d.error || '登録失敗'); }
+        else {
+          const d = await res.json().catch(() => ({}));
+          // 409：既にお気に入り登録済み → state を同期して成功扱い
+          if (res.status === 409) {
+            setIsFav(true);
+          } else {
+            setFavErrMsg(d.error || '登録失敗');
+          }
+        }
       }
     } catch { setFavErrMsg('通信エラー'); } finally {
       setFavSaving(false);
@@ -940,13 +966,16 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
 
   return (
     <AnimatePresence>
-      <motion.div 
+      <motion.div
         className="fixed inset-0 z-[965] flex items-center justify-center p-2 md:p-4"
         variants={overlayVariants}
         initial="hidden"
         animate="visible"
         exit="exit"
         onClick={onClose}
+        role="dialog"
+        aria-modal="true"
+        aria-label="馬の詳細情報"
       >
         {/* 背景画像 + オーバーレイ */}
         <div 
@@ -961,7 +990,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
         <div className="absolute inset-0 bg-black/80" />
         
         <motion.div 
-          className="relative w-full max-w-4xl max-h-[95vh] flex flex-col rounded-2xl border border-cyan-500/40 shadow-[0_0_40px_rgba(6,182,212,0.3),0_0_80px_rgba(168,85,247,0.15)]"
+          className="relative w-full max-w-4xl max-h-[95dvh] flex flex-col rounded-2xl border border-cyan-500/40 shadow-[0_0_40px_rgba(6,182,212,0.3),0_0_80px_rgba(168,85,247,0.15)]"
           variants={modalVariants}
           initial="hidden"
           animate="visible"
@@ -1117,7 +1146,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
                   <GlowingTitle icon={<HexagonIcon />} color="cyan">
                     能力レーダー
                     {(isComebackExcellent || isHighLevelRaces) && (
-                      <span className="text-xs px-2 py-0.5 bg-orange-500/20 border border-orange-500/40 rounded-full text-orange-300 ml-2 animate-pulse">
+                      <span className="text-xs px-2 py-0.5 bg-orange-500/20 border border-orange-500/40 rounded-full text-orange-300 ml-2">
                         優秀
                       </span>
                     )}
@@ -1354,7 +1383,7 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
                         </span>
                       )}
                       {hasMegaIndex && (
-                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/30 border border-red-500/60 text-red-200 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.5)]">
+                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/30 border border-red-500/60 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.5)]">
                           🔥 異次元 {megaIndexValue.toFixed(1)}
                         </span>
                       )}

@@ -291,7 +291,6 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
 
         .chat-close {
           background: rgba(0, 0, 0, 0.4);
-          backdrop-filter: blur(10px);
           border: 1px solid rgba(255, 255, 255, 0.2);
           color: white;
           width: 36px;
@@ -302,7 +301,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           align-items: center;
           justify-content: center;
           font-size: 20px;
-          transition: all 0.2s;
+          transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
           text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
         }
 
@@ -380,7 +379,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           border-radius: 12px;
           font-size: 16px;
           outline: none;
-          transition: all 0.2s;
+          transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
           color: #ffffff;
           background: rgba(255, 255, 255, 0.05);
         }
@@ -409,7 +408,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           font-size: 14px;
           font-weight: 600;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -493,7 +492,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           border-radius: 20px;
           font-size: 12px;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
           color: rgba(255, 255, 255, 0.8);
         }
 
@@ -521,7 +520,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           font-size: 12px;
           font-weight: 500;
           cursor: pointer;
-          transition: all 0.2s;
+          transition: background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
           border: 1px solid transparent;
         }
 
@@ -551,7 +550,7 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           background: rgba(255, 255, 255, 0.2);
           border-radius: 9px;
           position: relative;
-          transition: all 0.2s;
+          transition: background-color 0.2s, box-shadow 0.2s;
         }
 
         .toggle-switch.active {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // 印の種類（色は統一：黒っぽいグレー）
@@ -23,11 +23,11 @@ interface InlineMarkSelectorProps {
   compact?: boolean;
 }
 
-export default function InlineMarkSelector({ 
-  currentMark, 
-  onMarkChange, 
+function InlineMarkSelectorInner({
+  currentMark,
+  onMarkChange,
   disabled = false,
-  compact = false 
+  compact = false
 }: InlineMarkSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
@@ -100,17 +100,20 @@ export default function InlineMarkSelector({
   return (
     <div ref={containerRef} className="relative">
       {/* 現在の印表示 / クリック/タップで開く */}
+      {/* after擬似要素でタップ領域を±8px拡張（iOS HIG 44pxに近づける・視覚サイズは不変） */}
       <motion.button
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
         onTouchEnd={handleToggle}
         className={`
+          relative
           ${compact ? 'size-6 text-sm' : 'size-8 text-lg'}
           flex items-center justify-center font-bold rounded
           touch-manipulation
-          ${currentMark 
-            ? 'text-slate-700 bg-slate-200' 
+          after:content-[''] after:absolute after:inset-[-8px] after:rounded-lg
+          ${currentMark
+            ? 'text-slate-700 bg-slate-200'
             : 'text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200'
           }
         `}
@@ -179,6 +182,10 @@ export default function InlineMarkSelector({
     </div>
   );
 }
+
+// React.memo で再描画を削減（props が変わらない限り再描画されない）
+const InlineMarkSelector = memo(InlineMarkSelectorInner);
+export default InlineMarkSelector;
 
 // マークの色情報を取得するヘルパー（統一色）
 export function getMarkColor(mark: MarkType): string {

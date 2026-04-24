@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { getDb } from '@/lib/db';
 import { randomUUID } from 'crypto';
 import { isPremiumUser, getUserLimits, PLAN_LIMITS } from '@/lib/premium';
+import { normalizeHorseName } from '@/utils/normalize-horse-name';
 
 interface DbUser { id: string; }
 interface DbFavorite {
@@ -63,10 +64,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未認証' }, { status: 401 });
     }
 
-    const { horseName, horseId, note, notifyOnRace } = await request.json();
-    if (!horseName) {
+    const { horseName: rawHorseName, horseId, note, notifyOnRace } = await request.json();
+    if (!rawHorseName) {
       return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
     }
+    // フロント照合側と形式を揃えるため保存前に正規化（$/* などの先頭記号を除去）
+    const horseName = normalizeHorseName(rawHorseName);
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
@@ -127,8 +130,9 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '未認証' }, { status: 401 });
     }
 
-    const { horseName, note, notifyOnRace } = await request.json();
-    if (!horseName) return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
+    const { horseName: rawHorseName, note, notifyOnRace } = await request.json();
+    if (!rawHorseName) return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
+    const horseName = normalizeHorseName(rawHorseName);
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
@@ -193,14 +197,18 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '未認証' }, { status: 401 });
     }
 
-    const { horseName } = await request.json();
-    if (!horseName) return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
+    const { horseName: rawHorseName } = await request.json();
+    if (!rawHorseName) return NextResponse.json({ error: '馬名は必須です' }, { status: 400 });
+    const horseName = normalizeHorseName(rawHorseName);
 
     const db = getDb();
     const user = await db.prepare('SELECT id FROM users WHERE email = $1').get<DbUser>(session.user.email);
     if (!user) return NextResponse.json({ error: 'ユーザーが見つかりません' }, { status: 404 });
 
-    await db.prepare('DELETE FROM favorite_horses WHERE user_id = $1 AND horse_name = $2').run(user.id, horseName);
+    // 既存データ互換のため、正規化名と生名の両方で削除を試みる
+    await db.prepare(
+      'DELETE FROM favorite_horses WHERE user_id = $1 AND (horse_name = $2 OR horse_name = $3)'
+    ).run(user.id, horseName, rawHorseName);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Favorite delete error:', error);

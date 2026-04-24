@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useSession } from '@/app/components/Providers';
 import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
+import { pastDateToMMDD, buildPastRaceKey } from '@/utils/race-key';
 
 // ========================================
 // 型定義
@@ -118,8 +119,10 @@ function userMarkChipClass(mark: string): string {
 }
 
 function lookupUserPredictionMark(race: PastRaceData, map: Map<string, string>): string | null {
-  if (!race.date || !race.place || !race.race_number || !race.umaban) return null;
-  const rk = `${race.date}_${race.place}_${race.race_number}`;
+  if (!race.umaban) return null;
+  // predictions.race_key の保存形式は "MMDD_場_R"（app/card/page.tsx と同形）
+  const rk = buildPastRaceKey(race);
+  if (!rk) return null;
   const hn = normalizeHorseNumberForPrediction(race.umaban);
   if (!hn) return null;
   return map.get(`${rk}|${hn}`) ?? null;
@@ -173,9 +176,9 @@ function formatDateFull(dateStr: string): string {
 
 function getFinishColor(finish: string): string {
   const finishNum = parseInt(toHalfWidth(finish));
-  if (finishNum === 1) return 'text-amber-500';
-  if (finishNum === 2) return 'text-sky-500';
-  if (finishNum === 3) return 'text-orange-500';
+  if (finishNum === 1) return 'text-red-500';
+  if (finishNum === 2) return 'text-blue-500';
+  if (finishNum === 3) return 'text-green-500';
   if (finishNum <= 5) return 'text-emerald-600';
   return 'text-slate-600';
 }
@@ -244,12 +247,8 @@ function getMakikaeshiColor(value: number | null | undefined): string {
 
 // 過去走の日付(2025.04.04) → 馬場メモ用日付(0404)
 function pastDateToBabaMemoDate(dateStr: string): string {
-  const cleaned = dateStr.replace(/\s+/g, '').replace(/[\/\-]/g, '.');
-  const parts = cleaned.split('.');
-  if (parts.length >= 3) {
-    return parts[1].padStart(2, '0') + parts[2].padStart(2, '0');
-  }
-  return dateStr;
+  // 共通ユーティリティに委譲（baba_memos.date は MMDD 形式で保存）
+  return pastDateToMMDD(dateStr) || dateStr;
 }
 
 // surface("芝"/"ダ") → trackType("芝"/"ダート")
@@ -287,7 +286,7 @@ function babaMemoCacheKeyForRace(race: PastRaceData): string | null {
   return `${babaDate}::${race.place}::${surface}`;
 }
 
-function BabaMemoChip({ date, place, surface, preloaded }: {
+const BabaMemoChip = React.memo(function BabaMemoChip({ date, place, surface, preloaded }: {
   date: string;
   place: string;
   surface: string;
@@ -351,7 +350,7 @@ function BabaMemoChip({ date, place, surface, preloaded }: {
       </div>
     </div>
   );
-}
+});
 
 // ラップタイムをパースして前半/後半に分割
 function parseLapTime(lapTime: string | undefined): { 
@@ -785,7 +784,7 @@ export function HorsePastRaceModal({ horseName, onClose }: { horseName: string; 
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col"
+        className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[85dvh] sm:max-h-[80dvh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
@@ -876,17 +875,24 @@ export function RaceEntrantsSection({
     if (!key) return;
     setSavingMemo(true);
     try {
-      await fetch('/api/user/horse-race-memos', {
+      const res = await fetch('/api/user/horse-race-memos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ horseName, raceKey: key, memo }),
       });
+      if (!res.ok) {
+        alert('メモの保存に失敗しました。時間をおいて再度お試しください。');
+        return;
+      }
       setMemosMap(prev => {
         const next = new Map(prev);
         if (memo.trim()) next.set(horseName, memo.trim());
         else next.delete(horseName);
         return next;
       });
+    } catch (err) {
+      console.error('[saveMemo] Network error:', err);
+      alert('メモの保存に失敗しました。通信状態をご確認ください。');
     } finally {
       setSavingMemo(false);
       setMemoPopup(null);
@@ -937,9 +943,9 @@ export function RaceEntrantsSection({
                         ? 'bg-yellow-100'
                         : isOtherCurrentHorse
                           ? 'bg-emerald-100'
-                          : e.finish_position === '1' ? 'bg-amber-50' :
-                            e.finish_position === '2' ? 'bg-slate-50' :
-                            e.finish_position === '3' ? 'bg-orange-50' : ''
+                          : e.finish_position === '1' ? 'bg-red-50' :
+                            e.finish_position === '2' ? 'bg-blue-50' :
+                            e.finish_position === '3' ? 'bg-green-50' : ''
                     )}
                   >
                     <td className={cn('py-0.5 pr-1 text-center font-bold', getFinishColor(e.finish_position))}>
@@ -990,9 +996,9 @@ export function RaceEntrantsSection({
                   {/* モバイルのみ2段目: 通過 + 騎手(斤量) [+ メモ内容] */}
                   {(hasSecondRow || hasMemo) && (
                     <tr className={cn('sm:hidden border-b border-slate-100',
-                      e.finish_position === '1' ? 'bg-amber-50' :
-                      e.finish_position === '2' ? 'bg-slate-50' :
-                      e.finish_position === '3' ? 'bg-orange-50' : ''
+                      e.finish_position === '1' ? 'bg-red-50' :
+                      e.finish_position === '2' ? 'bg-blue-50' :
+                      e.finish_position === '3' ? 'bg-green-50' : ''
                     )}>
                       <td />
                       <td />
@@ -2061,9 +2067,8 @@ function PastRaceDetailInner({
     const list = pastRaces || [];
     const keys = new Set<string>();
     for (const r of list) {
-      if (r.date && r.place && r.race_number) {
-        keys.add(`${r.date}_${r.place}_${r.race_number}`);
-      }
+      const k = buildPastRaceKey(r);
+      if (k) keys.add(k);
     }
     if (keys.size === 0) {
       setUserPredictionMarks(new Map());
@@ -2183,9 +2188,8 @@ function PastRaceDetailInner({
       {/* PC向け: アコーディオン形式 */}
       <div className="hidden sm:block space-y-1">
         {displayRaces.map((race, idx) => {
-          const raceKey = race.date && race.place && race.race_number
-            ? `${race.date}_${race.place}_${race.race_number}`
-            : null;
+          // race_memos.race_key は "MMDD_場_R" 形式で保存されている
+          const raceKey = buildPastRaceKey(race);
           const hasMemo = raceKey ? raceMemos?.has(raceKey) : false;
           const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
           const horseRaceMemoKey = deriveHorseRaceMemoKey(race);
@@ -2239,9 +2243,8 @@ function PastRaceDetailInner({
           style={{ overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
         >
           {displayRaces.map((race, idx) => {
-            const raceKey = race.date && race.place && race.race_number
-              ? `${race.date}_${race.place}_${race.race_number}`
-              : null;
+            // race_memos.race_key は "MMDD_場_R" 形式で保存されている
+            const raceKey = buildPastRaceKey(race);
             const hasMemo = raceKey ? raceMemos?.has(raceKey) : false;
             const memoContent = raceKey ? raceMemos?.get(raceKey) : null;
             const horseRaceMemoKey = deriveHorseRaceMemoKey(race);

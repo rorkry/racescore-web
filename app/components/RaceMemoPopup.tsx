@@ -130,10 +130,15 @@ export default function RaceMemoPopup({ raceKey, raceName, onClose }: RaceMemoPo
   }
 
   return (
-    <div className="fixed inset-0 z-[940] flex items-center justify-center bg-black/50 p-4">
-      <div 
+    <div
+      className="fixed inset-0 z-[940] flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="レースメモ"
+    >
+      <div
         ref={popupRef}
-        className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80dvh] flex flex-col"
       >
         {/* ヘッダー */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">

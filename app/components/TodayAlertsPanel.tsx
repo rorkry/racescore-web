@@ -88,7 +88,7 @@ export default function TodayAlertsPanel({ isOpen, onClose }: TodayAlertsPanelPr
       <div className="fixed inset-0 z-40" onClick={onClose} />
 
       {/* panel */}
-      <div className="fixed bottom-20 right-4 sm:right-6 z-50 w-72 sm:w-80 max-h-[70vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+      <div className="fixed bottom-20 right-4 sm:right-6 z-50 w-72 sm:w-80 max-h-[70dvh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
         {/* header */}
         <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-amber-100 border-b border-amber-200 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">

@@ -96,6 +96,11 @@ export default function HorseActionPopup({
           setIsFavorite(true);
           setMessage('お気に入りに追加しました！');
           onFavoriteChange?.();
+        } else if (res.status === 409) {
+          // 既に登録済み → 状態を同期して成功扱い
+          setIsFavorite(true);
+          setMessage('既にお気に入りに登録されています');
+          onFavoriteChange?.();
         } else {
           let msg = `追加に失敗しました (HTTP ${res.status})`;
           try {
@@ -159,7 +164,12 @@ export default function HorseActionPopup({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[945] flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-[945] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="馬のアクション"
+    >
       <div className="fixed inset-0 bg-black/60" onClick={onClose} />
       
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[90dvh] flex flex-col overflow-hidden">

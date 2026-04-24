@@ -30,6 +30,7 @@ import {
   deleteFromIndexedDB,
 } from '@/lib/indexeddb-cache';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
+import { buildPastRaceKey } from '@/utils/race-key';
 
 interface PastRaceIndices {
   L4F: number | null;
@@ -376,11 +377,23 @@ export default function RaceCardPage() {
     if (!selectedVenue || !selectedRace || !date) return;
     const raceKey = `${selectedYear}${date}-${selectedVenue}-${selectedRace}`;
     const nameKey = normalizeHorseName(horseName);
-    await fetch('/api/user/horse-race-memos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ horseName, raceKey, memo }),
-    });
+    try {
+      const res = await fetch('/api/user/horse-race-memos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ horseName, raceKey, memo }),
+      });
+      if (!res.ok) {
+        // ローカル状態を更新しない（楽観的更新のロールバック相当）
+        console.error('[saveHorseRaceMemo] API error:', res.status);
+        alert('メモの保存に失敗しました。時間をおいて再度お試しください。');
+        return;
+      }
+    } catch (err) {
+      console.error('[saveHorseRaceMemo] Network error:', err);
+      alert('メモの保存に失敗しました。通信状態をご確認ください。');
+      return;
+    }
     setHorseRaceMemosForCard(prev => {
       const next = new Map(prev);
       if (memo.trim()) next.set(nameKey, memo.trim());
@@ -429,10 +442,12 @@ export default function RaceCardPage() {
       const res = await fetch('/api/user/favorites');
       if (res.ok) {
         const data = await res.json();
-        // favorite_horsesから馬名を抽出
-        const names = (data.favorites || []).map((f: { horse_name: string }) => f.horse_name);
+        // favorite_horsesから馬名を抽出（正規化して格納：照合時と形式を揃える）
+        const names = (data.favorites || []).map((f: { horse_name: string }) =>
+          normalizeHorseName(f.horse_name)
+        );
         setFavoriteHorses(names);
-        
+
         // メモをMapに保存
         const memoMap = new Map<string, string>();
         (data.favorites || []).forEach((f: { horse_name: string; note?: string }) => {
@@ -464,9 +479,11 @@ export default function RaceCardPage() {
     : null;
 
   // 予想（印）管理フック
+  // selectedYear を渡して年跨ぎ時の isRaceFinished 誤判定を防ぐ
   const { predictions, setPrediction, isRaceFinished, loading: predictionsLoading } = useRacePredictions(
     raceKey,
-    raceCard?.raceInfo.date
+    raceCard?.raceInfo.date,
+    selectedYear
   );
 
   // 過去走のレースメモを取得
@@ -474,13 +491,12 @@ export default function RaceCardPage() {
     if (!raceCard || sessionStatus !== 'authenticated') return;
     
     // 全馬の過去走からユニークなレースキーを収集
+    // race_memos.race_key は "MMDD_場_R" 形式で保存されているため buildPastRaceKey で変換
     const pastRaceKeys = new Set<string>();
     raceCard.horses.forEach(horse => {
       horse.past?.forEach(race => {
-        if (race.date && race.place && race.race_number) {
-          const key = `${race.date}_${race.place}_${race.race_number}`;
-          pastRaceKeys.add(key);
-        }
+        const key = buildPastRaceKey(race);
+        if (key) pastRaceKeys.add(key);
       });
     });
     
@@ -871,24 +887,22 @@ export default function RaceCardPage() {
       .catch(() => {});
   };
   
-  // 全レースのSagaAIをバックグラウンドでプリフェッチ（プロプランユーザー用）
+  // 現在表示中の会場のSagaAIをバックグラウンドでプリフェッチ（プロプランユーザー用）
+  // 以前は全会場・全レースを取得していたが、API/OpenAIコストが嵩み体感も重くなるため、
+  // 表示中の会場の同日レースのみに限定（他会場は切替時に都度取得）。
   const prefetchAllSagaAI = async (venuesList: Venue[], currentPlace: string, currentRace: string) => {
-    for (const venue of venuesList) {
-      for (const race of venue.races) {
-        // 現在表示中のレースはスキップ（既に取得済み）
-        if (venue.place === currentPlace && race.race_number === currentRace) {
-          continue;
-        }
-        
-        const cacheKey = `${selectedYear}_${date}_${venue.place}_${race.race_number}`;
-        if (!sagaAICache.current.has(cacheKey)) {
-          // 少し間隔を空けてAPI負荷を軽減
-          await new Promise(resolve => setTimeout(resolve, 200));
-          await fetchSagaAIData(venue.place, race.race_number, false);
-        }
+    const currentVenue = venuesList.find(v => v.place === currentPlace);
+    if (!currentVenue) return;
+    for (const race of currentVenue.races) {
+      if (race.race_number === currentRace) continue;
+      const cacheKey = `${selectedYear}_${date}_${currentVenue.place}_${race.race_number}`;
+      if (!sagaAICache.current.has(cacheKey)) {
+        // 少し間隔を空けてAPI負荷を軽減
+        await new Promise(resolve => setTimeout(resolve, 200));
+        await fetchSagaAIData(currentVenue.place, race.race_number, false);
       }
     }
-    console.log('[SagaAI] 全レースのプリフェッチ完了');
+    console.log('[SagaAI] 表示会場レースのプリフェッチ完了:', currentPlace);
   };
 
   const waitForPriorityFetch = async (signal: AbortSignal): Promise<boolean> => {
@@ -1778,13 +1792,14 @@ export default function RaceCardPage() {
                               return (
                                 <td className={`border border-slate-300 px-1 sm:px-3 py-1.5 sm:py-2 font-semibold overflow-hidden ${isFavorite ? 'text-amber-600' : 'text-slate-900'}`}>
                                   <div className="flex items-center gap-0.5 sm:gap-1 w-full">
-                                    {/* ▼ 展開ボタン */}
+                                    {/* ▼ 展開ボタン（擬似要素でタップ領域を拡張・視覚サイズは不変） */}
                                     <button
                                       className={`
-                                        flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
+                                        relative flex-shrink-0 size-5 sm:size-6 rounded flex items-center justify-center
                                         text-[10px] sm:text-xs transition-all active:scale-95
-                                        ${expandedHorse === horse.umaban 
-                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' 
+                                        after:content-[''] after:absolute after:inset-[-8px] after:rounded-lg
+                                        ${expandedHorse === horse.umaban
+                                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
                                           : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
                                         }
                                       `}
@@ -1793,15 +1808,19 @@ export default function RaceCardPage() {
                                         loadHorseRaceMemosFor(horseName);
                                       }}
                                       title="過去走を表示"
+                                      aria-label={expandedHorse === horse.umaban ? '過去走を閉じる' : '過去走を表示'}
+                                      aria-expanded={expandedHorse === horse.umaban}
                                     >
                                       {expandedHorse === horse.umaban ? '▲' : '▼'}
                                     </button>
 
-                                    {/* スマホ: 名前ゾーン（flex-1で残り幅を最大活用・性齢を2行目縦積み） */}
-                                    <div
-                                      className="flex-1 min-w-0 sm:hidden cursor-pointer leading-tight"
+                                    {/* スマホ: 名前ゾーン（button化でキーボード/スクリーンリーダー対応） */}
+                                    <button
+                                      type="button"
+                                      className="flex-1 min-w-0 sm:hidden cursor-pointer leading-tight text-left bg-transparent p-0 border-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
                                       onClick={() => setSelectedHorseDetail(horse)}
                                       title="馬の詳細情報を表示"
+                                      aria-label={`${horseName} の詳細を表示`}
                                     >
                                       <div className={`truncate text-[11px] font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}>
                                         {horseName}
@@ -1809,7 +1828,7 @@ export default function RaceCardPage() {
                                       {sexAgeStr && (
                                         <div className="text-[9px] text-slate-500 font-normal tabular-nums leading-tight">{sexAgeStr}</div>
                                       )}
-                                    </div>
+                                    </button>
 
                                     {/* スマホ: 📓バッジ（右端固定） */}
                                     {horsesWithPastHorseRaceMemo.has(horseName) && (
@@ -1824,13 +1843,15 @@ export default function RaceCardPage() {
 
                                     {/* PC: 従来の横並びレイアウト */}
                                     <div className="hidden sm:flex flex-1 min-w-0 items-center gap-1 flex-wrap">
-                                      <span
-                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors sm:text-sm font-semibold ${isFavorite ? 'hover:text-amber-700' : 'hover:text-emerald-600'}`}
+                                      <button
+                                        type="button"
+                                        className={`min-w-0 truncate cursor-pointer hover:underline transition-colors sm:text-sm font-semibold text-left bg-transparent p-0 border-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded ${isFavorite ? 'text-amber-600 hover:text-amber-700' : 'hover:text-emerald-600'}`}
                                         onClick={() => setSelectedHorseDetail(horse)}
                                         title="馬の詳細情報を表示"
+                                        aria-label={`${horseName} の詳細を表示`}
                                       >
                                         {horseName}
-                                      </span>
+                                      </button>
                                       {sexAgeStr && (
                                         <span className="flex-shrink-0 text-[10px] text-slate-600 font-normal tabular-nums border border-slate-200 rounded px-0.5 leading-none py-0.5">{sexAgeStr}</span>
                                       )}
@@ -1857,6 +1878,7 @@ export default function RaceCardPage() {
                                         draft: horseRaceMemosForCard.get(horseName) || '',
                                       })}
                                       title="今走メモを書く"
+                                      aria-label={`${horseName} の今走メモを${hasHorseRaceMemo ? '編集' : '追加'}`}
                                     >
                                       ✏️
                                     </button>
