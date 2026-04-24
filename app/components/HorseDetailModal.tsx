@@ -226,14 +226,14 @@ const overlayVariants = {
 };
 
 const modalVariants = {
-  hidden: { opacity: 0, scale: 0.95, y: 30 },
+  hidden: { opacity: 0, scale: 0.97, y: 12 },
   visible: { 
     opacity: 1, 
     scale: 1, 
     y: 0,
-    transition: { type: "spring", damping: 25, stiffness: 300 }
+    transition: { type: "tween", duration: 0.18, ease: "easeOut" }
   },
-  exit: { opacity: 0, scale: 0.95, y: 30 }
+  exit: { opacity: 0, scale: 0.97, y: 12, transition: { duration: 0.12 } }
 };
 
 export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluation, lapEvaluation, isPremium = false }: Props) {
@@ -1386,14 +1386,12 @@ export default function HorseDetailModal({ horse, onClose, raceInfo, timeEvaluat
             ) : (
               /* データなし画面 */
               <div className="py-12 text-center">
-                <motion.div
+                <div
                   className="w-20 h-20 mx-auto mb-4 text-cyan-400"
-                  animate={{ x: [-10, 10, -10] }}
-                  transition={{ duration: 2, repeat: Infinity }}
                   style={{ filter: 'drop-shadow(0 0 15px rgba(6,182,212,0.5))' }}
                 >
                   <RunningHorseIcon className="w-full h-full" />
-                </motion.div>
+                </div>
                 <h3 
                   className="text-lg font-bold text-white mb-2" 
                   style={{ fontFamily: 'monospace', textShadow: '0 0 15px rgba(6,182,212,0.5)' }}

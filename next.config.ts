@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // 本番ビルドの最適化
   compress: true,
+
+  // 使用済みエクスポートのみをバンドルに含める（tree-shaking強化）
+  experimental: {
+    optimizePackageImports: ['recharts', 'framer-motion', 'lucide-react'],
+  },
   
   // TypeScriptエラーを無視（開発時）
   typescript: {

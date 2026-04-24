@@ -1468,6 +1468,7 @@ function CompactRaceRow({
     </div>
   );
 }
+const CompactRaceRowMemo = React.memo(CompactRaceRow);
 
 // ========================================
 // モバイル向け: 横スクロールカード（横展開版）
@@ -1720,6 +1721,8 @@ function MobileRaceCard({
     </div>
   );
 }
+
+const MobileRaceCardMemo = React.memo(MobileRaceCard);
 
 // ========================================
 // モバイル向け: タップ時に表示する詳細パネル
@@ -2177,7 +2180,7 @@ function PastRaceDetailInner({
           const collapsedBabaFreeLine = babaMemoRow?.free_memo?.trim() ? babaMemoRow.free_memo.trim() : null;
 
           return (
-            <CompactRaceRow
+            <CompactRaceRowMemo
               key={`${race.date}-${race.place}-${idx}`}
               race={race}
               index={idx}
@@ -2232,7 +2235,7 @@ function PastRaceDetailInner({
             const collapsedBabaFreeLine = babaMemoRow?.free_memo?.trim() ? babaMemoRow.free_memo.trim() : null;
 
             return (
-              <MobileRaceCard
+              <MobileRaceCardMemo
                 key={race.race_id || `${race.date}-${race.place}-${race.race_number ?? idx}`}
                 race={race}
                 index={idx}

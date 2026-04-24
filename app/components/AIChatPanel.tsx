@@ -232,34 +232,6 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
               rgba(255, 255, 255, 0.03) 8px,
               rgba(255, 255, 255, 0.03) 9px
             );
-          animation: neonShift 8s linear infinite;
-        }
-
-        @keyframes neonShift {
-          0% { background-position: 0% 0%, 0 0, 0 0; }
-          100% { background-position: 200% 0%, 0 0, 0 0; }
-        }
-
-        /* ネオンライトのにじみ効果 */
-        .chat-header::after {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: 
-            radial-gradient(ellipse at 10% 50%, rgba(0, 230, 255, 0.5) 0%, transparent 40%),
-            radial-gradient(ellipse at 40% 30%, rgba(255, 0, 200, 0.4) 0%, transparent 35%),
-            radial-gradient(ellipse at 70% 60%, rgba(255, 220, 0, 0.4) 0%, transparent 35%),
-            radial-gradient(ellipse at 90% 40%, rgba(0, 255, 150, 0.4) 0%, transparent 40%);
-          filter: blur(15px);
-          animation: glowPulse 3s ease-in-out infinite alternate;
-        }
-
-        @keyframes glowPulse {
-          0% { opacity: 0.6; }
-          100% { opacity: 1; }
         }
 
         .chat-header-content {
@@ -304,12 +276,6 @@ const AIChatPanel = forwardRef<HTMLDivElement, AIChatPanelProps>(function AIChat
           filter: 
             drop-shadow(0 0 3px #ff00c8)
             drop-shadow(0 0 6px #ff00c8);
-          animation: brainGlow 2s ease-in-out infinite alternate;
-        }
-
-        @keyframes brainGlow {
-          0% { filter: drop-shadow(0 0 3px #ff00c8) drop-shadow(0 0 6px #ff00c8); }
-          100% { filter: drop-shadow(0 0 4px #ffdc00) drop-shadow(0 0 8px #ffdc00); }
         }
 
         .chat-header-subtitle {

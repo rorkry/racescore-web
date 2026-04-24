@@ -1119,7 +1119,7 @@ export default async function handler(
     // ========================================
     if (!useAI && bias === 'none' && !forceRecalculate) {
       // まずDBキャッシュをチェック
-      const dbCached = getAnalysisFromDBCache(db, year, date, rawPlace, raceNumber);
+      const dbCached = await getAnalysisFromDBCache(db, year, date, rawPlace, raceNumber);
       if (dbCached && dbCached.length > 0) {
         console.log(`[saga-ai] DBキャッシュヒット: ${year}/${date}/${rawPlace}/${raceNumber} (${dbCached.length}頭)`);
         
@@ -1197,18 +1197,36 @@ export default async function handler(
     const memberIndices: { horseNum: number; T2F: number; L4F: number; kisoScore: number; relevantRaceCount?: number; potential?: number; makikaeshi?: number }[] = [];
     const horseDataList: { horse: any; pastRaces: any[]; distanceFilteredRaces?: any[]; indices: any; kisoScore?: number }[] = [];
 
+    // ========================================
+    // 全馬のumadataを一括取得（N+1クエリ防止）
+    // ========================================
+    const uniqueHorseNamesForBulk = [...new Set(
+      horses.map((h: any) => normalizeHorseName((h.umamei || '').trim())).filter(Boolean)
+    )];
+    let allBulkPastRaces: any[] = [];
+    if (uniqueHorseNamesForBulk.length > 0) {
+      const placeholders = uniqueHorseNamesForBulk.map((_, i) => `$${i + 1}`).join(',');
+      allBulkPastRaces = await db.prepare(`
+        SELECT * FROM umadata
+        WHERE TRIM(horse_name) IN (${placeholders})
+        ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
+      `).all(...uniqueHorseNamesForBulk) as any[];
+    }
+    // 馬名別にグループ化
+    const pastRacesByHorseName = new Map<string, any[]>();
+    for (const row of allBulkPastRaces) {
+      const name = normalizeHorseName((row.horse_name || '').trim());
+      if (!pastRacesByHorseName.has(name)) pastRacesByHorseName.set(name, []);
+      pastRacesByHorseName.get(name)!.push(row);
+    }
+
     for (const horse of horses) {
       const rawHorseName = (horse.umamei || '').trim();
       const horseName = normalizeHorseName(rawHorseName);
       const horseNum = parseInt(horse.umaban || '0', 10);
 
-      // 過去走を取得（race_idの日付部分で降順ソート = 最新が先頭）
-      const pastRacesRawWithDuplicates = await db.prepare(`
-        SELECT * FROM umadata
-        WHERE TRIM(horse_name) = ?
-        ORDER BY SUBSTRING(race_id, 1, 8)::INTEGER DESC
-        LIMIT 100
-      `).all(horseName) as any[];
+      // 一括取得済みデータから該当馬の過去走を取得
+      const pastRacesRawWithDuplicates = pastRacesByHorseName.get(horseName) ?? [];
 
       // ========================================
       // 重要: 現在表示中のレース日付以前のデータのみを使用
@@ -1229,25 +1247,37 @@ export default async function handler(
         ).values()
       ).slice(0, 50);
 
+      // この馬の過去走に必要なindicesを一括取得（N+1防止）
+      const fullRaceIdList = pastRacesRaw.map((race: any) => {
+        const raceIdBase = race.race_id || '';
+        const horseNumStr = String(race.umaban || race.horse_number || '').padStart(2, '0');
+        return `${raceIdBase}${horseNumStr}`;
+      }).filter((id: string) => id.length > 2);
+
+      const indicesCache = new Map<string, any>();
+      if (fullRaceIdList.length > 0) {
+        try {
+          const idPlaceholders = fullRaceIdList.map((_: any, i: number) => `$${i + 1}`).join(',');
+          const indicesRows = await db.prepare(`
+            SELECT race_id, "L4F", "T2F", potential, makikaeshi
+            FROM indices WHERE race_id IN (${idPlaceholders})
+          `).all(...fullRaceIdList) as any[];
+          for (const row of indicesRows) {
+            indicesCache.set(row.race_id, row);
+          }
+        } catch (err) {
+          console.error(`[saga-ai] Batch indices lookup error:`, err);
+        }
+      }
+
       const pastRacesWithIndices = await Promise.all(pastRacesRaw.map(async (race: any) => {
         const raceIdBase = race.race_id || '';
         // umadataテーブルではカラム名は 'umaban'
         const horseNumStr = String(race.umaban || race.horse_number || '').padStart(2, '0');
         const fullRaceId = `${raceIdBase}${horseNumStr}`;
 
-        let indices: any = null;
-        try {
-          const indexData = await db.prepare(`
-            SELECT "L4F", "T2F", potential, makikaeshi
-            FROM indices WHERE race_id = $1
-          `).get(fullRaceId);
-          if (indexData) {
-            indices = indexData;
-            console.log(`[saga-ai] Index found for ${fullRaceId}:`, JSON.stringify(indexData));
-          }
-        } catch (err) {
-          console.error(`[saga-ai] Index lookup error for ${fullRaceId}:`, err);
-        }
+        // 一括取得済みキャッシュから参照（個別クエリ不要）
+        const indices = indicesCache.get(fullRaceId) ?? null;
 
         const pastRawPlace = race.place || '';
         const pastNormalizedPlace = normalizePlace(pastRawPlace);

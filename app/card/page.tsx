@@ -2,8 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+// jspdf / html2canvas はPDF生成時のみ動的ロード（初期バンドルサイズ削減）
+async function loadPdfLibs() {
+  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  return { jsPDF, html2canvas };
+}
 import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
 import SagaAICard, { type SagaAIResponse } from '@/app/components/SagaAICard';
 import HorseDetailModal from '@/app/components/HorseDetailModal';
@@ -208,6 +214,45 @@ function getAdjacentDate(currentDate: string, availableDates: string[], directio
     return currentIndex > 0 ? availableDates[currentIndex - 1] : null;
   }
 }
+
+// レースボタン — selectedRace変更時に関係ないボタンを再描画しないようmemo化
+// onSelect に setSelectedRace(stable)を直接渡すことでclosure再生成を防ぐ
+interface RaceButtonProps {
+  raceNumber: string;
+  isSelected: boolean;
+  highlight: { count: number } | null;
+  onSelect: (raceNumber: string) => void;
+  raceName?: string;
+  trackType?: string;
+  distance?: string;
+}
+const RaceButton = React.memo(function RaceButton({
+  raceNumber, isSelected, highlight, onSelect, raceName, trackType, distance
+}: RaceButtonProps) {
+  const cls = `px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] shadow-sm transition-transform duration-100 active:scale-95 hover:-translate-y-0.5 ${
+    isSelected
+      ? 'bg-emerald-700 text-white border-2 border-emerald-600 shadow-md'
+      : highlight
+        ? 'bg-white border-2 border-amber-400 text-slate-800'
+        : 'bg-white text-slate-800 border border-slate-300'
+  }`;
+  return (
+    <button
+      onClick={() => onSelect(raceNumber)}
+      className={cls}
+      title={highlight ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}` : ''}
+    >
+      <div className="flex flex-col items-center justify-center">
+        <div className="flex items-center gap-0.5 sm:gap-1">
+          <span className="font-semibold">{raceNumber}R</span>
+          {highlight && <span className={`text-xs ${highlight.count >= 2 ? 'text-amber-500' : 'text-amber-400'}`}>⏱️</span>}
+        </div>
+        <span className="text-[9px] sm:text-[10px] text-slate-600 truncate max-w-full font-medium">{raceName || '未分類'}</span>
+        <span className="text-[10px] sm:text-xs text-slate-700 font-medium">{trackType}{distance}m</span>
+      </div>
+    </button>
+  );
+});
 
 export default function RaceCardPage() {
   // SSRハイドレーション対応: 初期値は固定値を使用
@@ -1104,6 +1149,7 @@ export default function RaceCardPage() {
   const generateVenuePDF = async (venue: Venue) => {
     setVenuePdfGenerating(venue.place);
     try {
+      const { jsPDF, html2canvas } = await loadPdfLibs();
       const doc = new jsPDF({ compress: true });
       let isFirstPage = true;
 
@@ -1211,6 +1257,7 @@ export default function RaceCardPage() {
   const generateAllRacesPDF = async () => {
     setPdfGenerating(true);
     try {
+      const { jsPDF, html2canvas } = await loadPdfLibs();
       const doc = new jsPDF({ compress: true });
       let isFirstPage = true;
 
@@ -1449,32 +1496,17 @@ export default function RaceCardPage() {
               {currentRaces.map((race) => {
                 const highlightKey = `${selectedVenue}_${race.race_number}`;
                 const highlight = showSagaAI ? timeHighlights.get(highlightKey) : null;
-                
                 return (
-                  <motion.button
+                  <RaceButton
                     key={race.race_number}
-                    onClick={() => setSelectedRace(race.race_number)}
-                    className={`px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] shadow-sm ${
-                      selectedRace === race.race_number
-                        ? 'bg-emerald-700 text-white border-2 border-emerald-600 shadow-md'
-                        : highlight
-                          ? 'bg-white border-2 border-amber-400 text-slate-800'
-                          : 'bg-white text-slate-800 border border-slate-300'
-                    }`}
-                    title={highlight ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}` : ''}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ duration: 0.15, ease: 'easeOut' }}
-                  >
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="flex items-center gap-0.5 sm:gap-1">
-                        <span className="font-semibold">{race.race_number}R</span>
-                        {highlight && <span className={`text-xs ${highlight.count >= 2 ? 'text-amber-500' : 'text-amber-400'}`}>⏱️</span>}
-                      </div>
-                      <span className="text-[9px] sm:text-[10px] text-slate-600 truncate max-w-full font-medium">{race.class_name || '未分類'}</span>
-                      <span className="text-[10px] sm:text-xs text-slate-700 font-medium">{race.track_type}{race.distance}m</span>
-                    </div>
-                  </motion.button>
+                    raceNumber={race.race_number}
+                    isSelected={selectedRace === race.race_number}
+                    highlight={highlight}
+                    onSelect={setSelectedRace}
+                    raceName={race.class_name}
+                    trackType={race.track_type}
+                    distance={race.distance}
+                  />
                 );
               })}
             </div>
@@ -1520,10 +1552,10 @@ export default function RaceCardPage() {
             <motion.div 
               key={`${selectedVenue}_${selectedRace}`}
               className="space-y-6"
-              initial={{ opacity: 0, y: -20 }}
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.15, ease: 'easeOut' }}
             >
             {selectedRace && showRacePace && (
               <div id="race-pace-card">
