@@ -1962,17 +1962,20 @@ export default function RaceCardPage() {
         )}
 
         {/* 馬上下ナビゲーション（過去走展開中 or 馬詳細モーダル表示中に浮かぶ矢印ボタン） */}
+        {/* 位置: right-3 / top-[62%] = 右手親指のスイートゾーン（中央より少し下）          */}
+        {/* サイズ: w-11 h-11 = 44px（iOS/Android 推奨最小タップ領域）                       */}
+        {/* z-[975] = HorseDetailModal(z-965) より上に重ねてモーダル表示中でも操作可能       */}
         {currentNavIdx >= 0 && (
-          <div className="fixed right-3 top-1/2 -translate-y-1/2 z-[975] flex flex-col gap-2 pointer-events-none">
+          <div className="fixed right-3 top-[62%] -translate-y-1/2 z-[975] flex flex-col items-center gap-1.5 pointer-events-none">
             {/* 上ボタン */}
             <button
               onClick={handleNavPrev}
               disabled={!prevNavHorse}
               aria-label="前の馬"
-              className={`pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all duration-100 active:scale-95 ${
+              className={`pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center shadow-md border-2 transition-all duration-100 active:scale-95 ${
                 prevNavHorse
-                  ? 'bg-white/90 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-                  : 'bg-white/50 border-slate-200 text-slate-300 cursor-not-allowed'
+                  ? 'bg-white/95 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+                  : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1980,22 +1983,20 @@ export default function RaceCardPage() {
               </svg>
             </button>
 
-            {/* 現在の馬番インジケーター */}
-            <div className="pointer-events-none text-center">
-              <span className="text-[10px] font-bold text-slate-500 bg-white/80 px-1.5 py-0.5 rounded-full shadow-sm border border-slate-200">
-                {currentNavIdx + 1}/{sortedHorsesForNav.length}
-              </span>
-            </div>
+            {/* 現在位置インジケーター */}
+            <span className="pointer-events-none text-[10px] font-bold text-slate-500 bg-white/90 px-1.5 py-0.5 rounded-full shadow-sm border border-slate-200 leading-none">
+              {currentNavIdx + 1}<span className="text-slate-300">/</span>{sortedHorsesForNav.length}
+            </span>
 
             {/* 下ボタン */}
             <button
               onClick={handleNavNext}
               disabled={!nextNavHorse}
               aria-label="次の馬"
-              className={`pointer-events-auto w-10 h-10 rounded-full flex items-center justify-center shadow-lg border transition-all duration-100 active:scale-95 ${
+              className={`pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center shadow-md border-2 transition-all duration-100 active:scale-95 ${
                 nextNavHorse
-                  ? 'bg-white/90 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
-                  : 'bg-white/50 border-slate-200 text-slate-300 cursor-not-allowed'
+                  ? 'bg-white/95 border-slate-300 text-slate-700 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700'
+                  : 'bg-white/60 border-slate-200 text-slate-300 cursor-not-allowed'
               }`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
