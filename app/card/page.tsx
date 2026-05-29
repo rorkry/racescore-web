@@ -144,6 +144,12 @@ function toHalfWidth(str: string): string {
     String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
 }
 
+// race-highlights API と同じ正規化（先頭・末尾の数字を除去）
+function normalizePlaceKey(p: string): string {
+  if (!p) return '';
+  return p.replace(/^[0-9０-９]+/, '').replace(/[0-9０-９]+$/, '').trim();
+}
+
 function abbrevSeibetsu(s: string | undefined): string {
   if (!s?.trim()) return '';
   const t = toHalfWidth(s);
@@ -243,31 +249,38 @@ interface RaceButtonProps {
   raceNumber: string;
   isSelected: boolean;
   highlight: { count: number } | null;
+  hasMemoHorse?: boolean;
   onSelect: (raceNumber: string) => void;
   raceName?: string;
   trackType?: string;
   distance?: string;
 }
 const RaceButton = React.memo(function RaceButton({
-  raceNumber, isSelected, highlight, onSelect, raceName, trackType, distance
+  raceNumber, isSelected, highlight, hasMemoHorse, onSelect, raceName, trackType, distance
 }: RaceButtonProps) {
   const cls = `px-2 sm:px-3 py-2 rounded text-xs sm:text-sm relative min-h-[56px] sm:min-h-[60px] shadow-sm transition-transform duration-100 active:scale-95 hover:-translate-y-0.5 ${
     isSelected
       ? 'bg-emerald-700 text-white border-2 border-emerald-600 shadow-md'
       : highlight
         ? 'bg-white border-2 border-amber-400 text-slate-800'
-        : 'bg-white text-slate-800 border border-slate-300'
+        : hasMemoHorse
+          ? 'bg-white border-2 border-sky-400 text-slate-800'
+          : 'bg-white text-slate-800 border border-slate-300'
   }`;
+  const titleParts: string[] = [];
+  if (highlight) titleParts.push(`時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}`);
+  if (hasMemoHorse) titleParts.push('メモ済み馬が出走');
   return (
     <button
       onClick={() => onSelect(raceNumber)}
       className={cls}
-      title={highlight ? `時計優秀: ${highlight.count >= 2 ? '上位超え' : '0.5秒以内'}` : ''}
+      title={titleParts.join(' / ')}
     >
       <div className="flex flex-col items-center justify-center">
         <div className="flex items-center gap-0.5 sm:gap-1">
           <span className="font-semibold">{raceNumber}R</span>
           {highlight && <span className={`text-xs ${highlight.count >= 2 ? 'text-amber-500' : 'text-amber-400'}`}>⏱️</span>}
+          {hasMemoHorse && <span className="text-xs">📓</span>}
         </div>
         <span className="text-[9px] sm:text-[10px] text-slate-600 truncate max-w-full font-medium">{raceName || '未分類'}</span>
         <span className="text-[10px] sm:text-xs text-slate-700 font-medium">{trackType}{distance}m</span>
@@ -298,6 +311,8 @@ export default function RaceCardPage() {
   const [expandedHorse, setExpandedHorse] = useState<string | null>(null);
   const [venuePdfGenerating, setVenuePdfGenerating] = useState<string | null>(null);
   const [timeHighlights, setTimeHighlights] = useState<Map<string, { count: number; timeDiff: number }>>(new Map());
+  // メモ済み馬がいるレース: "${place}_${raceNumber}" → true
+  const [memoHighlights, setMemoHighlights] = useState<Set<string>>(new Set());
   
   const [bulkGenerating, setBulkGenerating] = useState(false);
   const [bulkGenerateProgress, setBulkGenerateProgress] = useState<{ current: number; total: number } | null>(null);
@@ -378,6 +393,31 @@ export default function RaceCardPage() {
       })
       .catch(() => setHorsesWithPastHorseRaceMemo(new Set()));
   }, [selectedYear, date, selectedVenue, selectedRace, sessionStatus]);
+
+  // レースタブのメモ馬ハイライト: date/year が決まったらその日の全レースに対して一括取得
+  // selectedVenue に依存しない（全会場分を取得して Map に保持）
+  useEffect(() => {
+    if (!date || !selectedYear || sessionStatus !== 'authenticated') {
+      setMemoHighlights(new Set());
+      return;
+    }
+    const ymd = `${selectedYear}${date}`;
+    fetch(`/api/user/race-highlights?ymd=${ymd}`)
+      .then(r => r.ok ? r.json() : { highlights: [] })
+      .then((data: { highlights: Array<{ place: string; raceNumber: string; memoHorses: string[] }> }) => {
+        const s = new Set<string>();
+        for (const h of data.highlights || []) {
+          if (h.memoHorses && h.memoHorses.length > 0) {
+            // キー形式を RaceButton の highlightKey と一致させる: "${place}_${raceNumber}"
+            // raceNumber は整数文字列に正規化（"01"→"1"）
+            const raceNo = String(parseInt(h.raceNumber, 10));
+            s.add(`${h.place}_${raceNo}`);
+          }
+        }
+        setMemoHighlights(s);
+      })
+      .catch(() => setMemoHighlights(new Set()));
+  }, [selectedYear, date, sessionStatus]);
 
   // 馬の過去走メモを遅延ロード（過去走パネルを開いたとき）
   async function loadHorseRaceMemosFor(horseName: string) {
@@ -1569,6 +1609,7 @@ export default function RaceCardPage() {
             <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2">
               レース
               {showSagaAI && <span className="ml-2 text-xs text-emerald-700 font-medium">(⏱️ = 時計優秀な馬あり)</span>}
+              {sessionStatus === 'authenticated' && <span className="ml-2 text-xs text-sky-600 font-medium">(📓 = メモ済み馬あり)</span>}
               {prefetchProgress && (
                 <span className="ml-2 text-xs text-amber-700 font-medium">
                   📥 レースデータ読み込み中 {prefetchProgress.current}/{prefetchProgress.total}
@@ -1582,12 +1623,16 @@ export default function RaceCardPage() {
               {currentRaces.map((race) => {
                 const highlightKey = `${selectedVenue}_${race.race_number}`;
                 const highlight = showSagaAI ? timeHighlights.get(highlightKey) : null;
+                // memoHighlights のキーは race-highlights API と同形式（place は先頭末尾の数字を除去）
+                const memoKey = `${normalizePlaceKey(selectedVenue)}_${String(parseInt(race.race_number, 10))}`;
+                const hasMemoHorse = memoHighlights.has(memoKey);
                 return (
                   <RaceButton
                     key={race.race_number}
                     raceNumber={race.race_number}
                     isSelected={selectedRace === race.race_number}
                     highlight={highlight}
+                    hasMemoHorse={hasMemoHorse}
                     onSelect={setSelectedRace}
                     raceName={race.class_name}
                     trackType={race.track_type}
