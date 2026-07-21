@@ -148,6 +148,10 @@ export class AnalysisConnector {
     try {
       const db = getDb();
       
+      // indicesテーブルのフィールド
+      const indicesFields = ['makikaeshi', 'potential', 'L4F', 'T2F', 'revouma', 'cushion'];
+      const hasIndicesCondition = conditions.some(c => indicesFields.includes(c.field));
+      
       // 条件からWHERE句を構築
       const whereClauses: string[] = [];
       const params: any[] = [];
@@ -155,40 +159,43 @@ export class AnalysisConnector {
       for (const condition of conditions) {
         const { field, operator, value } = condition;
         const paramIndex = params.length + 1;
+        
+        // indicesテーブルのフィールドには "i." プレフィックスを付ける
+        const fieldName = indicesFields.includes(field) ? `i."${field}"` : `u.${field}`;
 
         switch (operator) {
           case 'eq':
-            whereClauses.push(`${field} = $${paramIndex}`);
+            whereClauses.push(`${fieldName} = $${paramIndex}`);
             params.push(value);
             break;
 
           case 'gte':
-            whereClauses.push(`${field} >= $${paramIndex}`);
+            whereClauses.push(`${fieldName} >= $${paramIndex}`);
             params.push(value);
             break;
 
           case 'lte':
-            whereClauses.push(`${field} <= $${paramIndex}`);
+            whereClauses.push(`${fieldName} <= $${paramIndex}`);
             params.push(value);
             break;
 
           case 'in':
             if (Array.isArray(value)) {
               const placeholders = value.map((_, i) => `$${paramIndex + i}`).join(', ');
-              whereClauses.push(`${field} IN (${placeholders})`);
+              whereClauses.push(`${fieldName} IN (${placeholders})`);
               params.push(...value);
             }
             break;
 
           case 'between':
             if (Array.isArray(value) && value.length === 2) {
-              whereClauses.push(`${field} BETWEEN $${paramIndex} AND $${paramIndex + 1}`);
+              whereClauses.push(`${fieldName} BETWEEN $${paramIndex} AND $${paramIndex + 1}`);
               params.push(value[0], value[1]);
             }
             break;
 
           case 'contains':
-            whereClauses.push(`${field} ILIKE $${paramIndex}`);
+            whereClauses.push(`${fieldName} ILIKE $${paramIndex}`);
             params.push(`%${value}%`);
             break;
 
@@ -200,6 +207,11 @@ export class AnalysisConnector {
       const whereClause = whereClauses.length > 0 
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
+      
+      // indicesテーブルとのJOIN（必要な場合のみ）
+      const joinClause = hasIndicesCondition
+        ? `LEFT JOIN indices i ON (u.race_id || LPAD(u.umaban, 2, '0')) = i.race_id`
+        : '';
 
       // 統計クエリ（全角→半角変換、数値チェック追加）
       const statsQuery = `
@@ -207,50 +219,51 @@ export class AnalysisConnector {
           COUNT(*) as sample_size,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$' 
-                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1 
+              WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$' 
+                AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1 
               THEN 1.0 
               ELSE 0.0 
             END
           ) as win_rate,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 2 
+              WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+                AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 2 
               THEN 1.0 
               ELSE 0.0 
             END
           ) as place_rate,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3 
+              WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+                AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3 
               THEN 1.0 
               ELSE 0.0 
             END
           ) as show_rate,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
-              THEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::FLOAT
+              WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+              THEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::FLOAT
               ELSE NULL
             END
           ) as avg_finish,
           AVG(
             CASE 
-              WHEN TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
-              THEN TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+              WHEN TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+              THEN TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT
               ELSE NULL
             END
           ) as avg_win_odds,
           AVG(
             CASE 
-              WHEN TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
-              THEN TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+              WHEN TRANSLATE(u.place_odds_low, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+              THEN TRANSLATE(u.place_odds_low, '０１２３４５６７８９.．', '0123456789..')::FLOAT
               ELSE NULL
             END
           ) as avg_place_odds
-        FROM umadata
+        FROM umadata u
+        ${joinClause}
         ${whereClause}
       `;
 

@@ -21,6 +21,14 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
 4. 再現性のある条件にする
 
 【利用可能なフィールド（実際のDBカラム名）】
+🔥 独自指数（最優先・高精度）:
+  - makikaeshi: 巻き返し指数（0.0〜10.0、負けた後に巻き返す傾向）
+  - potential: ポテンシャル指数（0.0〜10.0、馬の潜在能力）
+  - L4F: Last 4F（0.0〜10.0、上がり4ハロン評価）
+  - T2F: Time 2F（0.0〜10.0、タイム評価）
+  - revouma: レボウマ（0.0〜10.0）
+  - cushion: クッション値（0.0〜10.0）
+
 血統:
   - sire: 種牡馬名（例: "ディープインパクト", "キングカメハメハ"）
   ※注意: sire_type, dam_type, broodmare_sireは現在使用不可
@@ -38,9 +46,11 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
   - field_size: 頭数（例: "18", "16", "12"）
 
 【重要な注意事項】
+- 巻き返し指数（makikaeshi）とポテンシャル指数（potential）は最も重要な指標
 - 血統タイプ（sire_type, dam_type）や母父（broodmare_sire）は使用しないこと
 - sire（父名）のみ使用可能
 - 条件は実際にDBに存在するカラムのみを使用すること
+- 指数を使った条件を優先的に検証すること
 
 【条件生成のポイント】
 - 1つの条件は1-3個のフィールドを組み合わせる
@@ -216,27 +226,26 @@ function parseConditions(conditions: any[]): RuleCondition[] {
  */
 export function getDefaultConditions(theme: string): ConditionCandidate[] {
   // テーマに応じたデフォルト条件
-  if (theme.includes('母父') || theme.includes('血統')) {
+  if (theme.includes('指数') || theme.includes('ポテンシャル')) {
     return [
       {
-        name: '母父ディープ×芝',
+        name: '巻き返し指数高い馬',
         conditions: [
-          { field: 'broodmare_sire', operator: 'eq', value: 'ディープインパクト' },
-          { field: 'surface', operator: 'eq', value: '芝' }
+          { field: 'makikaeshi', operator: 'gte', value: 3.0 }
         ],
-        hypothesis: 'ディープを母父に持つ馬は芝で期待値が高い',
-        expected_outcome: '回収率120%以上、三着内率40%以上',
-        reasoning: 'ディープは芝で圧倒的な成績を残しており、その血を引く馬は芝適性が高い傾向'
+        hypothesis: '巻き返し指数が高い馬は前走負けても次走で好走する',
+        expected_outcome: '三着内率40%以上、複勝回収率110%以上',
+        reasoning: '巻き返し指数は負けた後の巻き返し傾向を示す独自指標'
       },
       {
-        name: '母父キンカメ×ダート',
+        name: 'ポテンシャル×巻き返し',
         conditions: [
-          { field: 'broodmare_sire', operator: 'eq', value: 'キングカメハメハ' },
-          { field: 'surface', operator: 'eq', value: 'ダート' }
+          { field: 'potential', operator: 'gte', value: 5.0 },
+          { field: 'makikaeshi', operator: 'gte', value: 2.0 }
         ],
-        hypothesis: 'キンカメを母父に持つ馬はダートで期待値が高い',
-        expected_outcome: '回収率115%以上',
-        reasoning: 'キンカメはパワー系の血統でダート適性が高い'
+        hypothesis: 'ポテンシャルと巻き返し指数が共に高い馬は期待値が高い',
+        expected_outcome: '三着内率50%以上、複勝回収率120%以上',
+        reasoning: '潜在能力と巻き返し力の両方を持つ馬は信頼度が高い'
       }
     ];
   }
@@ -244,16 +253,30 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
   if (theme.includes('枠') || theme.includes('waku')) {
     return [
       {
-        name: '東京ダート1600m×1枠',
+        name: '内枠×高指数（芝）',
         conditions: [
-          { field: 'place', operator: 'eq', value: '東京' },
-          { field: 'surface', operator: 'eq', value: 'ダート' },
-          { field: 'distance', operator: 'eq', value: 1600 },
-          { field: 'waku', operator: 'eq', value: 1 }
+          { field: 'waku', operator: 'lte', value: 3 },
+          { field: 'distance', operator: 'contains', value: '芝' },
+          { field: 'potential', operator: 'gte', value: 4.0 }
         ],
-        hypothesis: '東京ダート1600mは内枠有利',
-        expected_outcome: '回収率110%以上',
-        reasoning: '内枠からの先行が有利なコース形態'
+        hypothesis: '芝コースでは内枠とポテンシャル指数の相乗効果がある',
+        expected_outcome: '勝率20%以上、複勝回収率115%以上',
+        reasoning: '内枠の位置取り有利性と能力の組み合わせ'
+      }
+    ];
+  }
+  
+  if (theme.includes('血統') || theme.includes('sire')) {
+    return [
+      {
+        name: 'ディープ産駒×芝',
+        conditions: [
+          { field: 'sire', operator: 'eq', value: 'ディープインパクト' },
+          { field: 'distance', operator: 'contains', value: '芝' }
+        ],
+        hypothesis: 'ディープ産駒は芝で期待値が高い',
+        expected_outcome: '回収率120%以上、三着内率40%以上',
+        reasoning: 'ディープは芝で圧倒的な成績を残している'
       }
     ];
   }
@@ -261,14 +284,33 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
   // 汎用デフォルト
   return [
     {
-      name: '芝2000m',
+      name: '巻き返し指数高い馬',
       conditions: [
-        { field: 'surface', operator: 'eq', value: '芝' },
-        { field: 'distance', operator: 'between', value: [1800, 2200] }
+        { field: 'makikaeshi', operator: 'gte', value: 3.0 }
       ],
-      hypothesis: '芝中距離は安定した条件',
-      expected_outcome: '回収率100%以上',
-      reasoning: '最も一般的な距離帯でデータが豊富'
+      hypothesis: '巻き返し指数が高い馬は前走負けても次走で好走する',
+      expected_outcome: '三着内率40%以上、複勝回収率110%以上',
+      reasoning: '巻き返し指数は負けた後の巻き返し傾向を示す独自指標'
+    },
+    {
+      name: '人気薄×高指数',
+      conditions: [
+        { field: 'popularity', operator: 'gte', value: 4 },
+        { field: 'potential', operator: 'gte', value: 5.0 }
+      ],
+      hypothesis: '人気薄でもポテンシャル指数が高ければ穴馬候補',
+      expected_outcome: '単勝回収率150%以上（高配当狙い）',
+      reasoning: '人気に反映されていない能力を指数で検出'
+    },
+    {
+      name: '芝中距離×高指数',
+      conditions: [
+        { field: 'distance', operator: 'contains', value: '芝' },
+        { field: 'potential', operator: 'gte', value: 4.0 }
+      ],
+      hypothesis: '芝コースでポテンシャル指数が高い馬は安定',
+      expected_outcome: '回収率105%以上',
+      reasoning: '芝適性と能力の組み合わせ'
     }
   ];
 }
