@@ -156,7 +156,7 @@ export class AnalysisConnector {
     try {
       const db = getDb();
       
-      // indicesテーブルのフィールド
+      // indicesテーブルのフィールド（前走指数として使用）
       const indicesFields = ['makikaeshi', 'potential', 'L4F', 'T2F', 'revouma', 'cushion'];
       const hasIndicesCondition = conditions.some(c => indicesFields.includes(c.field));
       
@@ -216,9 +216,20 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
       
-      // indicesテーブルとのJOIN（必要な場合のみ）
+      // 前走とその指数を取得するJOIN（indicesフィールドが使用される場合）
       const joinClause = hasIndicesCondition
-        ? `LEFT JOIN indices i ON (u.race_id || LPAD(u.umaban, 2, '0')) = i.race_id`
+        ? `
+          -- 前走を特定（同じ馬の直近レース）
+          LEFT JOIN LATERAL (
+            SELECT * FROM umadata u_prev
+            WHERE u_prev.horse_name = u.horse_name
+              AND u_prev.date < u.date
+            ORDER BY u_prev.date DESC
+            LIMIT 1
+          ) u_last ON true
+          -- 前走の指数を取得
+          LEFT JOIN indices i ON (u_last.race_id || LPAD(u_last.umaban, 2, '0')) = i.race_id
+        `
         : '';
 
       // 統計クエリ（全角→半角変換、数値チェック追加）
