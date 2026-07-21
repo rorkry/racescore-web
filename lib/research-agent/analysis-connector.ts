@@ -201,46 +201,31 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ（TRIMを追加して空白を除去）
+      // 統計クエリ（正規表現チェックを削除、直接数値比較）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
           AVG(
             CASE 
-              WHEN TRIM(finish_position) ~ '^[0-9]+$' AND CAST(TRIM(finish_position) AS INTEGER) = 1 THEN 1.0 
+              WHEN finish_position::INTEGER = 1 THEN 1.0 
               ELSE 0.0 
             END
           ) as win_rate,
           AVG(
             CASE 
-              WHEN TRIM(finish_position) ~ '^[0-9]+$' AND CAST(TRIM(finish_position) AS INTEGER) <= 2 THEN 1.0 
+              WHEN finish_position::INTEGER <= 2 THEN 1.0 
               ELSE 0.0 
             END
           ) as place_rate,
           AVG(
             CASE 
-              WHEN TRIM(finish_position) ~ '^[0-9]+$' AND CAST(TRIM(finish_position) AS INTEGER) <= 3 THEN 1.0 
+              WHEN finish_position::INTEGER <= 3 THEN 1.0 
               ELSE 0.0 
             END
           ) as show_rate,
-          AVG(
-            CASE 
-              WHEN TRIM(finish_position) ~ '^[0-9]+$' THEN CAST(TRIM(finish_position) AS FLOAT)
-              ELSE NULL
-            END
-          ) as avg_finish,
-          AVG(
-            CASE 
-              WHEN TRIM(win_odds) ~ '^[0-9.]+$' THEN CAST(TRIM(win_odds) AS FLOAT)
-              ELSE NULL
-            END
-          ) as avg_win_odds,
-          AVG(
-            CASE 
-              WHEN TRIM(place_odds_low) ~ '^[0-9.]+$' THEN CAST(TRIM(place_odds_low) AS FLOAT)
-              ELSE NULL
-            END
-          ) as avg_place_odds
+          AVG(finish_position::FLOAT) as avg_finish,
+          AVG(win_odds::FLOAT) as avg_win_odds,
+          AVG(place_odds_low::FLOAT) as avg_place_odds
         FROM umadata
         ${whereClause}
       `;
