@@ -1,8 +1,9 @@
 'use client';
 
-import { use as usePromise } from 'react';
+import { use as usePromise, useState } from 'react';
 import useSWR from 'swr';
 import EntryTable from '@/app/components/EntryTable';
+import { ResearchPanel } from '@/app/components/ResearchPanel';
 import { assignLabelsByZ } from '@/utils/labels';
 import { computeKisoScore } from '@/utils/getClusterData';
 import type { RecordRow } from '@/types/record';
@@ -21,6 +22,7 @@ type Props = {
 export default function RacePage({ params }: Props) {
   const { raceKey } = usePromise(params);
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'entry' | 'research'>('entry');
 
   const { data, error } = useSWR(
     raceKey ? `/api/race-detail/${raceKey}` : null,
@@ -74,18 +76,47 @@ export default function RacePage({ params }: Props) {
         </button>
       </div>
 
-      <EntryTable
-        horses={horses}
-        labels={labels}
-        scores={scores}
-        marks={{}}
-        setMarks={() => {}}
-        favorites={new Set()}
-        setFavorites={() => {}}
-        showLabels
-        raceKey={raceKey}
-        frameNumbers={{}}
-      />
+      {/* タブナビゲーション */}
+      <div className="mb-4 flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('entry')}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'entry'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          📊 出走表
+        </button>
+        <button
+          onClick={() => setActiveTab('research')}
+          className={`px-4 py-2 font-medium transition-colors ${
+            activeTab === 'research'
+              ? 'border-b-2 border-blue-600 text-blue-600'
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          🔬 研究AI
+        </button>
+      </div>
+
+      {/* コンテンツエリア */}
+      {activeTab === 'entry' ? (
+        <EntryTable
+          horses={horses}
+          labels={labels}
+          scores={scores}
+          marks={{}}
+          setMarks={() => {}}
+          favorites={new Set()}
+          setFavorites={() => {}}
+          showLabels
+          raceKey={raceKey}
+          frameNumbers={{}}
+        />
+      ) : (
+        <ResearchPanel targetType="race" targetId={raceKey} />
+      )}
     </main>
   );
 }
