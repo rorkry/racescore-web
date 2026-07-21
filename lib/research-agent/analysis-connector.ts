@@ -201,13 +201,28 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ（TEXT型カラムを数値に変換、TRIMを追加）
+      // 統計クエリ（TEXT型カラムを数値に変換、数値比較を使用）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
-          AVG(CASE WHEN TRIM(finish_position) = '1' THEN 1.0 ELSE 0.0 END) as win_rate,
-          AVG(CASE WHEN TRIM(finish_position) IN ('1', '2') THEN 1.0 ELSE 0.0 END) as place_rate,
-          AVG(CASE WHEN TRIM(finish_position) IN ('1', '2', '3') THEN 1.0 ELSE 0.0 END) as show_rate,
+          AVG(
+            CASE 
+              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) = 1 THEN 1.0 
+              ELSE 0.0 
+            END
+          ) as win_rate,
+          AVG(
+            CASE 
+              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) <= 2 THEN 1.0 
+              ELSE 0.0 
+            END
+          ) as place_rate,
+          AVG(
+            CASE 
+              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) <= 3 THEN 1.0 
+              ELSE 0.0 
+            END
+          ) as show_rate,
           AVG(
             CASE 
               WHEN finish_position ~ '^[0-9]+$' THEN CAST(finish_position AS FLOAT)
