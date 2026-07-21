@@ -149,6 +149,15 @@ export default function Header() {
                         </Link>
 
                         <Link 
+                          href="/research-lab"
+                          onClick={() => setIsMenuOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          <span className="size-5 flex items-center justify-center text-gray-400">🔬</span>
+                          研究ラボ
+                        </Link>
+
+                        <Link 
                           href="/mypage/stats"
                           onClick={() => setIsMenuOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
