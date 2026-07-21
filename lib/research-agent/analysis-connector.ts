@@ -201,31 +201,31 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ（正規表現チェックを削除、直接数値比較）
+      // 統計クエリ（全角数字を半角数字に変換してから処理）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
           AVG(
             CASE 
-              WHEN finish_position::INTEGER = 1 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1 THEN 1.0 
               ELSE 0.0 
             END
           ) as win_rate,
           AVG(
             CASE 
-              WHEN finish_position::INTEGER <= 2 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 2 THEN 1.0 
               ELSE 0.0 
             END
           ) as place_rate,
           AVG(
             CASE 
-              WHEN finish_position::INTEGER <= 3 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3 THEN 1.0 
               ELSE 0.0 
             END
           ) as show_rate,
-          AVG(finish_position::FLOAT) as avg_finish,
-          AVG(win_odds::FLOAT) as avg_win_odds,
-          AVG(place_odds_low::FLOAT) as avg_place_odds
+          AVG(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::FLOAT) as avg_finish,
+          AVG(TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT) as avg_win_odds,
+          AVG(TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..')::FLOAT) as avg_place_odds
         FROM umadata
         ${whereClause}
       `;
