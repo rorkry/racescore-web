@@ -4,6 +4,7 @@
  */
 
 import type { RuleCondition } from '@/types/rule';
+import { getDb } from '@/lib/db';
 
 export interface AnalysisStatistics {
   sample_size: number;
@@ -108,58 +109,7 @@ export class AnalysisConnector {
    * 血統分析
    */
   private async callPedigreeAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    // 血統条件を抽出
-    const sireCondition = conditions.find(c => c.field === 'sire');
-    const broodmareSireCondition = conditions.find(c => c.field === 'broodmare_sire');
-    const surfaceCondition = conditions.find(c => c.field === 'surface');
-    const distanceCondition = conditions.find(c => c.field === 'distance');
-    
-    // APIエンドポイント選択
-    if (broodmareSireCondition) {
-      // 母父分析
-      const params = {
-        horse_name: null, // ダミー（実際は直接クエリを投げる）
-        broodmare_sire: broodmareSireCondition.value,
-        race_surface: surfaceCondition?.value || '芝',
-        race_distance: this.extractDistance(distanceCondition)
-      };
-      
-      const response = await fetch(`${this.baseUrl}/api/ai-tools/broodmare-sire`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Broodmare sire analysis failed: ${response.statusText}`);
-      }
-      
-      return this.parseAnalysisResponse(await response.json());
-    }
-    
-    if (sireCondition) {
-      // 種牡馬分析
-      const params = {
-        horse_name: null,
-        sire: sireCondition.value,
-        race_surface: surfaceCondition?.value || '芝',
-        race_distance: this.extractDistance(distanceCondition) || 2000
-      };
-      
-      const response = await fetch(`${this.baseUrl}/api/ai-tools/sire`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Sire analysis failed: ${response.statusText}`);
-      }
-      
-      return this.parseAnalysisResponse(await response.json());
-    }
-    
-    // フォールバック
+    // 血統系の条件は汎用分析で処理
     return this.callGenericAnalysis(conditions);
   }
   
@@ -167,15 +117,6 @@ export class AnalysisConnector {
    * 前走分析
    */
   private async callLastRaceAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    // レースレベル分析を使用
-    const levelCondition = conditions.find(c => c.field === 'last_race_level');
-    
-    if (levelCondition) {
-      // TODO: レベル分析APIの呼び出し
-      // 現状はlevel_analysisは特定のrace_idが必要なので、
-      // ここでは直接DBクエリを投げる必要がある
-    }
-    
     return this.callGenericAnalysis(conditions);
   }
   
@@ -183,69 +124,20 @@ export class AnalysisConnector {
    * 枠順分析
    */
   private async callWakuAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    const wakuCondition = conditions.find(c => c.field === 'waku');
-    const placeCondition = conditions.find(c => c.field === 'place');
-    const distanceCondition = conditions.find(c => c.field === 'distance');
-    const surfaceCondition = conditions.find(c => c.field === 'surface');
-    
-    if (!wakuCondition) {
-      return this.callGenericAnalysis(conditions);
-    }
-    
-    const params = {
-      race_place: placeCondition?.value || '東京',
-      race_distance: this.extractDistance(distanceCondition) || 2000,
-      track_type: surfaceCondition?.value || '芝',
-      waku_number: parseInt(wakuCondition.value, 10)
-    };
-    
-    const response = await fetch(`${this.baseUrl}/api/ai-tools/waku`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Waku analysis failed: ${response.statusText}`);
-    }
-    
-    return this.parseAnalysisResponse(await response.json());
+    return this.callGenericAnalysis(conditions);
   }
   
   /**
    * コース分析
    */
   private async callCourseAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    const placeCondition = conditions.find(c => c.field === 'place');
-    const distanceCondition = conditions.find(c => c.field === 'distance');
-    const surfaceCondition = conditions.find(c => c.field === 'surface');
-    
-    const params = {
-      place: placeCondition?.value || '東京',
-      distance: this.extractDistance(distanceCondition) || 2000,
-      surface: surfaceCondition?.value || '芝',
-      horse_name: null // ダミー
-    };
-    
-    const response = await fetch(`${this.baseUrl}/api/ai-tools/course`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params)
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Course analysis failed: ${response.statusText}`);
-    }
-    
-    return this.parseAnalysisResponse(await response.json());
+    return this.callGenericAnalysis(conditions);
   }
   
   /**
    * 複合条件の分析
    */
   private async callCombinedAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    // 複数条件の場合、DBに直接クエリを投げる
-    // TODO: 汎用的なクエリビルダーの実装
     return this.callGenericAnalysis(conditions);
   }
   
@@ -253,18 +145,170 @@ export class AnalysisConnector {
    * 汎用分析（DBクエリ）
    */
   private async callGenericAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    const response = await fetch(`${this.baseUrl}/api/ai-tools/generic-analysis`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conditions })
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Generic analysis failed: ${response.statusText} - ${errorText}`);
+    try {
+      const db = getDb();
+      
+      // 条件からWHERE句を構築
+      const whereClauses: string[] = [];
+      const params: any[] = [];
+      
+      for (const condition of conditions) {
+        const { field, operator, value } = condition;
+        const paramIndex = params.length + 1;
+
+        switch (operator) {
+          case 'eq':
+            whereClauses.push(`${field} = $${paramIndex}`);
+            params.push(value);
+            break;
+
+          case 'gte':
+            whereClauses.push(`${field} >= $${paramIndex}`);
+            params.push(value);
+            break;
+
+          case 'lte':
+            whereClauses.push(`${field} <= $${paramIndex}`);
+            params.push(value);
+            break;
+
+          case 'in':
+            if (Array.isArray(value)) {
+              const placeholders = value.map((_, i) => `$${paramIndex + i}`).join(', ');
+              whereClauses.push(`${field} IN (${placeholders})`);
+              params.push(...value);
+            }
+            break;
+
+          case 'between':
+            if (Array.isArray(value) && value.length === 2) {
+              whereClauses.push(`${field} BETWEEN $${paramIndex} AND $${paramIndex + 1}`);
+              params.push(value[0], value[1]);
+            }
+            break;
+
+          case 'contains':
+            whereClauses.push(`${field} ILIKE $${paramIndex}`);
+            params.push(`%${value}%`);
+            break;
+
+          default:
+            console.warn(`Unknown operator: ${operator}`);
+        }
+      }
+
+      const whereClause = whereClauses.length > 0 
+        ? `WHERE ${whereClauses.join(' AND ')}`
+        : '';
+
+      // 統計クエリ
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as sample_size,
+          AVG(CASE WHEN finish_position = '1' THEN 1.0 ELSE 0.0 END) as win_rate,
+          AVG(CASE WHEN finish_position <= '2' THEN 1.0 ELSE 0.0 END) as place_rate,
+          AVG(CASE WHEN finish_position <= '3' THEN 1.0 ELSE 0.0 END) as show_rate,
+          AVG(CAST(finish_position AS FLOAT)) as avg_finish,
+          AVG(win_odds) as avg_win_odds,
+          AVG(place_odds_low) as avg_place_odds_low
+        FROM umadata
+        ${whereClause}
+      `;
+
+      console.log('[AnalysisConnector] Generic Analysis Query:', statsQuery);
+      console.log('[AnalysisConnector] Params:', params);
+
+      const result = await db.prepare(statsQuery).get<any>(...params);
+
+      if (!result) {
+        throw new Error('No result from database query');
+      }
+
+      const sample_size = parseInt(result.sample_size, 10) || 0;
+
+      if (sample_size === 0) {
+        return {
+          statistics: {
+            sample_size: 0,
+            win_rate: 0,
+            place_rate: 0,
+            show_rate: 0,
+            avg_finish: 0,
+            win_return_rate: 0,
+            place_return_rate: 0,
+            expected_value_diff: 0
+          },
+          confidence: {
+            confidence_level: 0,
+            is_significant: false,
+            warnings: ['サンプル数が0件です']
+          }
+        };
+      }
+
+      const win_rate = parseFloat(result.win_rate) || 0;
+      const place_rate = parseFloat(result.place_rate) || 0;
+      const show_rate = parseFloat(result.show_rate) || 0;
+      const avg_finish = parseFloat(result.avg_finish) || 0;
+      const avg_win_odds = parseFloat(result.avg_win_odds) || 0;
+      const avg_place_odds_low = parseFloat(result.avg_place_odds_low) || 0;
+
+      // 回収率計算
+      const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 10) : 0;
+      const place_return_rate = avg_place_odds_low > 0 ? (show_rate * avg_place_odds_low * 10) : 0;
+
+      // 投資パフォーマンス
+      const total_investment = sample_size * 100;
+      const total_return_place = total_investment * (place_return_rate / 100);
+      const profit_place = total_return_place - total_investment;
+
+      // 期待値（複勝ベース）
+      const expected_value_diff = profit_place / sample_size;
+
+      // 信頼度計算
+      let confidence_level = 0;
+      if (sample_size >= 100) {
+        confidence_level = 95;
+      } else if (sample_size >= 50) {
+        confidence_level = 80;
+      } else if (sample_size >= 30) {
+        confidence_level = 65;
+      } else {
+        confidence_level = 40;
+      }
+
+      const warnings: string[] = [];
+      if (sample_size < 30) {
+        warnings.push('サンプル数が少ない（30件未満）');
+      }
+      if (show_rate < 0.1) {
+        warnings.push('三着内率が低い（10%未満）');
+      }
+
+      return {
+        statistics: {
+          sample_size,
+          win_rate,
+          place_rate,
+          show_rate,
+          avg_finish,
+          win_return_rate,
+          place_return_rate,
+          expected_value_diff,
+          total_investment,
+          total_return: total_return_place,
+          profit: profit_place
+        },
+        confidence: {
+          confidence_level,
+          is_significant: sample_size >= 30,
+          warnings
+        }
+      };
+    } catch (error) {
+      console.error('[AnalysisConnector] Generic analysis error:', error);
+      throw error;
     }
-    
-    return this.parseAnalysisResponse(await response.json());
   }
   
   /**
