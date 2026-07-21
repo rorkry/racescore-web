@@ -222,7 +222,6 @@ export class AnalysisConnector {
           ) as avg_win_odds,
           AVG(
             CASE 
-              WHEN place_odds ~ '^[0-9.]+$' THEN CAST(place_odds AS FLOAT)
               WHEN place_odds_low ~ '^[0-9.]+$' THEN CAST(place_odds_low AS FLOAT)
               ELSE NULL
             END
