@@ -201,31 +201,55 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ（全角数字を半角数字に変換してから処理）
+      // 統計クエリ（全角→半角変換、数値チェック追加）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$' 
+                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1 
+              THEN 1.0 
               ELSE 0.0 
             END
           ) as win_rate,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 2 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 2 
+              THEN 1.0 
               ELSE 0.0 
             END
           ) as place_rate,
           AVG(
             CASE 
-              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3 THEN 1.0 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+                AND TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::INTEGER <= 3 
+              THEN 1.0 
               ELSE 0.0 
             END
           ) as show_rate,
-          AVG(TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::FLOAT) as avg_finish,
-          AVG(TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT) as avg_win_odds,
-          AVG(TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..')::FLOAT) as avg_place_odds
+          AVG(
+            CASE 
+              WHEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+              THEN TRANSLATE(finish_position, '０１２３４５６７８９', '0123456789')::FLOAT
+              ELSE NULL
+            END
+          ) as avg_finish,
+          AVG(
+            CASE 
+              WHEN TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+              THEN TRANSLATE(win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+              ELSE NULL
+            END
+          ) as avg_win_odds,
+          AVG(
+            CASE 
+              WHEN TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+              THEN TRANSLATE(place_odds_low, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+              ELSE NULL
+            END
+          ) as avg_place_odds
         FROM umadata
         ${whereClause}
       `;
