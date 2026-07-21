@@ -22,7 +22,7 @@ type Props = {
 export default function RacePage({ params }: Props) {
   const { raceKey } = usePromise(params);
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'entry' | 'research'>('entry');
+  const [activeTab, setActiveTab] = useState<'entry' | 'quick-analysis'>('entry');
 
   const { data, error } = useSWR(
     raceKey ? `/api/race-detail/${raceKey}` : null,
@@ -89,14 +89,20 @@ export default function RacePage({ params }: Props) {
           📊 出走表
         </button>
         <button
-          onClick={() => setActiveTab('research')}
+          onClick={() => setActiveTab('quick-analysis')}
           className={`px-4 py-2 font-medium transition-colors ${
-            activeTab === 'research'
+            activeTab === 'quick-analysis'
               ? 'border-b-2 border-blue-600 text-blue-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
-          🔬 研究AI
+          🔍 クイック分析
+        </button>
+        <button
+          onClick={() => router.push('/research-lab')}
+          className="ml-auto px-4 py-2 font-medium text-purple-600 hover:text-purple-700 transition-colors"
+        >
+          🔬 研究ラボで開く →
         </button>
       </div>
 
@@ -115,7 +121,40 @@ export default function RacePage({ params }: Props) {
           frameNumbers={{}}
         />
       ) : (
-        <ResearchPanel targetType="race" targetId={raceKey} />
+        <div className="space-y-6">
+          {/* 保存済み条件との照合 */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold mb-4">✅ 保存済み条件との照合</h2>
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-4xl mb-3">🔄</div>
+              <p className="mb-2">条件マッチング機能は実装予定です</p>
+              <p className="text-sm">研究ラボで保存した条件が自動で照合されます</p>
+            </div>
+          </div>
+          
+          {/* クイック分析 */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-bold mb-4">🔍 クイック分析</h2>
+            <ResearchPanel targetType="race" targetId={raceKey} />
+          </div>
+          
+          {/* 研究ラボへの導線 */}
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 text-center">
+            <h3 className="font-bold text-purple-900 mb-2">
+              🔬 より詳しく研究したい場合
+            </h3>
+            <p className="text-purple-800 mb-4">
+              研究ラボでは、レースに紐づかない自由な研究ができます。<br />
+              条件を発見し、保存して、今後のレースで活用しましょう。
+            </p>
+            <button
+              onClick={() => router.push('/research-lab')}
+              className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors font-medium"
+            >
+              研究ラボを開く →
+            </button>
+          </div>
+        </div>
       )}
     </main>
   );
