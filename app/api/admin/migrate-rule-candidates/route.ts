@@ -6,10 +6,11 @@
  */
 
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 
 export async function POST() {
   try {
+    const db = await getDbAsync();
     console.log('Creating rule_candidates table...');
 
     // テーブル作成
@@ -78,6 +79,7 @@ export async function POST() {
 
 export async function GET() {
   try {
+    const db = await getDbAsync();
     // テーブルの存在確認
     const result = await db.prepare(`
       SELECT EXISTS (

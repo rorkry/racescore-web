@@ -3,15 +3,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { AutonomousResearchAgent } from '@/lib/research-agent/autonomous-engine';
 import { saveRuleCandidate } from '@/lib/services/rule-candidate-service';
 
 export async function POST(req: NextRequest) {
   try {
     // 認証チェック
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     
     if (!session?.user) {
       return NextResponse.json(

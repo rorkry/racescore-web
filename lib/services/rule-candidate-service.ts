@@ -3,7 +3,7 @@
  * rule_candidates テーブルの操作
  */
 
-import { db } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 
 export interface RuleCandidate {
   id: string;
@@ -35,6 +35,7 @@ export async function saveRuleCandidate(
   userId: string,
   candidate: Omit<RuleCandidate, 'id' | 'user_id' | 'status' | 'created_at' | 'updated_at'>
 ): Promise<RuleCandidate> {
+  const db = await getDbAsync();
   const id = `rule_${Date.now()}_${Math.random().toString(36).substring(7)}`;
   
   const result = await db.prepare(`
@@ -74,6 +75,7 @@ export async function getRuleCandidates(
   userId: string,
   status?: 'pending' | 'approved' | 'rejected'
 ): Promise<RuleCandidate[]> {
+  const db = await getDbAsync();
   let query = 'SELECT * FROM rule_candidates WHERE user_id = $1';
   const params: any[] = [userId];
   
@@ -100,6 +102,7 @@ export async function getRuleCandidates(
  * ルール候補を承認
  */
 export async function approveRuleCandidate(id: string, userId: string): Promise<void> {
+  const db = await getDbAsync();
   await db.prepare(`
     UPDATE rule_candidates
     SET status = 'approved',
@@ -113,6 +116,7 @@ export async function approveRuleCandidate(id: string, userId: string): Promise<
  * ルール候補を却下
  */
 export async function rejectRuleCandidate(id: string, userId: string): Promise<void> {
+  const db = await getDbAsync();
   await db.prepare(`
     UPDATE rule_candidates
     SET status = 'rejected',
@@ -126,6 +130,7 @@ export async function rejectRuleCandidate(id: string, userId: string): Promise<v
  * ルール候補を削除
  */
 export async function deleteRuleCandidate(id: string, userId: string): Promise<void> {
+  const db = await getDbAsync();
   await db.prepare(`
     DELETE FROM rule_candidates
     WHERE id = $1 AND user_id = $2
@@ -136,6 +141,7 @@ export async function deleteRuleCandidate(id: string, userId: string): Promise<v
  * 特定のルール候補を取得
  */
 export async function getRuleCandidate(id: string, userId: string): Promise<RuleCandidate | null> {
+  const db = await getDbAsync();
   const result = await db.prepare(`
     SELECT * FROM rule_candidates
     WHERE id = $1 AND user_id = $2
