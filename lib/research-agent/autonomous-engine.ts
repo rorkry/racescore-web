@@ -5,6 +5,7 @@
 
 import OpenAI from 'openai';
 import type { Rule, RuleCondition } from '@/types/rule';
+import { AnalysisConnector } from './analysis-connector';
 
 // 研究エージェントのシステムプロンプト
 const RESEARCH_AGENT_SYSTEM_PROMPT = `
@@ -133,12 +134,14 @@ export interface ResearchSession {
 export class AutonomousResearchAgent {
   private openai: OpenAI;
   private userId: string;
+  private analysisConnector: AnalysisConnector;
   
-  constructor(userId: string) {
+  constructor(userId: string, baseUrl?: string) {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY
     });
     this.userId = userId;
+    this.analysisConnector = new AnalysisConnector(baseUrl);
   }
   
   /**
@@ -370,38 +373,60 @@ export class AutonomousResearchAgent {
   private async evaluateCondition(
     candidate: ConditionCandidate
   ): Promise<ConditionResult> {
-    // TODO: 既存の分析ツールを呼び出し
-    // 仮実装
-    const statistics = {
-      sample_size: 150,
-      win_rate: 0.18,
-      place_return_rate: 142.5,
-      show_rate: 0.45,
-      expected_value_diff: 47.2
-    };
-    
-    const confidence = {
-      confidence_level: 85,
-      is_significant: true
-    };
-    
-    const is_promising = this.isPromising({
-      candidate,
-      statistics,
-      confidence,
-      is_promising: false
-    });
-    
-    // AIに結果を解釈させる
-    const ai_interpretation = await this.interpretResult(candidate, statistics, is_promising);
-    
-    return {
-      candidate,
-      statistics,
-      confidence,
-      is_promising,
-      ai_interpretation
-    };
+    try {
+      // 既存の分析ツールで検証
+      const result = await this.analysisConnector.evaluateCondition(candidate.conditions);
+      
+      const statistics = {
+        sample_size: result.statistics.sample_size,
+        win_rate: result.statistics.win_rate,
+        place_return_rate: result.statistics.place_return_rate,
+        show_rate: result.statistics.show_rate,
+        expected_value_diff: result.statistics.expected_value_diff
+      };
+      
+      const confidence = {
+        confidence_level: result.confidence.confidence_level,
+        is_significant: result.confidence.is_significant
+      };
+      
+      const is_promising = this.isPromising({
+        candidate,
+        statistics,
+        confidence,
+        is_promising: false
+      });
+      
+      // AIに結果を解釈させる
+      const ai_interpretation = await this.interpretResult(candidate, statistics, is_promising);
+      
+      return {
+        candidate,
+        statistics,
+        confidence,
+        is_promising,
+        ai_interpretation
+      };
+    } catch (error) {
+      console.error('Condition evaluation failed:', error);
+      
+      // エラー時はデフォルト値
+      return {
+        candidate,
+        statistics: {
+          sample_size: 0,
+          win_rate: 0,
+          place_return_rate: 0,
+          show_rate: 0,
+          expected_value_diff: 0
+        },
+        confidence: {
+          confidence_level: 0,
+          is_significant: false
+        },
+        is_promising: false
+      };
+    }
   }
   
   /**

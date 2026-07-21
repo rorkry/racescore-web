@@ -35,10 +35,29 @@ export default function ResearchLabPage() {
     setError('');
     
     try {
-      // TODO: 研究ラボAPI実装後に実装
-      alert('研究ラボAPI実装中...');
+      const response = await fetch('/api/research-lab/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          theme: query,
+          mode: 'manual'  // 手動モード
+        })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.error || 'エラーが発生しました');
+        return;
+      }
+      
+      const data = await response.json();
+      alert(`研究完了！\n有望条件: ${data.promising_count}個\nルール候補: ${data.rule_candidates?.length || 0}個`);
+      
+      // ページをリロードして最新のルール候補を表示
+      window.location.reload();
     } catch (err) {
-      setError('エラーが発生しました');
+      setError('通信エラーが発生しました');
+      console.error('Research error:', err);
     } finally {
       setLoading(false);
     }
