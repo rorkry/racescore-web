@@ -11,6 +11,10 @@ export interface ConditionStatistics {
   win_return_rate: number;
   place_return_rate: number;
   expected_value_diff: number;
+  avg_finish?: number;
+  total_investment?: number;
+  total_return?: number;
+  profit?: number;
 }
 
 export interface ConfidenceMetrics {
