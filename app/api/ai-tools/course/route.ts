@@ -5,8 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import {
+  calculateCompetitionPerformance,
+  calculateInvestmentPerformance,
+  evaluatePerformance,
+  generatePerformanceSummary
+} from '@/lib/research/performance-calculator';
 
-const TOOL_VERSION = '1.0';
+const TOOL_VERSION = '1.1';
 
 // コース特性データ（簡易版）
 const COURSE_DATA: Record<string, any> = {
@@ -34,37 +40,49 @@ export async function POST(req: NextRequest) {
       requires_stamina: distance >= 2000
     };
     
-    let horseCompatibility = null;
+    let competition = null;
+    let investment = null;
+    let score = null;
     let summary = `${place}${surface}${distance}mは直線${courseChar.straight_length}m、高低差${courseChar.elevation_change}m。`;
     
     if (horse_name) {
       const db = getDb();
       
       // 馬のコース成績を取得
-      const courseRecord = await db.prepare(`
+      const races = await db.prepare(`
         SELECT 
-          COUNT(*) as runs,
-          SUM(CASE WHEN finish_position IN ('1') THEN 1 ELSE 0 END) as wins,
-          SUM(CASE WHEN finish_position IN ('1','2','3') THEN 1 ELSE 0 END) as top3
+          finish_position,
+          field_size,
+          popularity
         FROM umadata
         WHERE horse_name = $1
           AND place LIKE $2
           AND distance LIKE $3
-      `).get<any>(horse_name, `%${place}%`, `${surface}${distance}%`);
+        LIMIT 50
+      `).all<any>(horse_name, `%${place}%`, `${surface}${distance}%`);
       
-      if (courseRecord && courseRecord.runs > 0) {
-        const winRate = courseRecord.wins / courseRecord.runs;
-        horseCompatibility = winRate;
-        summary += ` ${horse_name}は当コースで${courseRecord.runs}戦${courseRecord.wins}勝。`;
+      if (races && races.length > 0) {
+        competition = calculateCompetitionPerformance(races);
+        const racesWithOdds = races.map(r => ({
+          ...r,
+          odds: parseFloat(r.popularity || '5') * 2
+        }));
+        investment = calculateInvestmentPerformance(racesWithOdds);
+        score = evaluatePerformance(competition, investment);
+        
+        summary += ` ${horse_name}の当コース成績: ` + 
+          generatePerformanceSummary(competition, investment, score);
       } else {
-        summary += ` ${horse_name}は当コース初。`;
+        summary += ` ${horse_name}は当コース未経験。`;
       }
     }
     
     return NextResponse.json({
       schema_version: TOOL_VERSION,
       course_characteristics: courseChar,
-      horse_compatibility: horseCompatibility,
+      competition_performance: competition,
+      investment_performance: investment,
+      performance_score: score,
       summary
     });
     

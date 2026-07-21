@@ -5,8 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import {
+  calculateCompetitionPerformance,
+  calculateInvestmentPerformance,
+  evaluatePerformance,
+  generatePerformanceSummary
+} from '@/lib/research/performance-calculator';
 
-const TOOL_VERSION = '1.0';
+const TOOL_VERSION = '1.1';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,40 +44,59 @@ export async function POST(req: NextRequest) {
     
     const sire = horse.sire;
     
-    // 種牡馬の成績を集計（簡易版）
-    const stats = await db.prepare(`
+    // 種牡馬の成績データを取得（詳細版）
+    const races = await db.prepare(`
       SELECT 
-        COUNT(*) as total_runs,
-        SUM(CASE WHEN finish_position = '1' THEN 1 ELSE 0 END) as wins,
-        SUM(CASE WHEN finish_position IN ('1','2','3') THEN 1 ELSE 0 END) as top3,
-        AVG(CASE WHEN distance LIKE $1 AND distance ~ '^[芝ダ]?[0-9]+$' 
-            THEN CAST(SUBSTRING(distance FROM '[0-9]+') AS INTEGER) END) as avg_distance
+        finish_position,
+        field_size,
+        popularity,
+        distance
       FROM umadata
-      WHERE sire = $2 AND distance LIKE $3
-    `).get<any>(
-      `${race_surface}%`,
-      sire,
-      `${race_surface}%`
-    );
+      WHERE sire = $1 AND distance LIKE $2
+      LIMIT 300
+    `).all<any>(sire, `${race_surface}%`);
     
-    const winRate = stats.total_runs > 0 ? (stats.wins / stats.total_runs) : 0;
-    const top3Rate = stats.total_runs > 0 ? (stats.top3 / stats.total_runs) : 0;
+    if (!races || races.length === 0) {
+      return NextResponse.json({
+        schema_version: TOOL_VERSION,
+        error: 'No data',
+        summary: `${sire}産駒の${race_surface}データが見つかりません`
+      });
+    }
     
-    // AI用の簡潔なサマリー
-    const summary = `${sire}産駒は${race_surface}で勝率${(winRate * 100).toFixed(1)}%、連対率${(top3Rate * 100).toFixed(1)}%。` +
-      `今回の距離${race_distance}mは${stats.avg_distance ? 
-        (Math.abs(race_distance - stats.avg_distance) < 400 ? '適性範囲内' : 'やや外れる') : 
-        '不明'}。`;
+    // 競争成績を計算
+    const competition = calculateCompetitionPerformance(races);
+    
+    // 投資成績を計算（簡易オッズ推定）
+    const racesWithOdds = races.map(r => ({
+      ...r,
+      odds: parseFloat(r.popularity || '5') * 2 // 人気からオッズを簡易推定
+    }));
+    const investment = calculateInvestmentPerformance(racesWithOdds);
+    
+    // 期待値評価
+    const score = evaluatePerformance(competition, investment);
+    
+    // 距離適性
+    const avgDistance = races.reduce((sum, r) => {
+      const dist = parseInt(r.distance?.match(/\d+/)?.[0] || '0', 10);
+      return sum + dist;
+    }, 0) / races.length;
+    
+    const distanceMatch = Math.abs(race_distance - avgDistance) < 400;
+    
+    // サマリー生成
+    const summary = `${sire}産駒${race_surface}: ` + 
+      generatePerformanceSummary(competition, investment, score) +
+      ` 今回${race_distance}mは${distanceMatch ? '適性範囲' : '範囲外'}。`;
     
     return NextResponse.json({
       schema_version: TOOL_VERSION,
       sire,
-      stats: {
-        total_runs: stats.total_runs,
-        win_rate: winRate,
-        top3_rate: top3Rate,
-        avg_distance: stats.avg_distance
-      },
+      competition_performance: competition,
+      investment_performance: investment,
+      performance_score: score,
+      distance_match: distanceMatch,
       summary
     });
     
