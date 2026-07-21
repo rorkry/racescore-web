@@ -33,6 +33,14 @@ export interface AnalysisResult {
     expected_value_diff: number;
     is_better: boolean;
   };
+  odds_breakdown?: {
+    total_horses: number;
+    horses_with_odds: number;
+    winning_horses: number;
+    avg_all_odds: number;
+    avg_winning_odds: number;
+    avg_losing_odds: number;
+  };
 }
 
 export class AnalysisConnector {
@@ -387,6 +395,16 @@ export class AnalysisConnector {
       console.log(`  期待損益: ${expected_profit_per_100yen >= 0 ? '+' : ''}${expected_profit_per_100yen.toFixed(1)}円`);
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
+      // デバッグ情報をオブジェクトとして保存
+      const oddsBreakdown = {
+        total_horses: parseInt(debugResult.total_horses, 10) || 0,
+        horses_with_odds: parseInt(debugResult.horses_with_odds, 10) || 0,
+        winning_horses: parseInt(debugResult.winning_horses, 10) || 0,
+        avg_all_odds: avg_win_odds,
+        avg_winning_odds: parseFloat(debugResult.avg_winning_odds) || 0,
+        avg_losing_odds: parseFloat(debugResult.avg_losing_odds) || 0
+      };
+
       // 投資パフォーマンス
       const total_investment = sample_size * 100;
       const total_return_place = total_investment * (place_return_rate / 100);
@@ -433,7 +451,8 @@ export class AnalysisConnector {
           confidence_level,
           is_significant: sample_size >= 30,
           warnings
-        }
+        },
+        odds_breakdown: oddsBreakdown
       };
     } catch (error) {
       console.error('[AnalysisConnector] Generic analysis error:', error);

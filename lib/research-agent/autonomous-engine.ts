@@ -129,6 +129,14 @@ export interface ConditionResult {
     evaluated_at: string;
     evaluation_duration_ms: number;
     analysis_tool_used: string;
+    odds_breakdown?: {
+      total_horses: number;
+      horses_with_odds: number;
+      winning_horses: number;
+      avg_all_odds: number;
+      avg_winning_odds: number;
+      avg_losing_odds: number;
+    };
   };
 }
 
@@ -564,7 +572,8 @@ export class AutonomousResearchAgent {
         debug_info: {
           evaluated_at: new Date().toISOString(),
           evaluation_duration_ms: duration,
-          analysis_tool_used: 'AnalysisConnector'
+          analysis_tool_used: 'AnalysisConnector',
+          odds_breakdown: result.odds_breakdown
         }
       };
     } catch (error) {

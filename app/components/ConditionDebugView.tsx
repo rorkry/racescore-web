@@ -193,11 +193,72 @@ export default function ConditionDebugView({ result, index }: ConditionDebugView
           <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
             🔧 デバッグ情報
           </summary>
-          <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-            <div>評価時刻: {new Date(result.debug_info.evaluated_at).toLocaleString('ja-JP')}</div>
-            <div>処理時間: {result.debug_info.evaluation_duration_ms}ms</div>
-            <div>使用ツール: {result.debug_info.analysis_tool_used}</div>
-            <div>統計的信頼度: {result.confidence.confidence_level.toFixed(0)}%</div>
+          <div className="mt-2 p-3 bg-gray-100 rounded text-xs space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>評価時刻: {new Date(result.debug_info.evaluated_at).toLocaleString('ja-JP')}</div>
+              <div>処理時間: {result.debug_info.evaluation_duration_ms}ms</div>
+              <div>使用ツール: {result.debug_info.analysis_tool_used}</div>
+              <div>統計的信頼度: {result.confidence.confidence_level.toFixed(0)}%</div>
+            </div>
+            
+            {/* オッズ内訳 */}
+            {result.debug_info.odds_breakdown && (
+              <div className="border-t border-gray-300 pt-2 mt-2">
+                <div className="font-bold text-gray-700 mb-2">📊 オッズ内訳（回収率計算の根拠）</div>
+                <div className="bg-white p-3 rounded border border-gray-300 space-y-2">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <span className="text-gray-600">総馬数:</span>{' '}
+                      <span className="font-bold">{result.debug_info.odds_breakdown.total_horses}頭</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">オッズあり:</span>{' '}
+                      <span className="font-bold">{result.debug_info.odds_breakdown.horses_with_odds}頭</span>
+                      {' '}
+                      <span className="text-gray-500">
+                        ({((result.debug_info.odds_breakdown.horses_with_odds / result.debug_info.odds_breakdown.total_horses) * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">勝利馬:</span>{' '}
+                      <span className="font-bold text-green-700">{result.debug_info.odds_breakdown.winning_horses}頭</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-200 pt-2">
+                    <div className="text-xs font-bold text-gray-700 mb-1">平均オッズ比較:</div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="bg-blue-50 p-2 rounded">
+                        <div className="text-gray-600 text-xs">全体平均</div>
+                        <div className="font-bold text-blue-700">{result.debug_info.odds_breakdown.avg_all_odds.toFixed(2)}倍</div>
+                      </div>
+                      <div className="bg-green-50 p-2 rounded">
+                        <div className="text-gray-600 text-xs">勝った馬</div>
+                        <div className="font-bold text-green-700">{result.debug_info.odds_breakdown.avg_winning_odds.toFixed(2)}倍</div>
+                      </div>
+                      <div className="bg-gray-50 p-2 rounded">
+                        <div className="text-gray-600 text-xs">負けた馬</div>
+                        <div className="font-bold text-gray-700">{result.debug_info.odds_breakdown.avg_losing_odds.toFixed(2)}倍</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-200 pt-2">
+                    <div className="text-xs">
+                      <span className="font-bold">回収率計算式:</span>{' '}
+                      勝率({(stats.win_rate * 100).toFixed(2)}%) × 全体平均オッズ({result.debug_info.odds_breakdown.avg_all_odds.toFixed(2)}倍) = {stats.win_return_rate.toFixed(1)}%
+                    </div>
+                    {result.debug_info.odds_breakdown.avg_winning_odds > result.debug_info.odds_breakdown.avg_all_odds * 3 && (
+                      <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
+                        <div className="text-yellow-800 text-xs">
+                          ⚠️ 勝った馬のオッズが全体平均の3倍以上です。高配当馬に偏っている可能性があります。
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </details>
       )}
