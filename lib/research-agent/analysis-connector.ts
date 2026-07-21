@@ -253,25 +253,18 @@ export class AnalysisConnector {
    * 汎用分析（DBクエリ）
    */
   private async callGenericAnalysis(conditions: RuleCondition[]): Promise<AnalysisResult> {
-    // TODO: 汎用的なDB分析APIの実装
-    // 現時点では仮の値を返す
-    return {
-      statistics: {
-        sample_size: 100,
-        win_rate: 0.15,
-        place_rate: 0.30,
-        show_rate: 0.40,
-        avg_finish: 5.2,
-        win_return_rate: 95.0,
-        place_return_rate: 110.0,
-        expected_value_diff: 10.0
-      },
-      confidence: {
-        confidence_level: 65,
-        is_significant: true,
-        warnings: ['汎用分析を使用']
-      }
-    };
+    const response = await fetch(`${this.baseUrl}/api/ai-tools/generic-analysis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conditions })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Generic analysis failed: ${response.statusText} - ${errorText}`);
+    }
+    
+    return this.parseAnalysisResponse(await response.json());
   }
   
   /**

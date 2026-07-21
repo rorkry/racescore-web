@@ -16,39 +16,71 @@ const TOOL_VERSION = '1.0';
 
 export async function POST(req: NextRequest) {
   try {
-    const { horse_name, race_surface, race_distance } = await req.json();
-    
-    if (!horse_name) {
-      return NextResponse.json({ 
-        schema_version: TOOL_VERSION,
-        error: 'horse_name is required'
-      }, { status: 400 });
-    }
+    const { horse_name, broodmare_sire, race_surface, race_distance } = await req.json();
     
     const db = getDb();
     
-    // 馬の母父情報を取得
-    const horse = await db.prepare(`
-      SELECT 
-        broodmare_sire,
-        broodmare_sire_type,
-        sire,
-        sire_type
-      FROM umadata 
-      WHERE horse_name = $1 
-      ORDER BY date DESC LIMIT 1
-    `).get<any>(horse_name);
+    let targetBroodmareSire: string | undefined;
+    let broodmareSireType = '不明';
+    let sireInfo: any = {};
     
-    if (!horse?.broodmare_sire) {
+    // broodmare_sireが直接指定されている場合（研究エージェント用）
+    if (broodmare_sire) {
+      targetBroodmareSire = broodmare_sire;
+      // broodmare_sire_typeを取得（オプション）
+      const bmsData = await db.prepare(`
+        SELECT 
+          broodmare_sire_type,
+          COUNT(*) as count
+        FROM umadata 
+        WHERE broodmare_sire = $1 
+        GROUP BY broodmare_sire_type
+        ORDER BY count DESC
+        LIMIT 1
+      `).get<any>(broodmare_sire);
+      
+      if (bmsData) {
+        broodmareSireType = bmsData.broodmare_sire_type || '不明';
+      }
+    }
+    // horse_nameが指定されている場合
+    else if (horse_name) {
+      const horse = await db.prepare(`
+        SELECT 
+          broodmare_sire,
+          broodmare_sire_type,
+          sire,
+          sire_type
+        FROM umadata 
+        WHERE horse_name = $1 
+        ORDER BY date DESC LIMIT 1
+      `).get<any>(horse_name);
+      
+      if (!horse?.broodmare_sire) {
+        return NextResponse.json({ 
+          schema_version: TOOL_VERSION,
+          error: 'Broodmare sire not found',
+          summary: `${horse_name}の母父データが見つかりません` 
+        });
+      }
+      
+      targetBroodmareSire = horse.broodmare_sire;
+      broodmareSireType = horse.broodmare_sire_type || '不明';
+      sireInfo = horse;
+    }
+    else {
       return NextResponse.json({ 
         schema_version: TOOL_VERSION,
-        error: 'Broodmare sire not found',
-        summary: `${horse_name}の母父データが見つかりません` 
-      });
+        error: 'Either horse_name or broodmare_sire is required'
+      }, { status: 400 });
     }
     
-    const broodmareSire = horse.broodmare_sire;
-    const broodmareSireType = horse.broodmare_sire_type || '不明';
+    if (!targetBroodmareSire) {
+      return NextResponse.json({ 
+        schema_version: TOOL_VERSION,
+        error: 'Broodmare sire information not found'
+      }, { status: 400 });
+    }
     
     // 母父が同じ馬の成績データを取得
     let query = `
@@ -64,7 +96,7 @@ export async function POST(req: NextRequest) {
       WHERE broodmare_sire = $1
     `;
     
-    const params: any[] = [broodmareSire];
+    const params: any[] = [targetBroodmareSire];
     
     // 芝/ダート指定がある場合
     if (race_surface) {
@@ -80,7 +112,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         schema_version: TOOL_VERSION,
         error: 'No data',
-        summary: `${broodmareSire}が母父の馬のデータが見つかりません`
+        summary: `${targetBroodmareSire}が母父の馬のデータが見つかりません`
       });
     }
     
@@ -104,19 +136,24 @@ export async function POST(req: NextRequest) {
       distanceMatch = Math.abs(race_distance - avgDistance) < 400;
     }
     
-    // 父×母父の相性チェック
-    const nicks = await db.prepare(`
-      SELECT 
-        COUNT(*) as count,
-        AVG(CASE WHEN finish_position = '1' THEN 1.0 ELSE 0.0 END) as win_rate
-      FROM umadata
-      WHERE sire = $1 AND broodmare_sire = $2
-    `).get<any>(horse.sire, broodmareSire);
-    
-    const hasNicks = (nicks?.count || 0) > 10 && (nicks?.win_rate || 0) > 0.15;
+    // 父×母父の相性チェック（sireInfoがある場合のみ）
+    let hasNicks = false;
+    if (sireInfo.sire) {
+      const nicks = await db.prepare(`
+        SELECT 
+          COUNT(*) as count,
+          AVG(CASE WHEN finish_position = '1' THEN 1.0 ELSE 0.0 END) as win_rate
+        FROM umadata
+        WHERE sire = $1 AND broodmare_sire = $2
+      `).get<any>(sireInfo.sire, targetBroodmareSire);
+      
+      hasNicks = (nicks?.count || 0) > 10 && (nicks?.win_rate || 0) > 0.15;
+    }
     
     // サマリー生成
-    let summary = `${horse_name}の母父は${broodmareSire}(${broodmareSireType})。`;
+    let summary = horse_name
+      ? `${horse_name}の母父は${targetBroodmareSire}(${broodmareSireType})。`
+      : `母父${targetBroodmareSire}(${broodmareSireType})の実績: `;
     
     if (race_surface) {
       summary += `${race_surface}での母父実績: ${generatePerformanceSummary(competition, investment, score)}`;
@@ -124,8 +161,8 @@ export async function POST(req: NextRequest) {
       summary += `母父実績: ${generatePerformanceSummary(competition, investment, score)}`;
     }
     
-    if (hasNicks) {
-      summary += ` ${horse.sire}×${broodmareSire}は好相性配合。`;
+    if (hasNicks && sireInfo.sire) {
+      summary += ` ${sireInfo.sire}×${targetBroodmareSire}は好相性配合。`;
     }
     
     if (distanceMatch !== null) {
@@ -134,9 +171,9 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json({
       schema_version: TOOL_VERSION,
-      broodmare_sire: broodmareSire,
+      broodmare_sire: targetBroodmareSire,
       broodmare_sire_type: broodmareSireType,
-      sire: horse.sire,
+      sire: sireInfo.sire || '不明',
       has_nicks: hasNicks,
       competition_performance: competition,
       investment_performance: investment,

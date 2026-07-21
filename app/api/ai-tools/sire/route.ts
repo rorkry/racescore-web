@@ -16,43 +16,85 @@ const TOOL_VERSION = '1.2'; // 血統詳細情報追加
 
 export async function POST(req: NextRequest) {
   try {
-    const { horse_name, race_surface, race_distance } = await req.json();
+    const { horse_name, sire, race_surface, race_distance } = await req.json();
     
-    if (!horse_name || !race_surface || !race_distance) {
+    if (!race_surface || !race_distance) {
       return NextResponse.json({ 
         schema_version: TOOL_VERSION,
-        error: 'horse_name, race_surface, and race_distance are required'
+        error: 'race_surface and race_distance are required'
       }, { status: 400 });
     }
     
     const db = getDb();
     
-    // 馬の血統情報を取得
-    const horse = await db.prepare(`
-      SELECT 
-        sire,
-        sire_type,
-        dam,
-        dam_type,
-        broodmare_sire,
-        broodmare_sire_type
-      FROM umadata 
-      WHERE horse_name = $1 
-      ORDER BY date DESC LIMIT 1
-    `).get<any>(horse_name);
+    let targetSire: string | undefined;
+    let sireInfo: any = {};
     
-    if (!horse?.sire) {
+    // sireが直接指定されている場合（研究エージェント用）
+    if (sire) {
+      targetSire = sire;
+      // sire情報を取得（オプション）
+      const sireData = await db.prepare(`
+        SELECT 
+          sire_type,
+          COUNT(*) as count
+        FROM umadata 
+        WHERE sire = $1 
+        GROUP BY sire_type
+        ORDER BY count DESC
+        LIMIT 1
+      `).get<any>(sire);
+      
+      if (sireData) {
+        sireInfo = {
+          sire: sire,
+          sire_type: sireData.sire_type
+        };
+      }
+    }
+    // horse_nameが指定されている場合
+    else if (horse_name) {
+      const horse = await db.prepare(`
+        SELECT 
+          sire,
+          sire_type,
+          dam,
+          dam_type,
+          broodmare_sire,
+          broodmare_sire_type
+        FROM umadata 
+        WHERE horse_name = $1 
+        ORDER BY date DESC LIMIT 1
+      `).get<any>(horse_name);
+      
+      if (!horse?.sire) {
+        return NextResponse.json({ 
+          schema_version: TOOL_VERSION,
+          error: 'Horse not found',
+          summary: `${horse_name}のデータが見つかりません` 
+        });
+      }
+      
+      targetSire = horse.sire;
+      sireInfo = horse;
+    }
+    else {
       return NextResponse.json({ 
         schema_version: TOOL_VERSION,
-        error: 'Horse not found',
-        summary: `${horse_name}のデータが見つかりません` 
-      });
+        error: 'Either horse_name or sire is required'
+      }, { status: 400 });
     }
     
-    const sire = horse.sire;
-    const sireType = horse.sire_type || '不明';
-    const broodmareSire = horse.broodmare_sire || '不明';
-    const broodmareSireType = horse.broodmare_sire_type || '不明';
+    if (!targetSire) {
+      return NextResponse.json({ 
+        schema_version: TOOL_VERSION,
+        error: 'Sire information not found'
+      }, { status: 400 });
+    }
+    
+    const sireType = sireInfo.sire_type || '不明';
+    const broodmareSire = sireInfo.broodmare_sire || '不明';
+    const broodmareSireType = sireInfo.broodmare_sire_type || '不明';
     
     // 種牡馬の成績データを取得（オッズ含む）
     const races = await db.prepare(`
@@ -67,13 +109,13 @@ export async function POST(req: NextRequest) {
       FROM umadata
       WHERE sire = $1 AND distance LIKE $2
       LIMIT 300
-    `).all<any>(sire, `${race_surface}%`);
+    `).all<any>(targetSire, `${race_surface}%`);
     
     if (!races || races.length === 0) {
       return NextResponse.json({
         schema_version: TOOL_VERSION,
         error: 'No data',
-        summary: `${sire}産駒の${race_surface}データが見つかりません`
+        summary: `${targetSire}産駒の${race_surface}データが見つかりません`
       });
     }
     
@@ -95,17 +137,21 @@ export async function POST(req: NextRequest) {
     const distanceMatch = Math.abs(race_distance - avgDistance) < 400;
     
     // サマリー生成（血統情報含む）
-    const summary = `${horse_name}は${sire}(${sireType}) × ${broodmareSire}(${broodmareSireType})配合。` +
-      `${sire}産駒${race_surface}: ` + 
-      generatePerformanceSummary(competition, investment, score) +
-      ` 今回${race_distance}mは${distanceMatch ? '適性範囲' : '範囲外'}。`;
+    const summary = horse_name
+      ? `${horse_name}は${targetSire}(${sireType}) × ${broodmareSire}(${broodmareSireType})配合。` +
+        `${targetSire}産駒${race_surface}: ` + 
+        generatePerformanceSummary(competition, investment, score) +
+        ` 今回${race_distance}mは${distanceMatch ? '適性範囲' : '範囲外'}。`
+      : `${targetSire}(${sireType})産駒${race_surface}: ` +
+        generatePerformanceSummary(competition, investment, score) +
+        ` 距離${race_distance}mは${distanceMatch ? '適性範囲' : '範囲外'}。`;
     
     return NextResponse.json({
       schema_version: TOOL_VERSION,
-      sire,
+      sire: targetSire,
       sire_type: sireType,
-      dam: horse.dam || '不明',
-      dam_type: horse.dam_type || '不明',
+      dam: sireInfo.dam || '不明',
+      dam_type: sireInfo.dam_type || '不明',
       broodmare_sire: broodmareSire,
       broodmare_sire_type: broodmareSireType,
       competition_performance: competition,
