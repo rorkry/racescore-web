@@ -201,43 +201,43 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ（TEXT型カラムを数値に変換、数値比較を使用）
+      // 統計クエリ（日本語カラム名を使用、TEXT型を数値に変換）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
           AVG(
             CASE 
-              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) = 1 THEN 1.0 
+              WHEN 着順 ~ '^[0-9]+$' AND CAST(着順 AS INTEGER) = 1 THEN 1.0 
               ELSE 0.0 
             END
           ) as win_rate,
           AVG(
             CASE 
-              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) <= 2 THEN 1.0 
+              WHEN 着順 ~ '^[0-9]+$' AND CAST(着順 AS INTEGER) <= 2 THEN 1.0 
               ELSE 0.0 
             END
           ) as place_rate,
           AVG(
             CASE 
-              WHEN finish_position ~ '^[0-9]+$' AND CAST(finish_position AS INTEGER) <= 3 THEN 1.0 
+              WHEN 着順 ~ '^[0-9]+$' AND CAST(着順 AS INTEGER) <= 3 THEN 1.0 
               ELSE 0.0 
             END
           ) as show_rate,
           AVG(
             CASE 
-              WHEN finish_position ~ '^[0-9]+$' THEN CAST(finish_position AS FLOAT)
+              WHEN 着順 ~ '^[0-9]+$' THEN CAST(着順 AS FLOAT)
               ELSE NULL
             END
           ) as avg_finish,
           AVG(
             CASE 
-              WHEN win_odds ~ '^[0-9.]+$' THEN CAST(win_odds AS FLOAT)
+              WHEN 単勝 ~ '^[0-9.]+$' THEN CAST(単勝 AS FLOAT)
               ELSE NULL
             END
           ) as avg_win_odds,
           AVG(
             CASE 
-              WHEN place_odds_low ~ '^[0-9.]+$' THEN CAST(place_odds_low AS FLOAT)
+              WHEN 複勝 ~ '^[0-9.]+$' THEN CAST(複勝 AS FLOAT)
               ELSE NULL
             END
           ) as avg_place_odds
