@@ -79,7 +79,7 @@ const CONDITION_GENERATOR_TOOL: OpenAI.ChatCompletionTool = {
 export interface ConditionCandidate {
   name: string;
   conditions: RuleCondition[];
-  reason: string;                    // なぜこの条件を試すのか
+  reasoning: string;                 // なぜこの条件を試すのか（根拠）
   hypothesis: string;                // 仮説の内容
   expected_outcome: string;          // 期待される結果
 }
@@ -680,7 +680,7 @@ ${is_promising ? '有望' : '不十分'}
           combinations.push({
             name: `${a.candidate.name} × ${b.candidate.name}`,
             conditions: [...a.candidate.conditions, ...b.candidate.conditions],
-            reason: `${a.candidate.reason}、かつ${b.candidate.reason}`,
+            reasoning: `${a.candidate.reasoning}、かつ${b.candidate.reasoning}`,
             hypothesis: `${a.candidate.hypothesis}と${b.candidate.hypothesis}の組み合わせ`,
             expected_outcome: `期待値: ${a.statistics.expected_value_diff + b.statistics.expected_value_diff}円以上`
           });
@@ -707,7 +707,7 @@ ${is_promising ? '有望' : '不十分'}
                 ...b.candidate.conditions,
                 ...c.candidate.conditions
               ],
-              reason: `3条件の掛け合わせ`,
+              reasoning: `3条件の掛け合わせ`,
               hypothesis: `複数条件の相乗効果を検証`,
               expected_outcome: `期待値大幅向上を期待`
             });
@@ -831,7 +831,7 @@ ${is_promising ? '有望' : '不十分'}
       ai_reasoning: {
         hypothesis: r.candidate.hypothesis,
         expected_outcome: r.candidate.expected_outcome,
-        reasoning: r.candidate.reason,
+        reasoning: r.candidate.reasoning,
         interpretation: r.ai_interpretation,
         generated_at: new Date().toISOString(),
         model: 'gpt-4o-mini'
