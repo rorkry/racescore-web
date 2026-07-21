@@ -17,8 +17,15 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
 【研究の進め方】
 1. 分析可能な項目から仮説を立てる
 2. 具体的で検証可能な条件を生成する
-3. サンプル数が確保できる条件にする
-4. 再現性のある条件にする
+3. サンプル数が確保できる条件にする（最低30件以上）
+4. 再現性のある条件にする（偶然ではない）
+5. 有望な条件が見つかったら、類似条件や掛け合わせで深掘りする
+
+【評価基準】
+- 回収率だけでなく、三着内率とサンプル数を重視
+- 高回収率でもサンプル数が少ない条件は信頼度が低い
+- 三着内率30%以上 × 複勝回収率105%以上 × サンプル50件以上 = 有望
+- 単独条件で有望なものは、さらに掛け合わせて精度を上げる
 
 【利用可能なフィールド（実際のDBカラム名）】
 🔥 独自指数（最優先・高精度）:
@@ -56,6 +63,9 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
 - 1つの条件は1-3個のフィールドを組み合わせる
 - あまりに限定的な条件は避ける（サンプル数確保）
 - 仮説の根拠を明確にする
+- 独自指数（makikaeshi, potential）を積極的に活用する
+- 指数 × コース、指数 × 人気、指数 × 枠番などの組み合わせを試す
+- 有望な条件が見つかったら、距離帯・競馬場・馬場状態で細分化して検証する
 `;
 
 export interface ConditionCandidate {
@@ -134,6 +144,67 @@ export async function generateConditions(
  * プロンプト構築
  */
 function buildPrompt(theme: ResearchTheme, count: number): string {
+  // 自動研究モードかどうかを判定
+  const isAutoMode = theme.theme.includes('AIが利用可能なカラムを自動で組み合わせて');
+  
+  if (isAutoMode) {
+    return `
+【自動研究モード】
+あなたは競馬研究の自律エージェントです。利用可能なすべてのカラムから、有望な条件を自動的に探索してください。
+
+【研究戦略】
+1. まず独自指数（makikaeshi, potential）を中心とした条件を優先的に検証
+2. 有望な指数条件が見つかったら、コース・人気・枠番との掛け合わせを試す
+3. サンプル数が十分（50件以上）で、三着内率30%以上の条件を探す
+4. 回収率だけでなく、再現性と信頼度を重視
+
+【重点的に検証すべき条件】
+- 巻き返し指数（makikaeshi）の閾値を変えて試す（2.0, 3.0, 4.0, 5.0）
+- ポテンシャル指数（potential）の閾値を変えて試す（3.0, 4.0, 5.0, 6.0）
+- 指数 × 人気（人気薄で指数が高い馬は穴馬候補）
+- 指数 × 枠番（内枠 × 高指数は有利か）
+- 指数 × コース（芝・ダート・距離帯との相性）
+- 指数 × 斤量（軽斤量 × 高指数は期待値が高いか）
+
+このテーマに関連する検証すべき条件を${count}個生成してください。
+
+【条件の形式】
+各条件には以下を含めてください:
+1. name: 条件名（30文字以内）
+2. conditions: フィールドと値の配列
+3. hypothesis: 仮説（なぜこの条件が有効だと考えるか、50文字以内）
+4. expected_outcome: 期待される結果（例: 三着内率35%以上、複勝回収率110%以上）
+5. reasoning: 根拠（この仮説を立てた理由、80文字以内）
+
+【条件の例】
+{
+  "name": "巻き返し指数3.0以上×芝",
+  "conditions": [
+    {
+      "field": "makikaeshi",
+      "operator": "gte",
+      "value": 3.0
+    },
+    {
+      "field": "distance",
+      "operator": "contains",
+      "value": "芝"
+    }
+  ],
+  "hypothesis": "巻き返し指数が高い馬は芝で好走する",
+  "expected_outcome": "三着内率40%以上、複勝回収率115%以上",
+  "reasoning": "巻き返し指数は負けた後の巻き返し力を示し、芝は能力が反映されやすい"
+}
+
+【出力形式】
+必ずJSON形式で以下の構造で返してください：
+{
+  "conditions": [条件の配列]
+}
+`.trim();
+  }
+  
+  // 手動モード
   return `
 テーマ: ${theme.theme}
 
@@ -149,22 +220,17 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 
 【条件の例】
 {
-  "name": "母父ディープ×芝2000m",
+  "name": "ディープ産駒×芝2000m",
   "conditions": [
     {
-      "field": "broodmare_sire",
+      "field": "sire",
       "operator": "eq",
       "value": "ディープインパクト"
     },
     {
-      "field": "surface",
-      "operator": "eq",
-      "value": "芝"
-    },
-    {
       "field": "distance",
-      "operator": "between",
-      "value": [1800, 2200]
+      "operator": "contains",
+      "value": "芝"
     }
   ],
   "hypothesis": "ディープを母父に持つ馬は芝中距離で期待値が高い",

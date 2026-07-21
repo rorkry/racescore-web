@@ -99,9 +99,14 @@ export default function ResearchLabPage() {
     }
   };
 
-  const startResearch = async () => {
-    if (!query) {
-      setError('研究テーマを入力してください');
+  const startResearch = async (isAuto: boolean = false) => {
+    // 自動研究モードの場合、固定のテーマを使用
+    const researchTheme = isAuto 
+      ? 'AIが利用可能なカラムを自動で組み合わせて条件を試し、有望なものが見つかったらさらに深掘りしてください。サンプル数や再現性も考慮し、回収率だけでなく信頼できる条件を優先してください。'
+      : query;
+
+    if (!researchTheme) {
+      setError('研究テーマを入力するか、「自動研究」をクリックしてください');
       return;
     }
     
@@ -138,8 +143,8 @@ export default function ResearchLabPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          theme: query,
-          mode: 'manual'  // 手動モード
+          theme: researchTheme,
+          mode: isAuto ? 'auto' : 'manual'
         })
       });
       
@@ -197,15 +202,18 @@ export default function ResearchLabPage() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                研究テーマを入力
+                研究テーマ（オプション）
               </label>
               <textarea
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="例: 東京ダート1600mで期待値がある条件を探して&#10;例: 母父ディープインパクトと枠順の関係を調べて&#10;例: 斤量55kg以下で前走3着以内の馬の成績は？"
-                rows={4}
+                placeholder="特定のテーマがある場合は入力してください&#10;空白の場合、AIが自動的に有望な条件を探索します&#10;&#10;例: 東京ダート1600mで期待値がある条件&#10;例: ディープ産駒の得意条件&#10;例: 内枠と指数の組み合わせ"
+                rows={5}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-900 placeholder:text-gray-500"
               />
+              <p className="mt-2 text-xs text-gray-500">
+                💡 ヒント: 空白のままにすると、AIが利用可能なカラム（競馬場、距離、種牡馬、枠、巻き返し指数など）を自動で組み合わせて最適な条件を探します
+              </p>
             </div>
             
             {error && (
@@ -239,13 +247,25 @@ export default function ResearchLabPage() {
               </div>
             )}
             
-            <button
-              onClick={startResearch}
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
-            >
-              {loading ? '研究中...' : '🔍 研究開始'}
-            </button>
+            {/* 研究開始ボタン */}
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => startResearch(true)}
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 text-white py-4 px-6 rounded-lg hover:from-purple-700 hover:to-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all font-medium shadow-md hover:shadow-lg"
+              >
+                {loading ? '研究中...' : '🤖 自動研究開始'}
+              </button>
+              {query.trim() && (
+                <button
+                  onClick={() => startResearch(false)}
+                  disabled={loading}
+                  className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {loading ? '研究中...' : '🔍 テーマを指定して研究'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
