@@ -3,23 +3,23 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getDbAsync } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
   try {
-    const db = getDb();
+    const db = await getDbAsync();
     
     // テーブルのカラム情報を取得
-    const columnsResult = await db.prepare(`
+    const columnsResult = await db.query(`
       SELECT column_name, data_type 
       FROM information_schema.columns 
       WHERE table_name = 'umadata'
       ORDER BY ordinal_position
       LIMIT 50
-    `).all();
+    `);
     
     // 新潟芝1600mのサンプルデータを取得
-    const sampleDataResult = await db.prepare(`
+    const sampleDataResult = await db.query(`
       SELECT 
         place,
         distance,
@@ -33,10 +33,10 @@ export async function GET(req: NextRequest) {
       FROM umadata
       WHERE place = '新潟' AND distance LIKE '芝1600%'
       LIMIT 10
-    `).all();
+    `);
     
     // finish_positionの値の分布を確認
-    const finishDistResult = await db.prepare(`
+    const finishDistResult = await db.query(`
       SELECT 
         finish_position,
         COUNT(*) as count
@@ -45,13 +45,13 @@ export async function GET(req: NextRequest) {
       GROUP BY finish_position
       ORDER BY count DESC
       LIMIT 20
-    `).all();
+    `);
     
     return NextResponse.json({
-      columns: columnsResult,
-      sampleData: sampleDataResult,
-      finishPositionDistribution: finishDistResult,
-      totalCount: sampleDataResult.length
+      columns: columnsResult.rows,
+      sampleData: sampleDataResult.rows,
+      finishPositionDistribution: finishDistResult.rows,
+      totalCount: sampleDataResult.rows.length
     });
     
   } catch (error) {
