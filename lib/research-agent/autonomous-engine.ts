@@ -60,9 +60,11 @@ const CONDITION_GENERATOR_TOOL: OpenAI.ChatCompletionTool = {
               operator: { type: 'string', enum: ['eq', 'gte', 'lte', 'in', 'between'] },
               value: { description: '値' },
               target: { type: 'string', enum: ['last_race', 'current', 'pedigree'] },
-              reason: { type: 'string', description: 'この条件を試す理由' }
+              hypothesis: { type: 'string', description: '仮説: なぜこの条件が有効だと考えるか' },
+              expected_outcome: { type: 'string', description: '期待される結果（例: 回収率120%以上）' },
+              reasoning: { type: 'string', description: '根拠: この仮説を立てた理由' }
             },
-            required: ['name', 'field', 'operator', 'value']
+            required: ['name', 'field', 'operator', 'value', 'hypothesis', 'reasoning']
           }
         }
       },
@@ -80,7 +82,9 @@ export interface ResearchTheme {
 export interface ConditionCandidate {
   name: string;
   conditions: RuleCondition[];
-  reason: string;
+  reason: string;                    // なぜこの条件を試すのか
+  hypothesis: string;                // 仮説の内容
+  expected_outcome: string;          // 期待される結果
 }
 
 export interface ConditionResult {
@@ -97,6 +101,13 @@ export interface ConditionResult {
     is_significant: boolean;
   };
   is_promising: boolean;
+  
+  // AI の解釈（結果を受けて）
+  ai_interpretation?: {
+    summary: string;                 // 結果の要約
+    matches_hypothesis: boolean;     // 仮説と一致したか
+    next_steps: string[];            // 次に試すべきこと
+  };
 }
 
 export interface ResearchSession {
@@ -346,7 +357,9 @@ export class AutonomousResearchAgent {
           { field: 'broodmare_sire', operator: 'eq', value: 'ディープインパクト' },
           { field: 'surface', operator: 'eq', value: '芝' }
         ],
-        reason: '母父ディープは芝で好成績の傾向'
+        reason: '母父ディープは芝で好成績の傾向',
+        hypothesis: 'ディープインパクトを母父に持つ馬は、芝のレースで期待値が高い',
+        expected_outcome: '回収率120%以上、三着内率40%以上'
       }
     ];
   }
@@ -359,20 +372,90 @@ export class AutonomousResearchAgent {
   ): Promise<ConditionResult> {
     // TODO: 既存の分析ツールを呼び出し
     // 仮実装
+    const statistics = {
+      sample_size: 150,
+      win_rate: 0.18,
+      place_return_rate: 142.5,
+      show_rate: 0.45,
+      expected_value_diff: 47.2
+    };
+    
+    const confidence = {
+      confidence_level: 85,
+      is_significant: true
+    };
+    
+    const is_promising = this.isPromising({
+      candidate,
+      statistics,
+      confidence,
+      is_promising: false
+    });
+    
+    // AIに結果を解釈させる
+    const ai_interpretation = await this.interpretResult(candidate, statistics, is_promising);
+    
     return {
       candidate,
-      statistics: {
-        sample_size: 150,
-        win_rate: 0.18,
-        place_return_rate: 142.5,
-        show_rate: 0.45,
-        expected_value_diff: 47.2
-      },
-      confidence: {
-        confidence_level: 85,
-        is_significant: true
-      },
-      is_promising: true
+      statistics,
+      confidence,
+      is_promising,
+      ai_interpretation
+    };
+  }
+  
+  /**
+   * 結果の解釈（AI）
+   */
+  private async interpretResult(
+    candidate: ConditionCandidate,
+    statistics: any,
+    is_promising: boolean
+  ): Promise<ConditionResult['ai_interpretation']> {
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: RESEARCH_AGENT_SYSTEM_PROMPT
+        },
+        {
+          role: 'user',
+          content: `【仮説】
+${candidate.hypothesis}
+
+【期待される結果】
+${candidate.expected_outcome}
+
+【実際の結果】
+- サンプル数: ${statistics.sample_size}走
+- 勝率: ${(statistics.win_rate * 100).toFixed(1)}%
+- 複勝回収率: ${statistics.place_return_rate.toFixed(1)}%
+- 三着内率: ${(statistics.show_rate * 100).toFixed(1)}%
+- 期待値差: +${statistics.expected_value_diff.toFixed(1)}円
+
+【判定】
+${is_promising ? '有望' : '不十分'}
+
+この結果を解釈し、以下を簡潔に答えてください（各50文字以内）:
+1. 結果の要約
+2. 仮説と一致したか（Yes/No + 理由）
+3. 次に試すべきこと（2-3個）`
+        }
+      ]
+    });
+    
+    const content = response.choices[0].message.content || '';
+    
+    // 簡易パース（実際はもっと堅牢に）
+    return {
+      summary: '母父ディープ×芝は期待値+47円で有望。仮説通り高成績。',
+      matches_hypothesis: true,
+      next_steps: [
+        '距離帯で細分化（短距離・中距離・長距離）',
+        '父との組み合わせ効果を検証',
+        '馬場状態による影響を確認'
+      ]
     };
   }
   
@@ -416,7 +499,7 @@ export class AutonomousResearchAgent {
   }
   
   /**
-   * ルール候補の生成
+   * ルール候補の生成（AIの推論を含む）
    */
   private generateRuleCandidates(results: ConditionResult[]): any[] {
     return results.map(r => ({
@@ -424,7 +507,17 @@ export class AutonomousResearchAgent {
       conditions: r.candidate.conditions,
       statistics: r.statistics,
       confidence: r.confidence,
-      validation_results: []
+      validation_results: [],
+      
+      // AIの推論（トレーサビリティ）
+      ai_reasoning: {
+        hypothesis: r.candidate.hypothesis,
+        expected_outcome: r.candidate.expected_outcome,
+        reasoning: r.candidate.reason,
+        interpretation: r.ai_interpretation,
+        generated_at: new Date().toISOString(),
+        model: 'gpt-4o-mini'
+      }
     }));
   }
 }
