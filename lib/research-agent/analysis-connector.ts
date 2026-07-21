@@ -201,16 +201,32 @@ export class AnalysisConnector {
         ? `WHERE ${whereClauses.join(' AND ')}`
         : '';
 
-      // 統計クエリ
+      // 統計クエリ（TEXT型カラムを数値に変換）
       const statsQuery = `
         SELECT 
           COUNT(*) as sample_size,
           AVG(CASE WHEN finish_position = '1' THEN 1.0 ELSE 0.0 END) as win_rate,
-          AVG(CASE WHEN finish_position <= '2' THEN 1.0 ELSE 0.0 END) as place_rate,
-          AVG(CASE WHEN finish_position <= '3' THEN 1.0 ELSE 0.0 END) as show_rate,
-          AVG(CAST(finish_position AS FLOAT)) as avg_finish,
-          AVG(win_odds) as avg_win_odds,
-          AVG(place_odds_low) as avg_place_odds_low
+          AVG(CASE WHEN finish_position = '1' OR finish_position = '2' THEN 1.0 ELSE 0.0 END) as place_rate,
+          AVG(CASE WHEN finish_position = '1' OR finish_position = '2' OR finish_position = '3' THEN 1.0 ELSE 0.0 END) as show_rate,
+          AVG(
+            CASE 
+              WHEN finish_position ~ '^[0-9]+$' THEN CAST(finish_position AS FLOAT)
+              ELSE NULL
+            END
+          ) as avg_finish,
+          AVG(
+            CASE 
+              WHEN win_odds ~ '^[0-9.]+$' THEN CAST(win_odds AS FLOAT)
+              ELSE NULL
+            END
+          ) as avg_win_odds,
+          AVG(
+            CASE 
+              WHEN place_odds ~ '^[0-9.]+$' THEN CAST(place_odds AS FLOAT)
+              WHEN place_odds_low ~ '^[0-9.]+$' THEN CAST(place_odds_low AS FLOAT)
+              ELSE NULL
+            END
+          ) as avg_place_odds
         FROM umadata
         ${whereClause}
       `;
@@ -251,11 +267,11 @@ export class AnalysisConnector {
       const show_rate = parseFloat(result.show_rate) || 0;
       const avg_finish = parseFloat(result.avg_finish) || 0;
       const avg_win_odds = parseFloat(result.avg_win_odds) || 0;
-      const avg_place_odds_low = parseFloat(result.avg_place_odds_low) || 0;
+      const avg_place_odds = parseFloat(result.avg_place_odds) || 0;
 
       // 回収率計算
       const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 10) : 0;
-      const place_return_rate = avg_place_odds_low > 0 ? (show_rate * avg_place_odds_low * 10) : 0;
+      const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 10) : 0;
 
       // 投資パフォーマンス
       const total_investment = sample_size * 100;
