@@ -305,9 +305,22 @@ export class AnalysisConnector {
       const avg_win_odds = parseFloat(result.avg_win_odds) || 0;
       const avg_place_odds = parseFloat(result.avg_place_odds) || 0;
 
-      // 回収率計算（オッズ × 的中率 × 100）
+      // デバッグ: オッズの値を確認
+      console.log('[AnalysisConnector] Odds Debug:', {
+        sample_size,
+        win_rate: win_rate.toFixed(4),
+        avg_win_odds: avg_win_odds.toFixed(2),
+        avg_place_odds: avg_place_odds.toFixed(2)
+      });
+
+      // 回収率計算（オッズ × 的中率 × 100 = %）
       const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 100) : 0;
       const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 100) : 0;
+      
+      console.log('[AnalysisConnector] Return Rate:', {
+        win_return_rate: win_return_rate.toFixed(1) + '%',
+        place_return_rate: place_return_rate.toFixed(1) + '%'
+      });
 
       // 投資パフォーマンス
       const total_investment = sample_size * 100;
