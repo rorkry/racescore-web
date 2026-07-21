@@ -40,6 +40,8 @@ export default function ResearchLabPage() {
   const [researchResult, setResearchResult] = useState<ResearchResult | null>(null);
   const [ruleCandidates, setRuleCandidates] = useState<any[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [currentPhase, setCurrentPhase] = useState<string>('');
 
   // ルール候補を読み込み
   useEffect(() => {
@@ -105,6 +107,31 @@ export default function ResearchLabPage() {
     
     setLoading(true);
     setError('');
+    setProgress(0);
+    setCurrentPhase('初期化中...');
+    
+    // 進捗シミュレーション
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        if (prev < 10) {
+          setCurrentPhase('🔍 Phase 1: 単独条件の探索中...');
+          return prev + 2;
+        } else if (prev < 50) {
+          setCurrentPhase('🔍 Phase 1: 単独条件の検証中...');
+          return prev + 1;
+        } else if (prev < 70) {
+          setCurrentPhase('🔗 Phase 2: 掛け合わせ検証中...');
+          return prev + 1;
+        } else if (prev < 90) {
+          setCurrentPhase('🔄 Phase 3: 派生条件の検証中...');
+          return prev + 1;
+        } else if (prev < 95) {
+          setCurrentPhase('📊 結果の集計中...');
+          return prev + 0.5;
+        }
+        return prev;
+      });
+    }, 200);
     
     try {
       const response = await fetch('/api/research-lab/execute', {
@@ -116,6 +143,8 @@ export default function ResearchLabPage() {
         })
       });
       
+      clearInterval(progressInterval);
+      
       if (!response.ok) {
         const data = await response.json();
         setError(data.error || 'エラーが発生しました');
@@ -123,18 +152,28 @@ export default function ResearchLabPage() {
       }
       
       const data = await response.json();
-      setResearchResult(data);
       
-      // 成功メッセージ
-      console.log('研究完了:', data);
+      // 完了アニメーション
+      setProgress(100);
+      setCurrentPhase('✅ 研究完了！');
       
-      // ルール候補をリロード
-      loadRuleCandidates();
+      // 少し待ってから結果を表示
+      setTimeout(() => {
+        setResearchResult(data);
+        console.log('研究完了:', data);
+        loadRuleCandidates();
+      }, 500);
+      
     } catch (err) {
+      clearInterval(progressInterval);
       setError('通信エラーが発生しました');
       console.error('Research error:', err);
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+        setProgress(0);
+        setCurrentPhase('');
+      }, 1000);
     }
   };
 
@@ -165,13 +204,38 @@ export default function ResearchLabPage() {
                 onChange={e => setQuery(e.target.value)}
                 placeholder="例: 東京ダート1600mで期待値がある条件を探して&#10;例: 母父ディープインパクトと枠順の関係を調べて&#10;例: 斤量55kg以下で前走3着以内の馬の成績は？"
                 rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-900 placeholder:text-gray-500"
               />
             </div>
             
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                 {error}
+              </div>
+            )}
+            
+            {/* 進捗ゲージ */}
+            {loading && (
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-blue-900">
+                    {currentPhase}
+                  </span>
+                  <span className="text-sm font-bold text-blue-900">
+                    {progress.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="relative w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 via-purple-500 to-blue-600 transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  >
+                    <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-600 text-center">
+                  AIが自律的に条件を生成・検証しています...
+                </div>
               </div>
             )}
             
