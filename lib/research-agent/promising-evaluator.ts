@@ -108,7 +108,9 @@ export function evaluatePromising(
   }
 
   // 7. 総合判定
-  const is_promising = score >= 60 && !luckyPunchCheck.is_lucky_punch;
+  // 期待値がマイナスの場合は絶対に有望としない
+  const hasPositiveExpectedValue = statistics.expected_value_diff >= 0;
+  const is_promising = score >= 60 && !luckyPunchCheck.is_lucky_punch && hasPositiveExpectedValue;
   const recommendation = generateRecommendation(score, is_promising, warnings);
 
   return {
@@ -155,13 +157,15 @@ function evaluateReproducibility(showRate: number): { score: number; message?: s
  */
 function evaluateExpectedValue(expectedValueDiff: number): { score: number; message?: string; isGood: boolean } {
   if (expectedValueDiff >= 50) {
-    return { score: 25, message: `期待値が高い（+${expectedValueDiff.toFixed(0)}円）`, isGood: true };
+    return { score: 30, message: `期待値が高い（+${expectedValueDiff.toFixed(0)}円）`, isGood: true };
   } else if (expectedValueDiff >= 20) {
-    return { score: 15, message: `期待値がプラス（+${expectedValueDiff.toFixed(0)}円）`, isGood: true };
-  } else if (expectedValueDiff >= 0) {
-    return { score: 5, message: `期待値がわずかにプラス（+${expectedValueDiff.toFixed(0)}円）`, isGood: false };
+    return { score: 20, message: `期待値がプラス（+${expectedValueDiff.toFixed(0)}円）`, isGood: true };
+  } else if (expectedValueDiff >= 5) {
+    return { score: 10, message: `期待値がわずかにプラス（+${expectedValueDiff.toFixed(0)}円）`, isGood: true };
+  } else if (expectedValueDiff >= -10) {
+    return { score: -20, message: `期待値がわずかにマイナス（${expectedValueDiff.toFixed(0)}円）`, isGood: false };
   } else {
-    return { score: 0, message: `期待値がマイナス（${expectedValueDiff.toFixed(0)}円）`, isGood: false };
+    return { score: -40, message: `期待値がマイナス（${expectedValueDiff.toFixed(0)}円）`, isGood: false };
   }
 }
 

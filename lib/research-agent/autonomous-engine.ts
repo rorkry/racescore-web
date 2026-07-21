@@ -648,15 +648,42 @@ ${is_promising ? '有望' : '不十分'}
     
     const content = response.choices[0].message.content || '';
     
-    // 簡易パース（実際はもっと堅牢に）
+    // AIの応答をパース
+    const lines = content.split('\n').filter(l => l.trim());
+    let summary = '';
+    let matches_hypothesis = false;
+    const next_steps: string[] = [];
+    
+    for (const line of lines) {
+      if (line.match(/^1[\.、:：]/)) {
+        summary = line.replace(/^1[\.、:：]\s*/, '').trim();
+      } else if (line.match(/^2[\.、:：]/)) {
+        const match = line.match(/Yes|はい|一致|合致|通り/i);
+        matches_hypothesis = !!match;
+      } else if (line.match(/^3[\.、:：]/)) {
+        // 次のステップを抽出
+        const stepsText = line.replace(/^3[\.、:：]\s*/, '').trim();
+        const steps = stepsText.split(/[、,・]|および/).map(s => s.trim()).filter(s => s);
+        next_steps.push(...steps);
+      } else if (line.match(/^[-・*]/)) {
+        // リスト形式の次のステップ
+        const step = line.replace(/^[-・*]\s*/, '').trim();
+        if (step) next_steps.push(step);
+      }
+    }
+    
+    // フォールバック：パースに失敗した場合
+    if (!summary) {
+      summary = `${candidate.name}: ${is_promising ? '有望' : '不十分'}。期待値${statistics.expected_value_diff >= 0 ? '+' : ''}${statistics.expected_value_diff.toFixed(0)}円`;
+    }
+    if (next_steps.length === 0) {
+      next_steps.push('距離帯で細分化', 'コース別に検証', '人気帯で分析');
+    }
+    
     return {
-      summary: '母父ディープ×芝は期待値+47円で有望。仮説通り高成績。',
-      matches_hypothesis: true,
-      next_steps: [
-        '距離帯で細分化（短距離・中距離・長距離）',
-        '父との組み合わせ効果を検証',
-        '馬場状態による影響を確認'
-      ]
+      summary,
+      matches_hypothesis,
+      next_steps: next_steps.slice(0, 3)
     };
   }
   

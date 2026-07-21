@@ -305,9 +305,9 @@ export class AnalysisConnector {
       const avg_win_odds = parseFloat(result.avg_win_odds) || 0;
       const avg_place_odds = parseFloat(result.avg_place_odds) || 0;
 
-      // 回収率計算
-      const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 10) : 0;
-      const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 10) : 0;
+      // 回収率計算（オッズ × 的中率 × 100）
+      const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 100) : 0;
+      const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 100) : 0;
 
       // 投資パフォーマンス
       const total_investment = sample_size * 100;
