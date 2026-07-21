@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface SavedCondition {
@@ -35,9 +35,64 @@ export default function ResearchLabPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [researchResult, setResearchResult] = useState<ResearchResult | null>(null);
-  const [savedConditions] = useState<SavedCondition[]>([
-    // TODO: APIから取得
-  ]);
+  const [ruleCandidates, setRuleCandidates] = useState<any[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(true);
+
+  // ルール候補を読み込み
+  useEffect(() => {
+    loadRuleCandidates();
+  }, []);
+
+  const loadRuleCandidates = async () => {
+    try {
+      setLoadingCandidates(true);
+      const response = await fetch('/api/research-lab/candidates?status=pending');
+      if (response.ok) {
+        const data = await response.json();
+        setRuleCandidates(data.candidates || []);
+      }
+    } catch (err) {
+      console.error('Failed to load rule candidates:', err);
+    } finally {
+      setLoadingCandidates(false);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      const response = await fetch('/api/research-lab/candidates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'approve' })
+      });
+      
+      if (response.ok) {
+        alert('ルールを承認しました');
+        loadRuleCandidates();
+      }
+    } catch (err) {
+      console.error('Failed to approve:', err);
+      alert('エラーが発生しました');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    try {
+      const response = await fetch('/api/research-lab/candidates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'reject' })
+      });
+      
+      if (response.ok) {
+        alert('ルールを却下しました');
+        loadRuleCandidates();
+      }
+    } catch (err) {
+      console.error('Failed to reject:', err);
+      alert('エラーが発生しました');
+    }
+  };
 
   const startResearch = async () => {
     if (!query) {
@@ -69,6 +124,9 @@ export default function ResearchLabPage() {
       
       // 成功メッセージ
       console.log('研究完了:', data);
+      
+      // ルール候補をリロード
+      loadRuleCandidates();
     } catch (err) {
       setError('通信エラーが発生しました');
       console.error('Research error:', err);
@@ -303,76 +361,119 @@ export default function ResearchLabPage() {
           </div>
         )}
 
-        {/* 保存済み条件セクション */}
+        {/* ルール候補セクション */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">💾 保存済み条件</h2>
+          <h2 className="text-xl font-bold mb-4">📋 ルール候補（承認待ち）</h2>
           
-          {savedConditions.length === 0 ? (
+          {loadingCandidates ? (
+            <div className="text-center py-12 text-gray-500">
+              <div className="text-4xl mb-3">⏳</div>
+              <p>読み込み中...</p>
+            </div>
+          ) : ruleCandidates.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <div className="text-5xl mb-4">📁</div>
-              <p className="text-lg mb-2">まだ保存された条件がありません</p>
-              <p className="text-sm">研究で見つけた条件を保存すると、ここに表示されます</p>
+              <p className="text-lg mb-2">まだルール候補がありません</p>
+              <p className="text-sm">研究を実行すると、有望な条件がルール候補として保存されます</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {savedConditions.map(condition => (
+              {ruleCandidates.map(condition => (
                 <div
                   key={condition.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 transition-colors"
+                  className="border-2 border-yellow-200 bg-yellow-50 rounded-lg p-4"
                 >
                   <div className="flex items-start justify-between mb-3">
-                    <div>
+                    <div className="flex-1">
                       <h3 className="font-bold text-lg text-gray-900">
-                        {condition.title}
+                        {condition.name}
                       </h3>
-                      {condition.description && (
-                        <p className="text-sm text-gray-600 mt-1">
-                          {condition.description}
-                        </p>
+                      
+                      {/* AIの仮説 */}
+                      {condition.ai_reasoning?.hypothesis && (
+                        <div className="mt-2 p-3 bg-white rounded border border-blue-200">
+                          <div className="text-xs text-blue-600 font-medium mb-1">💡 AIの仮説</div>
+                          <p className="text-sm text-gray-700">
+                            {condition.ai_reasoning.hypothesis}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* 期待される結果 */}
+                      {condition.ai_reasoning?.expected_outcome && (
+                        <div className="mt-2 p-2 bg-white rounded border border-gray-200">
+                          <div className="text-xs text-gray-600 mb-1">期待される結果:</div>
+                          <p className="text-xs text-gray-700">
+                            {condition.ai_reasoning.expected_outcome}
+                          </p>
+                        </div>
                       )}
                     </div>
-                    <div className="flex gap-2">
-                      {condition.tags.map(tag => (
-                        <span
-                          key={tag}
-                          className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
+                    <span className="ml-4 px-3 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">
+                      承認待ち
+                    </span>
                   </div>
                   
-                  <div className="grid grid-cols-3 gap-4 mb-3">
-                    <div className="bg-green-50 p-3 rounded">
+                  {/* 統計データ */}
+                  <div className="grid grid-cols-4 gap-3 mb-3">
+                    <div className="bg-white p-3 rounded">
                       <div className="text-xs text-gray-600">期待値</div>
                       <div className="font-bold text-green-700">
-                        +{condition.expected_value_diff.toFixed(1)}円
+                        +{condition.statistics.expected_value_diff.toFixed(1)}円
                       </div>
                     </div>
-                    <div className="bg-blue-50 p-3 rounded">
+                    <div className="bg-white p-3 rounded">
                       <div className="text-xs text-gray-600">信頼度</div>
                       <div className="font-bold text-blue-700">
-                        {condition.confidence_level}%
+                        {condition.confidence.confidence_level.toFixed(0)}%
                       </div>
                     </div>
-                    <div className="bg-purple-50 p-3 rounded">
+                    <div className="bg-white p-3 rounded">
                       <div className="text-xs text-gray-600">サンプル</div>
                       <div className="font-bold text-purple-700">
                         {condition.statistics.sample_size}走
                       </div>
                     </div>
+                    <div className="bg-white p-3 rounded">
+                      <div className="text-xs text-gray-600">三着内率</div>
+                      <div className="font-bold text-orange-700">
+                        {(condition.statistics.show_rate * 100).toFixed(1)}%
+                      </div>
+                    </div>
                   </div>
                   
+                  {/* AIの根拠 */}
+                  {condition.ai_reasoning?.reasoning && (
+                    <details className="mb-3">
+                      <summary className="text-sm text-gray-700 cursor-pointer hover:text-gray-900 font-medium">
+                        📝 AIの根拠を表示
+                      </summary>
+                      <div className="mt-2 p-3 bg-white rounded border border-gray-200">
+                        <p className="text-sm text-gray-700">
+                          {condition.ai_reasoning.reasoning}
+                        </p>
+                        {condition.ai_reasoning.generated_at && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            生成日時: {new Date(condition.ai_reasoning.generated_at).toLocaleString('ja-JP')}
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  )}
+                  
+                  {/* 承認・却下ボタン */}
                   <div className="flex gap-2">
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm">
-                      詳細
+                    <button
+                      onClick={() => handleApprove(condition.id)}
+                      className="flex-1 bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors text-sm font-medium"
+                    >
+                      ✅ 承認してルール化
                     </button>
-                    <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors text-sm">
-                      レースに適用
-                    </button>
-                    <button className="px-4 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors text-sm ml-auto">
-                      削除
+                    <button
+                      onClick={() => handleReject(condition.id)}
+                      className="flex-1 bg-red-100 text-red-700 py-2 px-4 rounded hover:bg-red-200 transition-colors text-sm font-medium"
+                    >
+                      ❌ 却下
                     </button>
                   </div>
                 </div>

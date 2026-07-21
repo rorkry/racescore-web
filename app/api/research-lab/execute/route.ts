@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { AutonomousResearchAgent } from '@/lib/research-agent/autonomous-engine';
+import { saveRuleCandidate } from '@/lib/services/rule-candidate-service';
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,6 +48,26 @@ export async function POST(req: NextRequest) {
     console.log(`[Research Agent] Phase 2 results: ${researchSession.phase2_results.length}`);
     console.log(`[Research Agent] Phase 3 results: ${researchSession.phase3_results.length}`);
     console.log(`[Research Agent] Rule candidates: ${researchSession.rule_candidates.length}`);
+    
+    // ルール候補をDBに保存
+    const savedCandidates = [];
+    for (const candidate of researchSession.rule_candidates) {
+      try {
+        const saved = await saveRuleCandidate(session.user.id, {
+          name: candidate.name,
+          conditions: candidate.conditions,
+          statistics: candidate.statistics,
+          confidence: candidate.confidence,
+          validation_results: candidate.validation_results || [],
+          ai_reasoning: candidate.ai_reasoning,
+          research_session_id: researchSession.id
+        });
+        savedCandidates.push(saved);
+        console.log(`[Research Agent] Saved rule candidate: ${saved.id}`);
+      } catch (error) {
+        console.error(`[Research Agent] Failed to save rule candidate:`, error);
+      }
+    }
     
     // 有望条件の数をカウント
     const promisingCount = researchSession.phase1_results.filter(r => r.is_promising).length;
