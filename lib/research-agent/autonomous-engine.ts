@@ -119,6 +119,7 @@ export interface ResearchSession {
   phase: 1 | 2 | 3;
   status: 'running' | 'completed' | 'failed';
   progress: number;
+  current_task?: string;  // 現在実行中のタスク
   
   // 各フェーズの結果
   phase1_results: ConditionResult[];
@@ -131,6 +132,8 @@ export interface ResearchSession {
   started_at: Date;
   completed_at?: Date;
 }
+
+export type ProgressCallback = (progress: number, task: string) => void;
 
 export class AutonomousResearchAgent {
   private openai: OpenAI;
@@ -266,16 +269,77 @@ export class AutonomousResearchAgent {
   }
   
   /**
-   * Phase 1: 単独条件の探索
+   * Phase 1: 単独条件の探索（強化版）
    */
   private async phase1_exploreConditions(theme: ResearchTheme): Promise<ConditionResult[]> {
-    // AIに条件候補を生成させる
-    const candidates = await this.generateConditionCandidates(theme, 20);
+    console.log(`[Phase 1] Generating condition candidates...`);
     
-    // 各条件を検証（並列実行）
-    const results = await Promise.all(
-      candidates.map(c => this.evaluateCondition(c))
-    );
+    // AIに条件候補を生成させる（20-30個）
+    const targetCount = 20;
+    const candidates = await this.generateConditionCandidates(theme, targetCount);
+    
+    console.log(`[Phase 1] Generated ${candidates.length} candidates`);
+    console.log(`[Phase 1] Starting evaluation...`);
+    
+    // バッチ処理で並列実行（一度に5個ずつ）
+    const batchSize = 5;
+    const results: ConditionResult[] = [];
+    
+    for (let i = 0; i < candidates.length; i += batchSize) {
+      const batch = candidates.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(candidates.length / batchSize);
+      
+      console.log(`[Phase 1] Batch ${batchNum}/${totalBatches} (${batch.length} conditions)`);
+      
+      try {
+        const batchResults = await Promise.all(
+          batch.map(async (c, idx) => {
+            try {
+              const result = await this.evaluateCondition(c);
+              console.log(`[Phase 1] ✓ Evaluated: ${c.name} (${result.is_promising ? '有望' : '不十分'})`);
+              return result;
+            } catch (error) {
+              console.error(`[Phase 1] ✗ Failed: ${c.name}`, error);
+              // エラーでも結果を返す（空データ）
+              return {
+                candidate: c,
+                statistics: {
+                  sample_size: 0,
+                  win_rate: 0,
+                  place_rate: 0,
+                  show_rate: 0,
+                  win_return_rate: 0,
+                  place_return_rate: 0,
+                  expected_value_diff: 0
+                },
+                confidence: {
+                  confidence_level: 0,
+                  is_significant: false
+                },
+                is_promising: false,
+                promising_score: 0,
+                promising_reasons: [],
+                promising_warnings: ['評価エラー']
+              };
+            }
+          })
+        );
+        
+        results.push(...batchResults);
+        
+        // 進捗ログ
+        const progress = Math.round((results.length / candidates.length) * 100);
+        const promisingCount = results.filter(r => r.is_promising).length;
+        console.log(`[Phase 1] Progress: ${results.length}/${candidates.length} (${progress}%) - Promising: ${promisingCount}`);
+        
+      } catch (error) {
+        console.error(`[Phase 1] Batch ${batchNum} failed:`, error);
+      }
+    }
+    
+    const promisingResults = results.filter(r => r.is_promising);
+    console.log(`[Phase 1] Completed: ${results.length} evaluated, ${promisingResults.length} promising`);
     
     return results;
   }
@@ -489,30 +553,158 @@ ${is_promising ? '有望' : '不十分'}
   
   
   /**
-   * 組み合わせ生成
+   * 組み合わせ生成（2条件、3条件）
    */
   private generateCombinations(
     promising: ConditionResult[],
     ...sizes: number[]
   ): ConditionCandidate[] {
-    // TODO: 実装
-    return [];
+    const combinations: ConditionCandidate[] = [];
+    
+    // 2条件の組み合わせ
+    if (sizes.includes(2) && promising.length >= 2) {
+      for (let i = 0; i < promising.length; i++) {
+        for (let j = i + 1; j < promising.length; j++) {
+          const a = promising[i];
+          const b = promising[j];
+          
+          combinations.push({
+            name: `${a.candidate.name} × ${b.candidate.name}`,
+            conditions: [...a.candidate.conditions, ...b.candidate.conditions],
+            reason: `${a.candidate.reason}、かつ${b.candidate.reason}`,
+            hypothesis: `${a.candidate.hypothesis}と${b.candidate.hypothesis}の組み合わせ`,
+            expected_outcome: `期待値: ${a.statistics.expected_value_diff + b.statistics.expected_value_diff}円以上`
+          });
+        }
+      }
+    }
+    
+    // 3条件の組み合わせ（有望条件が多い場合のみ）
+    if (sizes.includes(3) && promising.length >= 3) {
+      // 上位のみ（最大10組）
+      const top = promising.slice(0, Math.min(5, promising.length));
+      
+      for (let i = 0; i < top.length; i++) {
+        for (let j = i + 1; j < top.length; j++) {
+          for (let k = j + 1; k < top.length; k++) {
+            const a = top[i];
+            const b = top[j];
+            const c = top[k];
+            
+            combinations.push({
+              name: `${a.candidate.name} × ${b.candidate.name} × ${c.candidate.name}`,
+              conditions: [
+                ...a.candidate.conditions,
+                ...b.candidate.conditions,
+                ...c.candidate.conditions
+              ],
+              reason: `3条件の掛け合わせ`,
+              hypothesis: `複数条件の相乗効果を検証`,
+              expected_outcome: `期待値大幅向上を期待`
+            });
+          }
+        }
+      }
+    }
+    
+    return combinations;
   }
   
   /**
    * 相乗効果の判定
+   * 組み合わせた期待値が単独の合計より明確に高いか
    */
   private hasSynergy(result: ConditionResult): boolean {
-    // TODO: 単独条件の合計と比較
-    return true;
+    // 基本的な有望条件の判定
+    if (!result.is_promising) {
+      return false;
+    }
+    
+    // 相乗効果のボーナス閾値（+10円以上の上乗せ）
+    // これは単独条件の合計期待値と比較して判定する必要があるが、
+    // 今は単独条件の情報がないため、高めの基準値で判定
+    const synergy_threshold = 40; // 期待値差が40円以上なら相乗効果あり
+    
+    return (
+      result.statistics.expected_value_diff >= synergy_threshold &&
+      result.statistics.show_rate >= 0.15 && // 三着内率15%以上
+      result.statistics.sample_size >= 20 // サンプル数20以上
+    );
   }
   
   /**
-   * 派生パターン生成
+   * 派生パターン生成（偶然性排除のため）
    */
   private generateVariations(candidate: ConditionCandidate): ConditionCandidate[] {
-    // TODO: 実装
-    return [];
+    const variations: ConditionCandidate[] = [];
+    
+    // オリジナルも含める
+    variations.push(candidate);
+    
+    // 各条件について、値を少し変えたバリエーションを生成
+    for (let i = 0; i < candidate.conditions.length; i++) {
+      const condition = candidate.conditions[i];
+      
+      // 血統条件の場合
+      if (condition.field === 'sire' || condition.field === 'broodmare_sire') {
+        // 同じ条件（バリエーションなし）
+        continue;
+      }
+      
+      // レースレベルの場合
+      if (condition.field === 'last_race_level') {
+        const levels = ['S', 'A+', 'A', 'B+', 'B', 'C'];
+        const currentIndex = levels.indexOf(condition.value as string);
+        
+        if (currentIndex > 0) {
+          // 1段階緩和
+          const relaxedConditions = [...candidate.conditions];
+          relaxedConditions[i] = { ...condition, value: levels[currentIndex - 1] };
+          variations.push({
+            ...candidate,
+            name: `${candidate.name} (緩和)`,
+            conditions: relaxedConditions
+          });
+        }
+        
+        if (currentIndex < levels.length - 1) {
+          // 1段階厳格化
+          const strictConditions = [...candidate.conditions];
+          strictConditions[i] = { ...condition, value: levels[currentIndex + 1] };
+          variations.push({
+            ...candidate,
+            name: `${candidate.name} (厳格)`,
+            conditions: strictConditions
+          });
+        }
+      }
+      
+      // 距離条件の場合
+      if (condition.field === 'distance' && condition.operator === 'between') {
+        const [min, max] = condition.value as [number, number];
+        
+        // 範囲を広げる
+        variations.push({
+          ...candidate,
+          name: `${candidate.name} (範囲拡大)`,
+          conditions: candidate.conditions.map((c, idx) => 
+            idx === i ? { ...c, value: [min - 200, max + 200] } : c
+          )
+        });
+        
+        // 範囲を狭める
+        variations.push({
+          ...candidate,
+          name: `${candidate.name} (範囲縮小)`,
+          conditions: candidate.conditions.map((c, idx) => 
+            idx === i ? { ...c, value: [min + 100, max - 100] } : c
+          )
+        });
+      }
+    }
+    
+    // 最大5パターンまで
+    return variations.slice(0, 5);
   }
   
   /**

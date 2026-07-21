@@ -74,10 +74,13 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json({
       success: true,
-      session_id: researchSession.id,
-      status: researchSession.status,
-      theme: researchSession.theme,
-      progress: researchSession.progress,
+      session: {
+        id: researchSession.id,
+        theme: researchSession.theme.theme,
+        phase: researchSession.phase,
+        status: researchSession.status,
+        progress: researchSession.progress
+      },
       
       // 結果サマリー
       phase1_tested: researchSession.phase1_results.length,
@@ -86,7 +89,12 @@ export async function POST(req: NextRequest) {
       phase3_tested: researchSession.phase3_results.length,
       
       promising_count: promisingCount,
-      rule_candidates: researchSession.rule_candidates,
+      rule_candidates: savedCandidates,
+      
+      // 詳細結果（UI表示用）
+      phase1_results: researchSession.phase1_results,
+      phase2_results: researchSession.phase2_results,
+      phase3_results: researchSession.phase3_results,
       
       started_at: researchSession.started_at,
       completed_at: researchSession.completed_at
