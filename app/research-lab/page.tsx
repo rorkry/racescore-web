@@ -162,20 +162,43 @@ export default function ResearchLabPage() {
                 <h3 className="font-bold text-lg mb-3">🔍 Phase 1: 単独条件の探索結果</h3>
                 <div className="space-y-3">
                   {researchResult.phase1_results.slice(0, 5).map((result: any, idx: number) => (
-                    <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                    <div key={idx} className={`border rounded-lg p-4 ${result.is_promising ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
                       <div className="flex items-start justify-between mb-2">
-                        <div>
+                        <div className="flex-1">
                           <h4 className="font-bold text-gray-900">{result.candidate.name}</h4>
                           <p className="text-sm text-gray-600 mt-1">
                             仮説: {result.candidate.hypothesis}
                           </p>
                         </div>
-                        {result.is_promising && (
-                          <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-medium">
-                            有望
+                        <div className="ml-4 flex flex-col items-end gap-1">
+                          {result.is_promising && (
+                            <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-medium">
+                              有望
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-500">
+                            スコア: {result.promising_score || 0}/100
                           </span>
-                        )}
+                        </div>
                       </div>
+                      
+                      {/* 強みと注意点 */}
+                      {(result.promising_reasons?.length > 0 || result.promising_warnings?.length > 0) && (
+                        <div className="mb-3 space-y-1">
+                          {result.promising_reasons?.slice(0, 2).map((reason: string, i: number) => (
+                            <div key={i} className="text-xs text-green-700 flex items-start gap-1">
+                              <span>✓</span>
+                              <span>{reason}</span>
+                            </div>
+                          ))}
+                          {result.promising_warnings?.slice(0, 2).map((warning: string, i: number) => (
+                            <div key={i} className="text-xs text-orange-600 flex items-start gap-1">
+                              <span>⚠️</span>
+                              <span>{warning}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       
                       <div className="grid grid-cols-4 gap-3 mt-3">
                         <div className="bg-gray-50 p-2 rounded">

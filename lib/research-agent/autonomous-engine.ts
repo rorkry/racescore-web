@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 import type { Rule, RuleCondition } from '@/types/rule';
 import { AnalysisConnector } from './analysis-connector';
 import { generateConditions, getDefaultConditions, type ResearchTheme } from './condition-generator';
+import { evaluatePromising, generatePromisingReport, type ConditionStatistics, type ConfidenceMetrics } from './promising-evaluator';
 
 // 研究エージェントのシステムプロンプト
 const RESEARCH_AGENT_SYSTEM_PROMPT = `
@@ -88,8 +89,10 @@ export interface ConditionResult {
   statistics: {
     sample_size: number;
     win_rate: number;
-    place_return_rate: number;
+    place_rate: number;
     show_rate: number;
+    win_return_rate: number;
+    place_return_rate: number;
     expected_value_diff: number;
   };
   confidence: {
@@ -97,6 +100,9 @@ export interface ConditionResult {
     is_significant: boolean;
   };
   is_promising: boolean;
+  promising_score: number;         // 有望度スコア（0-100）
+  promising_reasons: string[];     // 有望である理由
+  promising_warnings: string[];    // 注意点
   
   // AI の解釈（結果を受けて）
   ai_interpretation?: {
@@ -364,34 +370,39 @@ export class AutonomousResearchAgent {
       // 既存の分析ツールで検証
       const result = await this.analysisConnector.evaluateCondition(candidate.conditions);
       
-      const statistics = {
+      const statistics: ConditionStatistics = {
         sample_size: result.statistics.sample_size,
         win_rate: result.statistics.win_rate,
-        place_return_rate: result.statistics.place_return_rate,
+        place_rate: result.statistics.place_rate || 0,
         show_rate: result.statistics.show_rate,
+        win_return_rate: result.statistics.win_return_rate || 0,
+        place_return_rate: result.statistics.place_return_rate,
         expected_value_diff: result.statistics.expected_value_diff
       };
       
-      const confidence = {
+      const confidence: ConfidenceMetrics = {
         confidence_level: result.confidence.confidence_level,
         is_significant: result.confidence.is_significant
       };
       
-      const is_promising = this.isPromising({
-        candidate,
-        statistics,
-        confidence,
-        is_promising: false
-      });
+      // 有望度評価（新しいロジック）
+      const evaluation = evaluatePromising(statistics, confidence);
       
       // AIに結果を解釈させる
-      const ai_interpretation = await this.interpretResult(candidate, statistics, is_promising);
+      const ai_interpretation = await this.interpretResult(
+        candidate,
+        statistics,
+        evaluation.is_promising
+      );
       
       return {
         candidate,
         statistics,
         confidence,
-        is_promising,
+        is_promising: evaluation.is_promising,
+        promising_score: evaluation.score,
+        promising_reasons: evaluation.reasons,
+        promising_warnings: evaluation.warnings,
         ai_interpretation
       };
     } catch (error) {
@@ -403,15 +414,20 @@ export class AutonomousResearchAgent {
         statistics: {
           sample_size: 0,
           win_rate: 0,
-          place_return_rate: 0,
+          place_rate: 0,
           show_rate: 0,
+          win_return_rate: 0,
+          place_return_rate: 0,
           expected_value_diff: 0
         },
         confidence: {
           confidence_level: 0,
           is_significant: false
         },
-        is_promising: false
+        is_promising: false,
+        promising_score: 0,
+        promising_reasons: [],
+        promising_warnings: ['評価に失敗しました']
       };
     }
   }
@@ -471,17 +487,6 @@ ${is_promising ? '有望' : '不十分'}
     };
   }
   
-  /**
-   * 有望条件の判定
-   */
-  private isPromising(result: ConditionResult): boolean {
-    return (
-      result.statistics.sample_size >= 30 &&
-      result.statistics.show_rate >= 0.1 &&
-      result.statistics.expected_value_diff >= 20 &&
-      result.confidence.confidence_level >= 60
-    );
-  }
   
   /**
    * 組み合わせ生成
