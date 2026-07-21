@@ -49,24 +49,33 @@ export async function POST(req: NextRequest) {
     console.log(`[Research Agent] Phase 3 results: ${researchSession.phase3_results.length}`);
     console.log(`[Research Agent] Rule candidates: ${researchSession.rule_candidates.length}`);
     
-    // ルール候補をDBに保存
+    // ルール候補をDBに保存（テーブルが存在する場合のみ）
     const savedCandidates = [];
-    for (const candidate of researchSession.rule_candidates) {
-      try {
-        const saved = await saveRuleCandidate(session.user.id, {
-          name: candidate.name,
-          conditions: candidate.conditions,
-          statistics: candidate.statistics,
-          confidence: candidate.confidence,
-          validation_results: candidate.validation_results || [],
-          ai_reasoning: candidate.ai_reasoning,
-          research_session_id: researchSession.id
-        });
-        savedCandidates.push(saved);
-        console.log(`[Research Agent] Saved rule candidate: ${saved.id}`);
-      } catch (error) {
-        console.error(`[Research Agent] Failed to save rule candidate:`, error);
+    
+    // TODO: rule_candidatesテーブルの作成が完了したら、この条件を削除
+    const saveToDb = false; // テーブル作成後にtrueに変更
+    
+    if (saveToDb) {
+      for (const candidate of researchSession.rule_candidates) {
+        try {
+          const saved = await saveRuleCandidate(session.user.id, {
+            name: candidate.name,
+            conditions: candidate.conditions,
+            statistics: candidate.statistics,
+            confidence: candidate.confidence,
+            validation_results: candidate.validation_results || [],
+            ai_reasoning: candidate.ai_reasoning,
+            research_session_id: researchSession.id
+          });
+          savedCandidates.push(saved);
+          console.log(`[Research Agent] Saved rule candidate: ${saved.id}`);
+        } catch (error) {
+          console.error(`[Research Agent] Failed to save rule candidate:`, error);
+        }
       }
+    } else {
+      console.log(`[Research Agent] Skipping DB save (rule_candidates table not yet created)`);
+      // ルール候補はメモリ上で返すのみ
     }
     
     // 有望条件の数をカウント

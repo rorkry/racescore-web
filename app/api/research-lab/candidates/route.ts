@@ -26,6 +26,16 @@ export async function GET(req: NextRequest) {
       );
     }
     
+    // TODO: rule_candidatesテーブルの作成が完了したら、この条件を削除
+    const tableExists = false;
+    
+    if (!tableExists) {
+      return NextResponse.json({
+        success: true,
+        candidates: []
+      });
+    }
+    
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status') as 'pending' | 'approved' | 'rejected' | null;
     
@@ -59,6 +69,16 @@ export async function PATCH(req: NextRequest) {
         { error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+    
+    // TODO: rule_candidatesテーブルの作成が完了したら、この条件を削除
+    const tableExists = false;
+    
+    if (!tableExists) {
+      return NextResponse.json({
+        success: false,
+        error: 'Rule candidates table not yet created'
+      }, { status: 503 });
     }
     
     const { id, action } = await req.json();
@@ -109,6 +129,16 @@ export async function DELETE(req: NextRequest) {
         { error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+    
+    // TODO: rule_candidatesテーブルの作成が完了したら、この条件を削除
+    const tableExists = false;
+    
+    if (!tableExists) {
+      return NextResponse.json({
+        success: false,
+        error: 'Rule candidates table not yet created'
+      }, { status: 503 });
     }
     
     const { searchParams } = new URL(req.url);
