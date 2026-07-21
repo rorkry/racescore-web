@@ -66,6 +66,24 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
 - 独自指数（makikaeshi, potential）を積極的に活用する
 - 指数 × コース、指数 × 人気、指数 × 枠番などの組み合わせを試す
 - 有望な条件が見つかったら、距離帯・競馬場・馬場状態で細分化して検証する
+
+【重要: 曖昧な条件は避ける】
+❌ 悪い例:
+  - "人気"（上位人気か人気薄か不明）
+  - "枠番"（内枠か外枠か不明）
+  
+✅ 良い例:
+  - "1-3番人気" → popularity <= 3
+  - "人気薄（7番人気以下）" → popularity >= 7
+  - "単勝10倍以上" → win_odds >= 10.0（推奨）
+  - "内枠（1-3枠）" → waku <= 3
+  - "外枠（6-8枠）" → waku >= 6
+
+【オッズベースの条件を推奨】
+人気順位ではなくオッズで条件を指定する方が、出走頭数に依存せず明確:
+  - win_odds >= 10.0（単勝10倍以上）
+  - win_odds <= 3.0（単勝3倍以下）
+  - place_odds_low >= 5.0（複勝下限5倍以上）
 `;
 
 export interface ConditionCandidate {
@@ -161,10 +179,15 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 【重点的に検証すべき条件】
 - 巻き返し指数（makikaeshi）の閾値を変えて試す（2.0, 3.0, 4.0, 5.0）
 - ポテンシャル指数（potential）の閾値を変えて試す（3.0, 4.0, 5.0, 6.0）
-- 指数 × 人気（人気薄で指数が高い馬は穴馬候補）
-- 指数 × 枠番（内枠 × 高指数は有利か）
+- 指数 × 人気（例: popularity >= 5 かつ makikaeshi >= 4.0 で穴馬候補）
+- 指数 × オッズ（例: win_odds >= 8.0 かつ potential >= 5.0 で高配当期待）
+- 指数 × 枠番（例: waku <= 3 かつ potential >= 4.0 で内枠有利）
 - 指数 × コース（芝・ダート・距離帯との相性）
-- 指数 × 斤量（軽斤量 × 高指数は期待値が高いか）
+- 指数 × 斤量（例: weight_carried <= 54 かつ makikaeshi >= 3.0）
+
+【必須: 条件は常に具体的な演算子と値を指定】
+- ❌ 「人気」「枠番」だけ → 曖昧で意味不明
+- ✅ 「popularity <= 3」「waku >= 6」 → 明確で検証可能
 
 このテーマに関連する検証すべき条件を${count}個生成してください。
 
@@ -177,23 +200,40 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 5. reasoning: 根拠（この仮説を立てた理由、80文字以内）
 
 【条件の例】
+例1: 指数×コース
 {
   "name": "巻き返し指数3.0以上×芝",
   "conditions": [
-    {
-      "field": "makikaeshi",
-      "operator": "gte",
-      "value": 3.0
-    },
-    {
-      "field": "distance",
-      "operator": "contains",
-      "value": "芝"
-    }
+    { "field": "makikaeshi", "operator": "gte", "value": 3.0 },
+    { "field": "distance", "operator": "contains", "value": "芝" }
   ],
   "hypothesis": "巻き返し指数が高い馬は芝で好走する",
   "expected_outcome": "三着内率40%以上、複勝回収率115%以上",
   "reasoning": "巻き返し指数は負けた後の巻き返し力を示し、芝は能力が反映されやすい"
+}
+
+例2: 指数×人気（明確な範囲指定）
+{
+  "name": "人気薄（7番人気以下）×高ポテンシャル",
+  "conditions": [
+    { "field": "popularity", "operator": "gte", "value": 7 },
+    { "field": "potential", "operator": "gte", "value": 5.0 }
+  ],
+  "hypothesis": "人気薄でもポテンシャル指数が高ければ穴馬候補",
+  "expected_outcome": "単勝回収率150%以上",
+  "reasoning": "人気に反映されていない能力を指数で検出"
+}
+
+例3: 指数×オッズ（推奨）
+{
+  "name": "単勝10倍以上×高巻き返し指数",
+  "conditions": [
+    { "field": "win_odds", "operator": "gte", "value": 10.0 },
+    { "field": "makikaeshi", "operator": "gte", "value": 4.0 }
+  ],
+  "hypothesis": "オッズが高くても巻き返し指数が高ければ期待値がある",
+  "expected_outcome": "単勝回収率180%以上",
+  "reasoning": "オッズで直接判定し、出走頭数に依存しない条件"
 }
 
 【出力形式】
@@ -359,14 +399,24 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
       reasoning: '巻き返し指数は負けた後の巻き返し傾向を示す独自指標'
     },
     {
-      name: '人気薄×高指数',
+      name: '人気薄（5番人気以下）×高指数',
       conditions: [
-        { field: 'popularity', operator: 'gte', value: 4 },
+        { field: 'popularity', operator: 'gte', value: 5 },
         { field: 'potential', operator: 'gte', value: 5.0 }
       ],
       hypothesis: '人気薄でもポテンシャル指数が高ければ穴馬候補',
       expected_outcome: '単勝回収率150%以上（高配当狙い）',
       reasoning: '人気に反映されていない能力を指数で検出'
+    },
+    {
+      name: '単勝10倍以上×高指数',
+      conditions: [
+        { field: 'win_odds', operator: 'gte', value: 10.0 },
+        { field: 'makikaeshi', operator: 'gte', value: 4.0 }
+      ],
+      hypothesis: 'オッズが高くても巻き返し指数が高ければ期待値がある',
+      expected_outcome: '単勝回収率180%以上',
+      reasoning: 'オッズで直接判定し、出走頭数に依存しない条件'
     },
     {
       name: '芝中距離×高指数',

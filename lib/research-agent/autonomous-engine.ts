@@ -690,6 +690,7 @@ ${is_promising ? '有望' : '不十分'}
   
   /**
    * 組み合わせ生成（2条件、3条件）
+   * 同じフィールドへの条件が重複する場合は統合する
    */
   private generateCombinations(
     promising: ConditionResult[],
@@ -704,9 +705,28 @@ ${is_promising ? '有望' : '不十分'}
           const a = promising[i];
           const b = promising[j];
           
+          // 条件を統合（重複フィールドを処理）
+          const mergedResult = this.mergeConditions(
+            a.candidate.conditions,
+            b.candidate.conditions
+          );
+          
+          // 統合できない（矛盾する）条件はスキップ
+          if (!mergedResult.valid) {
+            console.log(`[Phase 2] Skipping invalid combination: ${a.candidate.name} × ${b.candidate.name} (${mergedResult.reason})`);
+            continue;
+          }
+          
+          // 条件名を改善（重複表現を避ける）
+          const combinedName = this.generateCombinedName(
+            a.candidate.name,
+            b.candidate.name,
+            mergedResult.merged
+          );
+          
           combinations.push({
-            name: `${a.candidate.name} × ${b.candidate.name}`,
-            conditions: [...a.candidate.conditions, ...b.candidate.conditions],
+            name: combinedName,
+            conditions: mergedResult.merged,
             reasoning: `${a.candidate.reasoning}、かつ${b.candidate.reasoning}`,
             hypothesis: `${a.candidate.hypothesis}と${b.candidate.hypothesis}の組み合わせ`,
             expected_outcome: `期待値: ${a.statistics.expected_value_diff + b.statistics.expected_value_diff}円以上`
@@ -727,13 +747,34 @@ ${is_promising ? '有望' : '不十分'}
             const b = top[j];
             const c = top[k];
             
+            // 3つの条件を段階的に統合
+            const mergedAB = this.mergeConditions(
+              a.candidate.conditions,
+              b.candidate.conditions
+            );
+            
+            if (!mergedAB.valid) {
+              continue;
+            }
+            
+            const mergedABC = this.mergeConditions(
+              mergedAB.merged,
+              c.candidate.conditions
+            );
+            
+            if (!mergedABC.valid) {
+              continue;
+            }
+            
+            const combinedName = this.generateCombinedName(
+              a.candidate.name,
+              `${b.candidate.name}×${c.candidate.name}`,
+              mergedABC.merged
+            );
+            
             combinations.push({
-              name: `${a.candidate.name} × ${b.candidate.name} × ${c.candidate.name}`,
-              conditions: [
-                ...a.candidate.conditions,
-                ...b.candidate.conditions,
-                ...c.candidate.conditions
-              ],
+              name: combinedName,
+              conditions: mergedABC.merged,
               reasoning: `3条件の掛け合わせ`,
               hypothesis: `複数条件の相乗効果を検証`,
               expected_outcome: `期待値大幅向上を期待`
@@ -864,5 +905,207 @@ ${is_promising ? '有望' : '不十分'}
         model: 'gpt-4o-mini'
       }
     }));
+  }
+  
+  /**
+   * 条件の統合（同じフィールドへの条件を処理）
+   */
+  private mergeConditions(
+    conditionsA: RuleCondition[],
+    conditionsB: RuleCondition[]
+  ): { valid: boolean; merged: RuleCondition[]; reason?: string } {
+    const merged: RuleCondition[] = [...conditionsA];
+    const fieldMap = new Map<string, RuleCondition>();
+    
+    // conditionsA のフィールドをマップに登録
+    for (const cond of conditionsA) {
+      fieldMap.set(cond.field, cond);
+    }
+    
+    // conditionsB の各条件をチェック
+    for (const condB of conditionsB) {
+      const existingCond = fieldMap.get(condB.field);
+      
+      if (!existingCond) {
+        // 新しいフィールドなら追加
+        merged.push(condB);
+        fieldMap.set(condB.field, condB);
+      } else {
+        // 同じフィールドの条件が既に存在する場合
+        // 統合可能かチェック
+        const mergeResult = this.mergeFieldCondition(existingCond, condB);
+        
+        if (!mergeResult.valid) {
+          return { valid: false, merged: [], reason: mergeResult.reason };
+        }
+        
+        // 統合された条件で置き換え
+        const index = merged.findIndex(c => c.field === condB.field);
+        if (index >= 0 && mergeResult.condition) {
+          merged[index] = mergeResult.condition;
+          fieldMap.set(condB.field, mergeResult.condition);
+        }
+      }
+    }
+    
+    return { valid: true, merged };
+  }
+  
+  /**
+   * 同じフィールドへの2つの条件を統合
+   */
+  private mergeFieldCondition(
+    condA: RuleCondition,
+    condB: RuleCondition
+  ): { valid: boolean; condition?: RuleCondition; reason?: string } {
+    // 同一条件ならそのまま
+    if (
+      condA.operator === condB.operator &&
+      JSON.stringify(condA.value) === JSON.stringify(condB.value)
+    ) {
+      return { valid: true, condition: condA };
+    }
+    
+    // 数値条件の場合
+    if (typeof condA.value === 'number' && typeof condB.value === 'number') {
+      // gte と gte の場合、より大きい方を採用
+      if (condA.operator === 'gte' && condB.operator === 'gte') {
+        const stricterValue = Math.max(condA.value, condB.value);
+        return {
+          valid: true,
+          condition: { ...condA, value: stricterValue }
+        };
+      }
+      
+      // lte と lte の場合、より小さい方を採用
+      if (condA.operator === 'lte' && condB.operator === 'lte') {
+        const stricterValue = Math.min(condA.value, condB.value);
+        return {
+          valid: true,
+          condition: { ...condA, value: stricterValue }
+        };
+      }
+      
+      // gte と lte の組み合わせ（範囲指定）
+      if (condA.operator === 'gte' && condB.operator === 'lte') {
+        if (condA.value <= condB.value) {
+          // 有効な範囲
+          return {
+            valid: true,
+            condition: {
+              field: condA.field,
+              operator: 'between',
+              value: [condA.value, condB.value]
+            }
+          };
+        } else {
+          // 矛盾（下限 > 上限）
+          return {
+            valid: false,
+            reason: `${condA.field}の条件が矛盾（${condA.value}以上 かつ ${condB.value}以下）`
+          };
+        }
+      }
+      
+      if (condA.operator === 'lte' && condB.operator === 'gte') {
+        if (condB.value <= condA.value) {
+          return {
+            valid: true,
+            condition: {
+              field: condA.field,
+              operator: 'between',
+              value: [condB.value, condA.value]
+            }
+          };
+        } else {
+          return {
+            valid: false,
+            reason: `${condA.field}の条件が矛盾（${condB.value}以上 かつ ${condA.value}以下）`
+          };
+        }
+      }
+    }
+    
+    // その他の場合は統合不可
+    return {
+      valid: false,
+      reason: `${condA.field}の条件が競合（${condA.operator} ${condA.value} vs ${condB.operator} ${condB.value}）`
+    };
+  }
+  
+  /**
+   * 組み合わせ条件名の生成（重複表現を避ける）
+   */
+  private generateCombinedName(
+    nameA: string,
+    nameB: string,
+    mergedConditions: RuleCondition[]
+  ): string {
+    // フィールドごとの条件を抽出
+    const fieldDescriptions: string[] = [];
+    const seenFields = new Set<string>();
+    
+    for (const cond of mergedConditions) {
+      if (!seenFields.has(cond.field)) {
+        seenFields.add(cond.field);
+        
+        // フィールド名の表示名
+        const fieldLabel = this.getFieldLabel(cond.field);
+        
+        // 条件の説明
+        const valueDesc = this.getConditionValueDescription(cond);
+        
+        fieldDescriptions.push(`${fieldLabel}${valueDesc}`);
+      }
+    }
+    
+    // 最大3つのフィールドまで表示
+    if (fieldDescriptions.length > 3) {
+      return fieldDescriptions.slice(0, 3).join('×') + '...';
+    }
+    
+    return fieldDescriptions.join('×');
+  }
+  
+  /**
+   * フィールドの表示名を取得
+   */
+  private getFieldLabel(field: string): string {
+    const labels: Record<string, string> = {
+      makikaeshi: '巻き返し指数',
+      potential: 'ポテンシャル指数',
+      popularity: '人気',
+      waku: '枠番',
+      distance: '距離',
+      place: '競馬場',
+      weight_carried: '斤量',
+      win_odds: '単勝オッズ',
+      place_odds_low: '複勝オッズ',
+      sire: '父',
+      finish_position: '着順',
+      field_size: '頭数'
+    };
+    
+    return labels[field] || field;
+  }
+  
+  /**
+   * 条件値の説明を取得
+   */
+  private getConditionValueDescription(cond: RuleCondition): string {
+    if (cond.operator === 'gte') {
+      return `${cond.value}以上`;
+    } else if (cond.operator === 'lte') {
+      return `${cond.value}以下`;
+    } else if (cond.operator === 'eq') {
+      return `=${cond.value}`;
+    } else if (cond.operator === 'between' && Array.isArray(cond.value)) {
+      return `${cond.value[0]}-${cond.value[1]}`;
+    } else if (cond.operator === 'contains') {
+      return `${cond.value}`;
+    } else if (cond.operator === 'in' && Array.isArray(cond.value)) {
+      return `(${cond.value.join('/')})`;
+    }
+    return `${cond.value}`;
   }
 }
