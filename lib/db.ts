@@ -472,6 +472,50 @@ async function initDb(database: DatabaseWrapper) {
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_predictions_course ON ai_predictions(race_course)`);
   await database.exec(`CREATE INDEX IF NOT EXISTS idx_ai_predictions_reaction ON ai_predictions(reaction_count DESC)`);
 
+  // ========== 研究AI テーブル ==========
+  
+  // research_sessions テーブル
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS research_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      parent_session_id TEXT,
+      target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      initial_question TEXT NOT NULL,
+      research_goal TEXT NOT NULL,
+      model_used TEXT DEFAULT 'gpt-4o-mini',
+      status TEXT DEFAULT 'running',
+      total_steps INTEGER DEFAULT 0,
+      started_at TIMESTAMP DEFAULT NOW(),
+      completed_at TIMESTAMP
+    )
+  `);
+
+  // research_steps テーブル
+  await database.exec(`
+    CREATE TABLE IF NOT EXISTS research_steps (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      step_number INTEGER NOT NULL,
+      tool_name TEXT NOT NULL,
+      tool_version TEXT NOT NULL,
+      tool_input TEXT NOT NULL,
+      tool_output TEXT NOT NULL,
+      executed_at TIMESTAMP DEFAULT NOW(),
+      execution_time_ms INTEGER
+    )
+  `);
+
+  // 研究テーブルのインデックス
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_research_user ON research_sessions(user_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_research_target ON research_sessions(target_type, target_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_research_parent ON research_sessions(parent_session_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_research_status ON research_sessions(status)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_steps_session ON research_steps(session_id)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_steps_tool ON research_steps(tool_name)`);
+  await database.exec(`CREATE INDEX IF NOT EXISTS idx_steps_replay ON research_steps(session_id, step_number)`);
+
   console.log('PostgreSQL database initialized');
 }
 
