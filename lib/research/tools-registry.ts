@@ -10,7 +10,7 @@ export const RESEARCH_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'sire_analysis',
-      description: '種牡馬（父馬）の成績・適性を分析する。産駒の得意距離・馬場を判定',
+      description: '種牡馬（父馬）の成績・適性を分析する。産駒の得意距離・馬場、血統タイプを判定',
       parameters: {
         type: 'object',
         properties: {
@@ -19,6 +19,22 @@ export const RESEARCH_TOOLS: ChatCompletionTool[] = [
           race_distance: { type: 'number', description: '距離（メートル）' }
         },
         required: ['horse_name', 'race_surface', 'race_distance']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'broodmare_sire_analysis',
+      description: '母父（Broodmare Sire）の影響を分析。母系の特徴、父×母父の相性（ニックス）を判定',
+      parameters: {
+        type: 'object',
+        properties: {
+          horse_name: { type: 'string', description: '馬名' },
+          race_surface: { type: 'string', enum: ['芝', 'ダート'], description: '芝/ダート（省略可）' },
+          race_distance: { type: 'number', description: '距離（メートル・省略可）' }
+        },
+        required: ['horse_name']
       }
     }
   },

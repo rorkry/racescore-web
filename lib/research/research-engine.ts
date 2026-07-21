@@ -132,9 +132,20 @@ export async function runResearch(
 }
 
 async function executeToolFunction(toolName: string, input: any): Promise<any> {
-  // 各ツールのAPIエンドポイントを呼び出し
+  // ツール名からAPIパスへのマッピング
+  const toolPathMap: Record<string, string> = {
+    'sire_analysis': 'sire',
+    'broodmare_sire_analysis': 'broodmare-sire',
+    'time_correction': 'time',
+    'waku_analysis': 'waku',
+    'style_analysis': 'style',
+    'course_analysis': 'course',
+    'level_analysis': 'level',
+    'odds_analysis': 'odds'
+  };
+  
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-  const toolPath = toolName.replace(/_/g, '/');
+  const toolPath = toolPathMap[toolName] || toolName.replace(/_analysis$/, '');
   
   try {
     const response = await fetch(`${baseUrl}/api/ai-tools/${toolPath}`, {

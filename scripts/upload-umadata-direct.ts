@@ -89,8 +89,8 @@ async function main() {
     
     console.log(`umadataテーブルのカラム数: ${tableCheck.rows.length}`);
     
-    // 47列（id含めて48）が必要
-    if (tableCheck.rows.length < 48) {
+    // 43列（id含めて44）が必要
+    if (tableCheck.rows.length < 44) {
       console.error('ERROR: テーブルのカラム数が足りません');
       console.log('先に /api/recreate-umadata?secret=recreate-umadata-2026 を実行してください');
       process.exit(1);
@@ -114,15 +114,15 @@ async function main() {
     await client.query('BEGIN');
 
     for (let i = 0; i < rows.length; i += batchSize) {
-      const batch = rows.slice(i, i + batchSize).filter(row => row.length >= 46);
+      const batch = rows.slice(i, i + batchSize).filter(row => row.length >= 43);
       
       if (batch.length === 0) continue;
 
       try {
-        // バッチINSERT用のVALUES句を構築（47列）
+        // バッチINSERT用のVALUES句を構築（43列）
         const values: any[] = [];
         const placeholders: string[] = [];
-        const numCols = 47;
+        const numCols = 43;
         
         batch.forEach((row, idx) => {
           const offset = idx * numCols;
@@ -138,12 +138,13 @@ async function main() {
           INSERT INTO umadata (
             race_id, date, place, course_type, distance, class_name, race_name,
             gender_limit, age_limit, waku, umaban, horse_name,
-            index_value, track_condition, field_size, popularity,
+            corner_4_position, track_condition, field_size, popularity,
             finish_position, last_3f, weight_carried, horse_weight, weight_change,
-            finish_time, race_count, margin, win_odds, place_odds_low,
-            place_odds_high, win_payout, place_payout, rpci, pci, good_run, pci3,
-            horse_mark, corner_1, corner_2, corner_3, corner_4,
-            gender, age, jockey, multi_entry, affiliation, trainer, sire, dam, lap_time
+            finish_time, race_count, margin, win_odds, place_odds,
+            win_payout, place_payout, rpci, pci, pci3,
+            horse_mark, passing_order, gender_age, jockey, trainer,
+            sire, dam, lap_time,
+            sire_type, dam_type, broodmare_sire, broodmare_sire_type
           ) VALUES ${placeholders.join(', ')}
         `, values);
         

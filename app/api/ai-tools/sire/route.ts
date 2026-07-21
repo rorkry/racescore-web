@@ -12,7 +12,7 @@ import {
   generatePerformanceSummary
 } from '@/lib/research/performance-calculator';
 
-const TOOL_VERSION = '1.1';
+const TOOL_VERSION = '1.2'; // 血統詳細情報追加
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,12 +27,19 @@ export async function POST(req: NextRequest) {
     
     const db = getDb();
     
-    // 馬の種牡馬を取得
+    // 馬の血統情報を取得
     const horse = await db.prepare(`
-      SELECT sire FROM umadata 
+      SELECT 
+        sire,
+        sire_type,
+        dam,
+        dam_type,
+        broodmare_sire,
+        broodmare_sire_type
+      FROM umadata 
       WHERE horse_name = $1 
       ORDER BY date DESC LIMIT 1
-    `).get<{ sire: string }>(horse_name);
+    `).get<any>(horse_name);
     
     if (!horse?.sire) {
       return NextResponse.json({ 
@@ -43,6 +50,9 @@ export async function POST(req: NextRequest) {
     }
     
     const sire = horse.sire;
+    const sireType = horse.sire_type || '不明';
+    const broodmareSire = horse.broodmare_sire || '不明';
+    const broodmareSireType = horse.broodmare_sire_type || '不明';
     
     // 種牡馬の成績データを取得（オッズ含む）
     const races = await db.prepare(`
@@ -84,14 +94,20 @@ export async function POST(req: NextRequest) {
     
     const distanceMatch = Math.abs(race_distance - avgDistance) < 400;
     
-    // サマリー生成
-    const summary = `${sire}産駒${race_surface}: ` + 
+    // サマリー生成（血統情報含む）
+    const summary = `${horse_name}は${sire}(${sireType}) × ${broodmareSire}(${broodmareSireType})配合。` +
+      `${sire}産駒${race_surface}: ` + 
       generatePerformanceSummary(competition, investment, score) +
       ` 今回${race_distance}mは${distanceMatch ? '適性範囲' : '範囲外'}。`;
     
     return NextResponse.json({
       schema_version: TOOL_VERSION,
       sire,
+      sire_type: sireType,
+      dam: horse.dam || '不明',
+      dam_type: horse.dam_type || '不明',
+      broodmare_sire: broodmareSire,
+      broodmare_sire_type: broodmareSireType,
       competition_performance: competition,
       investment_performance: investment,
       performance_score: score,

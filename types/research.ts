@@ -4,6 +4,7 @@
 
 export type ResearchToolName = 
   | 'sire_analysis'
+  | 'broodmare_sire_analysis'
   | 'time_correction'
   | 'waku_analysis'
   | 'style_analysis'

@@ -28,7 +28,7 @@ export async function GET(request: Request) {
     // 既存テーブルを削除
     await client.query('DROP TABLE IF EXISTS umadata CASCADE');
     
-    // 新フォーマットでテーブル作成（39列 - upload-csvと統一）
+    // 新フォーマットでテーブル作成（43列 - 血統情報追加）
     await client.query(`
       CREATE TABLE umadata (
         id SERIAL PRIMARY KEY,
@@ -68,9 +68,13 @@ export async function GET(request: Request) {
         gender_age TEXT,           -- 33: 性齢(牡3等)
         jockey TEXT,               -- 34: 騎手
         trainer TEXT,              -- 35: 調教師
-        sire TEXT,                 -- 36: 種牡馬
-        dam TEXT,                  -- 37: 母馬名
-        lap_time TEXT              -- 38: ラップタイム
+        sire TEXT,                 -- 36: 種牡馬 (AS列)
+        dam TEXT,                  -- 37: 母馬名 (AT列)
+        lap_time TEXT,             -- 38: ラップタイム
+        sire_type TEXT,            -- 39: 父タイプ名 (BH列)
+        dam_type TEXT,             -- 40: 母タイプ名 (BI列)
+        broodmare_sire TEXT,       -- 41: 母父馬 (BJ列)
+        broodmare_sire_type TEXT   -- 42: 母父タイプ名 (BK列)
       )
     `);
 
@@ -81,13 +85,14 @@ export async function GET(request: Request) {
     await client.query('CREATE INDEX IF NOT EXISTS idx_umadata_jockey ON umadata(jockey)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_umadata_sire ON umadata(sire)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_umadata_dam ON umadata(dam)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_umadata_broodmare_sire ON umadata(broodmare_sire)');
     
     client.release();
     await pool.end();
 
     return NextResponse.json({ 
       success: true, 
-      message: 'umadataテーブルを新フォーマット（47列）で再作成しました'
+      message: 'umadataテーブルを新フォーマット（43列・血統情報追加）で再作成しました'
     });
   } catch (error: any) {
     console.error('Recreate umadata error:', error);
