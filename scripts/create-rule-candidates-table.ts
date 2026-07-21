@@ -6,13 +6,17 @@
  */
 
 import { Pool } from 'pg';
-import dotenv from 'dotenv';
-
-dotenv.config({ path: '.env.local' });
 
 async function createTable() {
+  // 環境変数を直接使用（Next.jsプロジェクトでは.env.localが自動読み込み）
+  const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  
+  if (!databaseUrl) {
+    throw new Error('DATABASE_URL or POSTGRES_URL environment variable is not set');
+  }
+  
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL
+    connectionString: databaseUrl
   });
 
   try {
