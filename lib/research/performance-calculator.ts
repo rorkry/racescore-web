@@ -3,6 +3,9 @@
  * 再現性と期待値を重視した評価を行う
  */
 
+import type { BaselineStats, ComparisonResult } from './baseline-calculator';
+import type { ConfidenceResult } from './statistical-confidence';
+
 export interface CompetitionPerformance {
   sample_size: number;
   win_rate: number;        // 勝率
@@ -23,7 +26,52 @@ export interface PerformanceScore {
   total_score: number;         // 総合スコア (0-100)
   reliability_score: number;   // 再現性スコア
   profitability_score: number; // 収益性スコア
+  statistical_confidence?: number; // 統計的信頼度 (0-100)
   evaluation: string;          // 評価コメント
+}
+
+/**
+ * 標準分析結果（ベースライン比較と統計的信頼性を含む）
+ */
+export interface StandardAnalysisResult {
+  schema_version: string;
+  
+  // 統計データ
+  statistics?: {
+    sample_size: number;
+    confidence_level: number;
+    is_significant: boolean;
+    warnings?: string[];
+  };
+  
+  // 競争成績
+  competition_performance: CompetitionPerformance;
+  
+  // 投資成績
+  investment_performance: InvestmentPerformance;
+  
+  // ベースライン比較
+  baseline_comparison?: {
+    baseline: BaselineStats;
+    lift: {
+      win_rate_lift: number;
+      show_rate_lift: number;
+      return_rate_lift: number;
+      absolute_diff: number;
+    };
+    expected_value_diff: number;
+    is_better: boolean;
+    summary: string;
+  };
+  
+  // 期待値評価
+  performance_score: PerformanceScore;
+  
+  // サマリー
+  summary: string;
+  
+  // ツール固有データ
+  [key: string]: any;
 }
 
 /**
