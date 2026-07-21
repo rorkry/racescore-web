@@ -94,21 +94,41 @@ export interface ConditionResult {
     win_return_rate: number;
     place_return_rate: number;
     expected_value_diff: number;
+    avg_finish?: number;              // 平均着順
+    total_investment?: number;        // 総投資額
+    total_return?: number;            // 総払戻額
+    profit?: number;                  // 利益額
   };
   confidence: {
     confidence_level: number;
     is_significant: boolean;
   };
+  baseline_comparison?: {             // ベースラインとの比較
+    baseline_win_rate: number;
+    baseline_show_rate: number;
+    baseline_place_return_rate: number;
+    win_rate_lift: number;            // 勝率の向上率
+    show_rate_lift: number;           // 三着内率の向上率
+    return_rate_lift: number;         // 回収率の向上率
+  };
   is_promising: boolean;
-  promising_score: number;         // 有望度スコア（0-100）
-  promising_reasons: string[];     // 有望である理由
-  promising_warnings: string[];    // 注意点
+  promising_score: number;            // 有望度スコア（0-100）
+  promising_reasons: string[];        // 有望である理由
+  promising_warnings: string[];       // 注意点
+  rejection_reason?: string;          // 棄却理由（is_promising=falseの場合）
   
   // AI の解釈（結果を受けて）
   ai_interpretation?: {
-    summary: string;                 // 結果の要約
-    matches_hypothesis: boolean;     // 仮説と一致したか
-    next_steps: string[];            // 次に試すべきこと
+    summary: string;                  // 結果の要約
+    matches_hypothesis: boolean;      // 仮説と一致したか
+    next_steps: string[];             // 次に試すべきこと
+  };
+  
+  // デバッグ情報
+  debug_info?: {
+    evaluated_at: string;
+    evaluation_duration_ms: number;
+    analysis_tool_used: string;
   };
 }
 
@@ -276,9 +296,12 @@ export class AutonomousResearchAgent {
     
     // AIに条件候補を生成させる（20-30個）
     const targetCount = 20;
-    const candidates = await this.generateConditionCandidates(theme, targetCount);
+    let candidates = await this.generateConditionCandidates(theme, targetCount);
     
-    console.log(`[Phase 1] Generated ${candidates.length} candidates`);
+    // 重複チェック
+    candidates = this.removeDuplicateConditions(candidates);
+    
+    console.log(`[Phase 1] Generated ${candidates.length} unique candidates (after deduplication)`);
     console.log(`[Phase 1] Starting evaluation...`);
     
     // バッチ処理で並列実行（一度に5個ずつ）
@@ -391,6 +414,36 @@ export class AutonomousResearchAgent {
   }
   
   /**
+   * 重複条件の除去
+   */
+  private removeDuplicateConditions(candidates: ConditionCandidate[]): ConditionCandidate[] {
+    const seen = new Set<string>();
+    const unique: ConditionCandidate[] = [];
+    
+    for (const candidate of candidates) {
+      // 条件を文字列化してハッシュキーを作成
+      const key = JSON.stringify(
+        candidate.conditions
+          .map(c => ({
+            field: c.field,
+            operator: c.operator,
+            value: c.value
+          }))
+          .sort((a, b) => a.field.localeCompare(b.field))
+      );
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(candidate);
+      } else {
+        console.log(`[Phase 1] Duplicate removed: ${candidate.name}`);
+      }
+    }
+    
+    return unique;
+  }
+  
+  /**
    * 条件候補の生成（AI）
    */
   private async generateConditionCandidates(
@@ -425,23 +478,30 @@ export class AutonomousResearchAgent {
   }
   
   /**
-   * 条件の評価（既存エンジン使用）
+   * 条件の評価（既存エンジン使用、デバッグ情報付き）
    */
   private async evaluateCondition(
     candidate: ConditionCandidate
   ): Promise<ConditionResult> {
+    const startTime = Date.now();
+    
     try {
       // 既存の分析ツールで検証
       const result = await this.analysisConnector.evaluateCondition(candidate.conditions);
       
-      const statistics: ConditionStatistics = {
+      const statistics = {
         sample_size: result.statistics.sample_size,
         win_rate: result.statistics.win_rate,
         place_rate: result.statistics.place_rate || 0,
         show_rate: result.statistics.show_rate,
         win_return_rate: result.statistics.win_return_rate || 0,
         place_return_rate: result.statistics.place_return_rate,
-        expected_value_diff: result.statistics.expected_value_diff
+        expected_value_diff: result.statistics.expected_value_diff,
+        avg_finish: result.statistics.avg_finish || 0,
+        // 投資・払戻の計算
+        total_investment: result.statistics.sample_size * 100,
+        total_return: Math.round(result.statistics.sample_size * 100 * (result.statistics.place_return_rate / 100)),
+        profit: Math.round(result.statistics.sample_size * 100 * (result.statistics.place_return_rate / 100 - 1))
       };
       
       const confidence: ConfidenceMetrics = {
@@ -449,27 +509,66 @@ export class AutonomousResearchAgent {
         is_significant: result.confidence.is_significant
       };
       
+      // ベースライン比較（あれば）
+      const baseline_comparison = result.baseline_comparison ? {
+        baseline_win_rate: result.baseline_comparison.baseline.win_rate || 0,
+        baseline_show_rate: result.baseline_comparison.baseline.show_rate || 0,
+        baseline_place_return_rate: result.baseline_comparison.baseline.place_return_rate || 0,
+        win_rate_lift: ((statistics.win_rate / (result.baseline_comparison.baseline.win_rate || 0.01)) - 1) * 100,
+        show_rate_lift: ((statistics.show_rate / (result.baseline_comparison.baseline.show_rate || 0.01)) - 1) * 100,
+        return_rate_lift: statistics.place_return_rate - (result.baseline_comparison.baseline.place_return_rate || 0)
+      } : undefined;
+      
       // 有望度評価（新しいロジック）
       const evaluation = evaluatePromising(statistics, confidence);
       
-      // AIに結果を解釈させる
-      const ai_interpretation = await this.interpretResult(
-        candidate,
-        statistics,
-        evaluation.is_promising
-      );
+      // 棄却理由の生成
+      let rejection_reason: string | undefined;
+      if (!evaluation.is_promising) {
+        if (statistics.sample_size < 30) {
+          rejection_reason = `サンプル数不足（${statistics.sample_size}走、最低30走必要）`;
+        } else if (statistics.show_rate < 0.1) {
+          rejection_reason = `三着内率が低すぎる（${(statistics.show_rate * 100).toFixed(1)}%、最低10%必要）`;
+        } else if (statistics.expected_value_diff < 0) {
+          rejection_reason = `期待値がマイナス（${statistics.expected_value_diff.toFixed(0)}円）`;
+        } else if (confidence.confidence_level < 60) {
+          rejection_reason = `統計的信頼度が低い（${confidence.confidence_level.toFixed(0)}%、最低60%必要）`;
+        } else {
+          rejection_reason = `総合スコアが基準未満（${evaluation.score}/100、最低60必要）`;
+        }
+      }
+      
+      // AIに結果を解釈させる（有望な場合のみ）
+      let ai_interpretation: ConditionResult['ai_interpretation'];
+      if (evaluation.is_promising) {
+        ai_interpretation = await this.interpretResult(
+          candidate,
+          statistics,
+          evaluation.is_promising
+        );
+      }
+      
+      const duration = Date.now() - startTime;
       
       return {
         candidate,
         statistics,
         confidence,
+        baseline_comparison,
         is_promising: evaluation.is_promising,
         promising_score: evaluation.score,
         promising_reasons: evaluation.reasons,
         promising_warnings: evaluation.warnings,
-        ai_interpretation
+        rejection_reason,
+        ai_interpretation,
+        debug_info: {
+          evaluated_at: new Date().toISOString(),
+          evaluation_duration_ms: duration,
+          analysis_tool_used: 'AnalysisConnector'
+        }
       };
     } catch (error) {
+      const duration = Date.now() - startTime;
       console.error('Condition evaluation failed:', error);
       
       // エラー時はデフォルト値
@@ -482,7 +581,11 @@ export class AutonomousResearchAgent {
           show_rate: 0,
           win_return_rate: 0,
           place_return_rate: 0,
-          expected_value_diff: 0
+          expected_value_diff: 0,
+          avg_finish: 0,
+          total_investment: 0,
+          total_return: 0,
+          profit: 0
         },
         confidence: {
           confidence_level: 0,
@@ -491,7 +594,13 @@ export class AutonomousResearchAgent {
         is_promising: false,
         promising_score: 0,
         promising_reasons: [],
-        promising_warnings: ['評価に失敗しました']
+        promising_warnings: ['評価エラー'],
+        rejection_reason: `評価エラー: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        debug_info: {
+          evaluated_at: new Date().toISOString(),
+          evaluation_duration_ms: duration,
+          analysis_tool_used: 'ERROR'
+        }
       };
     }
   }

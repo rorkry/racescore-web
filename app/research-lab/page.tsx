@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import ConditionDebugView from '@/app/components/ConditionDebugView';
 
 interface SavedCondition {
   id: string;
@@ -27,6 +28,8 @@ interface ResearchResult {
   promising_count: number;
   rule_candidates: any[];
   phase1_results?: any[];
+  phase2_results?: any[];
+  phase3_results?: any[];
 }
 
 export default function ResearchLabPage() {
@@ -217,89 +220,54 @@ export default function ResearchLabPage() {
             {/* Phase 1結果 */}
             {researchResult.phase1_results && researchResult.phase1_results.length > 0 && (
               <div className="mb-6">
-                <h3 className="font-bold text-lg mb-3">🔍 Phase 1: 単独条件の探索結果</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-lg">🔍 Phase 1: 単独条件の探索結果</h3>
+                  <div className="text-sm text-gray-600">
+                    全{researchResult.phase1_results.length}件
+                    （有望: {researchResult.phase1_results.filter((r: any) => r.is_promising).length}件、
+                    棄却: {researchResult.phase1_results.filter((r: any) => !r.is_promising).length}件）
+                  </div>
+                </div>
                 <div className="space-y-3">
-                  {researchResult.phase1_results.slice(0, 5).map((result: any, idx: number) => (
-                    <div key={idx} className={`border rounded-lg p-4 ${result.is_promising ? 'border-green-300 bg-green-50' : 'border-gray-200'}`}>
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <h4 className="font-bold text-gray-900">{result.candidate.name}</h4>
-                          <p className="text-sm text-gray-600 mt-1">
-                            仮説: {result.candidate.hypothesis}
-                          </p>
-                        </div>
-                        <div className="ml-4 flex flex-col items-end gap-1">
-                          {result.is_promising && (
-                            <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-medium">
-                              有望
-                            </span>
-                          )}
-                          <span className="text-xs text-gray-500">
-                            スコア: {result.promising_score || 0}/100
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* 強みと注意点 */}
-                      {(result.promising_reasons?.length > 0 || result.promising_warnings?.length > 0) && (
-                        <div className="mb-3 space-y-1">
-                          {result.promising_reasons?.slice(0, 2).map((reason: string, i: number) => (
-                            <div key={i} className="text-xs text-green-700 flex items-start gap-1">
-                              <span>✓</span>
-                              <span>{reason}</span>
-                            </div>
-                          ))}
-                          {result.promising_warnings?.slice(0, 2).map((warning: string, i: number) => (
-                            <div key={i} className="text-xs text-orange-600 flex items-start gap-1">
-                              <span>⚠️</span>
-                              <span>{warning}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      
-                      <div className="grid grid-cols-4 gap-3 mt-3">
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-xs text-gray-600">サンプル</div>
-                          <div className="font-bold text-gray-900">
-                            {result.statistics.sample_size}走
-                          </div>
-                        </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-xs text-gray-600">三着内率</div>
-                          <div className="font-bold text-gray-900">
-                            {(result.statistics.show_rate * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-xs text-gray-600">回収率</div>
-                          <div className="font-bold text-gray-900">
-                            {result.statistics.place_return_rate.toFixed(1)}%
-                          </div>
-                        </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <div className="text-xs text-gray-600">期待値</div>
-                          <div className="font-bold text-green-700">
-                            +{result.statistics.expected_value_diff.toFixed(0)}円
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {result.ai_interpretation && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="text-xs text-gray-600 mb-1">AIの解釈:</div>
-                          <p className="text-sm text-gray-700">
-                            {result.ai_interpretation.summary}
-                          </p>
-                        </div>
-                      )}
-                    </div>
+                  {researchResult.phase1_results.map((result: any, idx: number) => (
+                    <ConditionDebugView key={idx} result={result} index={idx} />
                   ))}
-                  {researchResult.phase1_results.length > 5 && (
-                    <div className="text-center text-sm text-gray-500">
-                      他 {researchResult.phase1_results.length - 5} 件の条件
-                    </div>
-                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Phase 2結果 */}
+            {researchResult.phase2_results && researchResult.phase2_results.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-lg">🔗 Phase 2: 掛け合わせ検証結果</h3>
+                  <div className="text-sm text-gray-600">
+                    全{researchResult.phase2_results.length}件
+                    （相乗効果あり: {researchResult.phase2_results.filter((r: any) => r.is_promising).length}件）
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {researchResult.phase2_results.map((result: any, idx: number) => (
+                    <ConditionDebugView key={idx} result={result} index={idx} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Phase 3結果 */}
+            {researchResult.phase3_results && researchResult.phase3_results.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-lg">🔄 Phase 3: 派生検証結果</h3>
+                  <div className="text-sm text-gray-600">
+                    全{researchResult.phase3_results.length}件
+                    （堅牢: {researchResult.phase3_results.filter((r: any) => r.is_promising).length}件）
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {researchResult.phase3_results.map((result: any, idx: number) => (
+                    <ConditionDebugView key={idx} result={result} index={idx} />
+                  ))}
                 </div>
               </div>
             )}
