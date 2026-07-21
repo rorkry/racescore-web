@@ -305,22 +305,87 @@ export class AnalysisConnector {
       const avg_win_odds = parseFloat(result.avg_win_odds) || 0;
       const avg_place_odds = parseFloat(result.avg_place_odds) || 0;
 
-      // デバッグ: オッズの値を確認
-      console.log('[AnalysisConnector] Odds Debug:', {
-        sample_size,
-        win_rate: win_rate.toFixed(4),
-        avg_win_odds: avg_win_odds.toFixed(2),
-        avg_place_odds: avg_place_odds.toFixed(2)
-      });
+      // デバッグ: より詳細な分析
+      // 勝った馬だけのオッズ平均を計算
+      const debugQuery = `
+        SELECT 
+          -- 全体
+          COUNT(*) as total_horses,
+          
+          -- オッズデータがある馬
+          SUM(CASE 
+            WHEN TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+            THEN 1 ELSE 0 
+          END) as horses_with_odds,
+          
+          -- 勝った馬（1着）
+          SUM(CASE 
+            WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+              AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1
+            THEN 1 ELSE 0 
+          END) as winning_horses,
+          
+          -- 勝った馬のオッズ平均（勝った馬だけ）
+          AVG(CASE 
+            WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+              AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER = 1
+              AND TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+            THEN TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+            ELSE NULL
+          END) as avg_winning_odds,
+          
+          -- 負けた馬のオッズ平均（2着以下）
+          AVG(CASE 
+            WHEN TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789') ~ '^[0-9]+$'
+              AND TRANSLATE(u.finish_position, '０１２３４５６７８９', '0123456789')::INTEGER > 1
+              AND TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..') ~ '^[0-9.]+$'
+            THEN TRANSLATE(u.win_odds, '０１２３４５６７８９.．', '0123456789..')::FLOAT
+            ELSE NULL
+          END) as avg_losing_odds
+          
+        FROM umadata u
+        ${joinClause}
+        ${whereClause}
+      `;
+      
+      const debugResult = await db.prepare(debugQuery).get<any>(...params);
+      
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AnalysisConnector] 詳細デバッグ情報');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('【サンプル数】');
+      console.log(`  総馬数: ${debugResult.total_horses}頭`);
+      console.log(`  オッズデータあり: ${debugResult.horses_with_odds}頭 (${((debugResult.horses_with_odds / debugResult.total_horses) * 100).toFixed(1)}%)`);
+      console.log(`  勝利馬: ${debugResult.winning_horses}頭`);
+      console.log('');
+      console.log('【オッズ情報】');
+      console.log(`  全体の平均オッズ: ${avg_win_odds.toFixed(2)}倍`);
+      console.log(`  勝った馬の平均オッズ: ${(parseFloat(debugResult.avg_winning_odds) || 0).toFixed(2)}倍`);
+      console.log(`  負けた馬の平均オッズ: ${(parseFloat(debugResult.avg_losing_odds) || 0).toFixed(2)}倍`);
+      console.log('');
+      console.log('【成績】');
+      console.log(`  勝率: ${(win_rate * 100).toFixed(2)}%`);
+      console.log(`  連対率: ${(place_rate * 100).toFixed(2)}%`);
+      console.log(`  三着内率: ${(show_rate * 100).toFixed(2)}%`);
+      console.log('');
 
       // 回収率計算（オッズ × 的中率 × 100 = %）
       const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 100) : 0;
       const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 100) : 0;
       
-      console.log('[AnalysisConnector] Return Rate:', {
-        win_return_rate: win_return_rate.toFixed(1) + '%',
-        place_return_rate: place_return_rate.toFixed(1) + '%'
-      });
+      console.log('【回収率計算】');
+      console.log(`  計算式: 勝率 × 平均オッズ × 100`);
+      console.log(`  単勝回収率: ${win_rate.toFixed(4)} × ${avg_win_odds.toFixed(2)} × 100 = ${win_return_rate.toFixed(1)}%`);
+      console.log(`  複勝回収率: ${show_rate.toFixed(4)} × ${avg_place_odds.toFixed(2)} × 100 = ${place_return_rate.toFixed(1)}%`);
+      
+      // 期待値計算
+      const expected_profit_per_100yen = (win_return_rate - 100);
+      console.log('');
+      console.log('【投資シミュレーション（100円購入）】');
+      console.log(`  投資額: 100円`);
+      console.log(`  平均払戻: ${(win_return_rate).toFixed(1)}円`);
+      console.log(`  期待損益: ${expected_profit_per_100yen >= 0 ? '+' : ''}${expected_profit_per_100yen.toFixed(1)}円`);
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 投資パフォーマンス
       const total_investment = sample_size * 100;
