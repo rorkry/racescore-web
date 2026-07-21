@@ -44,12 +44,15 @@ export async function POST(req: NextRequest) {
     
     const sire = horse.sire;
     
-    // 種牡馬の成績データを取得（詳細版）
+    // 種牡馬の成績データを取得（オッズ含む）
     const races = await db.prepare(`
       SELECT 
         finish_position,
         field_size,
         popularity,
+        win_odds,
+        place_odds_low,
+        place_odds_high,
         distance
       FROM umadata
       WHERE sire = $1 AND distance LIKE $2
@@ -67,12 +70,8 @@ export async function POST(req: NextRequest) {
     // 競争成績を計算
     const competition = calculateCompetitionPerformance(races);
     
-    // 投資成績を計算（簡易オッズ推定）
-    const racesWithOdds = races.map(r => ({
-      ...r,
-      odds: parseFloat(r.popularity || '5') * 2 // 人気からオッズを簡易推定
-    }));
-    const investment = calculateInvestmentPerformance(racesWithOdds);
+    // 投資成績を計算（実際のオッズデータを使用）
+    const investment = calculateInvestmentPerformance(races);
     
     // 期待値評価
     const score = evaluatePerformance(competition, investment);

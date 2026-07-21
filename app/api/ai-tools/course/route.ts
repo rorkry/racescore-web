@@ -48,12 +48,15 @@ export async function POST(req: NextRequest) {
     if (horse_name) {
       const db = getDb();
       
-      // 馬のコース成績を取得
+      // 馬のコース成績を取得（オッズ含む）
       const races = await db.prepare(`
         SELECT 
           finish_position,
           field_size,
-          popularity
+          popularity,
+          win_odds,
+          place_odds_low,
+          place_odds_high
         FROM umadata
         WHERE horse_name = $1
           AND place LIKE $2
@@ -63,11 +66,7 @@ export async function POST(req: NextRequest) {
       
       if (races && races.length > 0) {
         competition = calculateCompetitionPerformance(races);
-        const racesWithOdds = races.map(r => ({
-          ...r,
-          odds: parseFloat(r.popularity || '5') * 2
-        }));
-        investment = calculateInvestmentPerformance(racesWithOdds);
+        investment = calculateInvestmentPerformance(races);
         score = evaluatePerformance(competition, investment);
         
         summary += ` ${horse_name}の当コース成績: ` + 

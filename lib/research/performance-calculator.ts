@@ -72,14 +72,16 @@ export function calculateCompetitionPerformance(
 }
 
 /**
- * 投資成績を計算（オッズデータがある場合）
+ * 投資成績を計算（実際のオッズデータを使用）
  */
 export function calculateInvestmentPerformance(
   races: Array<{ 
-    finish_position: string | number; 
-    odds?: number;
-    win_odds?: number;
-    place_odds?: number;
+    finish_position: string | number;
+    win_odds?: string | number;       // 単勝オッズ
+    place_odds_low?: string | number; // 複勝オッズ下限
+    place_odds_high?: string | number; // 複勝オッズ上限
+    place_odds?: string | number;     // 複勝オッズ（単一値の場合）
+    popularity?: string | number;     // 人気（オッズがない場合の予備）
   }>
 ): InvestmentPerformance {
   const sampleSize = races.length;
@@ -97,14 +99,34 @@ export function calculateInvestmentPerformance(
     
     // 単勝（1着のみ）
     if (finish === 1) {
-      const odds = race.win_odds || race.odds || 0;
-      winReturn += odds * 100;
+      const winOdds = parseFloat(String(race.win_odds || '0'));
+      if (winOdds > 0) {
+        winReturn += winOdds * 100;
+      } else {
+        // オッズデータがない場合は人気から推定
+        const popularity = parseFloat(String(race.popularity || '5'));
+        winReturn += popularity * 2 * 100;
+      }
     }
     
     // 複勝（3着以内）
     if (finish <= 3) {
-      const placeOdds = race.place_odds || (race.odds ? race.odds * 0.2 : 0);
-      placeReturn += placeOdds * 100;
+      // 複勝オッズの優先順位: place_odds > place_odds_low > win_odds * 0.2
+      let placeOdds = 0;
+      if (race.place_odds) {
+        placeOdds = parseFloat(String(race.place_odds));
+      } else if (race.place_odds_low) {
+        placeOdds = parseFloat(String(race.place_odds_low));
+      } else if (race.win_odds) {
+        placeOdds = parseFloat(String(race.win_odds)) * 0.2;
+      } else {
+        const popularity = parseFloat(String(race.popularity || '5'));
+        placeOdds = popularity * 0.4;
+      }
+      
+      if (placeOdds > 0) {
+        placeReturn += placeOdds * 100;
+      }
     }
   }
   

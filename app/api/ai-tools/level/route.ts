@@ -42,13 +42,16 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // 次走成績データを取得
+    // 次走成績データを取得（オッズ含む）
     const nextRunRaces = await db.prepare(`
       SELECT 
         horse_name,
         finish_position,
         field_size,
-        popularity
+        popularity,
+        win_odds,
+        place_odds_low,
+        place_odds_high
       FROM umadata
       WHERE race_id LIKE $1
       LIMIT 18

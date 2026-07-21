@@ -27,12 +27,15 @@ export async function POST(req: NextRequest) {
     
     const db = getDb();
     
-    // 枠別成績データを取得
+    // 枠別成績データを取得（オッズ含む）
     const races = await db.prepare(`
       SELECT 
         finish_position,
         field_size,
-        popularity
+        popularity,
+        win_odds,
+        place_odds_low,
+        place_odds_high
       FROM umadata
       WHERE place LIKE $1
         AND distance LIKE $2
@@ -48,13 +51,9 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    // 競争成績・投資成績を計算
+    // 競争成績・投資成績を計算（実際のオッズデータを使用）
     const competition = calculateCompetitionPerformance(races);
-    const racesWithOdds = races.map(r => ({
-      ...r,
-      odds: parseFloat(r.popularity || '5') * 2
-    }));
-    const investment = calculateInvestmentPerformance(racesWithOdds);
+    const investment = calculateInvestmentPerformance(races);
     const score = evaluatePerformance(competition, investment);
     
     // サマリー
