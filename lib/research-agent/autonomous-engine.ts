@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import type { Rule, RuleCondition } from '@/types/rule';
 import { AnalysisConnector } from './analysis-connector';
+import { generateConditions, getDefaultConditions, type ResearchTheme } from './condition-generator';
 
 // 研究エージェントのシステムプロンプト
 const RESEARCH_AGENT_SYSTEM_PROMPT = `
@@ -73,12 +74,6 @@ const CONDITION_GENERATOR_TOOL: OpenAI.ChatCompletionTool = {
     }
   }
 };
-
-export interface ResearchTheme {
-  theme: string;
-  description: string;
-  focus_areas: string[];
-}
 
 export interface ConditionCandidate {
   name: string;
@@ -332,39 +327,31 @@ export class AutonomousResearchAgent {
     theme: ResearchTheme,
     count: number
   ): Promise<ConditionCandidate[]> {
-    const response = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: RESEARCH_AGENT_SYSTEM_PROMPT
-        },
-        {
-          role: 'user',
-          content: `テーマ: ${theme.theme}
-
-          このテーマに関連する条件を${count}個生成してください。
-          各条件は検証可能で、サンプル数が確保できるものにしてください。`
-        }
-      ],
-      tools: [CONDITION_GENERATOR_TOOL],
-      tool_choice: 'auto'
-    });
-    
-    // TODO: 実際のレスポンスをパース
-    // 仮実装
-    return [
-      {
-        name: '母父ディープ × 芝',
-        conditions: [
-          { field: 'broodmare_sire', operator: 'eq', value: 'ディープインパクト' },
-          { field: 'surface', operator: 'eq', value: '芝' }
-        ],
-        reason: '母父ディープは芝で好成績の傾向',
-        hypothesis: 'ディープインパクトを母父に持つ馬は、芝のレースで期待値が高い',
-        expected_outcome: '回収率120%以上、三着内率40%以上'
-      }
-    ];
+    try {
+      // condition-generatorを使用して条件を生成
+      const candidates = await generateConditions(this.openai, theme, count);
+      
+      // ConditionCandidateの型に変換
+      return candidates.map(c => ({
+        name: c.name,
+        conditions: c.conditions,
+        reason: c.reasoning,
+        hypothesis: c.hypothesis,
+        expected_outcome: c.expected_outcome
+      }));
+    } catch (error) {
+      console.error('Failed to generate conditions:', error);
+      
+      // フォールバック: デフォルト条件を使用
+      const defaultConditions = getDefaultConditions(theme.theme);
+      return defaultConditions.map(c => ({
+        name: c.name,
+        conditions: c.conditions,
+        reason: c.reasoning,
+        hypothesis: c.hypothesis,
+        expected_outcome: c.expected_outcome
+      }));
+    }
   }
   
   /**

@@ -16,11 +16,25 @@ interface SavedCondition {
   };
 }
 
+interface ResearchResult {
+  session: {
+    id: string;
+    theme: string;
+    phase: number;
+    status: string;
+    progress: number;
+  };
+  promising_count: number;
+  rule_candidates: any[];
+  phase1_results?: any[];
+}
+
 export default function ResearchLabPage() {
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [researchResult, setResearchResult] = useState<ResearchResult | null>(null);
   const [savedConditions] = useState<SavedCondition[]>([
     // TODO: APIから取得
   ]);
@@ -51,10 +65,10 @@ export default function ResearchLabPage() {
       }
       
       const data = await response.json();
-      alert(`研究完了！\n有望条件: ${data.promising_count}個\nルール候補: ${data.rule_candidates?.length || 0}個`);
+      setResearchResult(data);
       
-      // ページをリロードして最新のルール候補を表示
-      window.location.reload();
+      // 成功メッセージ
+      console.log('研究完了:', data);
     } catch (err) {
       setError('通信エラーが発生しました');
       console.error('Research error:', err);
@@ -109,6 +123,162 @@ export default function ResearchLabPage() {
             </button>
           </div>
         </div>
+
+        {/* 研究結果セクション */}
+        {researchResult && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4">✅ 研究結果</h2>
+            
+            <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+              <div className="font-medium text-blue-900 mb-2">
+                テーマ: {researchResult.session.theme}
+              </div>
+              <div className="text-sm text-blue-700 space-y-1">
+                <div>進捗: {researchResult.session.progress}%</div>
+                <div>ステータス: {researchResult.session.status === 'completed' ? '完了' : '実行中'}</div>
+                <div>フェーズ: Phase {researchResult.session.phase}</div>
+              </div>
+            </div>
+
+            {/* サマリー */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">有望条件数</div>
+                <div className="text-3xl font-bold text-green-700">
+                  {researchResult.promising_count}
+                </div>
+              </div>
+              <div className="bg-purple-50 p-4 rounded-lg">
+                <div className="text-sm text-gray-600 mb-1">ルール候補数</div>
+                <div className="text-3xl font-bold text-purple-700">
+                  {researchResult.rule_candidates?.length || 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Phase 1結果 */}
+            {researchResult.phase1_results && researchResult.phase1_results.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-bold text-lg mb-3">🔍 Phase 1: 単独条件の探索結果</h3>
+                <div className="space-y-3">
+                  {researchResult.phase1_results.slice(0, 5).map((result: any, idx: number) => (
+                    <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-bold text-gray-900">{result.candidate.name}</h4>
+                          <p className="text-sm text-gray-600 mt-1">
+                            仮説: {result.candidate.hypothesis}
+                          </p>
+                        </div>
+                        {result.is_promising && (
+                          <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded font-medium">
+                            有望
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-4 gap-3 mt-3">
+                        <div className="bg-gray-50 p-2 rounded">
+                          <div className="text-xs text-gray-600">サンプル</div>
+                          <div className="font-bold text-gray-900">
+                            {result.statistics.sample_size}走
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded">
+                          <div className="text-xs text-gray-600">三着内率</div>
+                          <div className="font-bold text-gray-900">
+                            {(result.statistics.show_rate * 100).toFixed(1)}%
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded">
+                          <div className="text-xs text-gray-600">回収率</div>
+                          <div className="font-bold text-gray-900">
+                            {result.statistics.place_return_rate.toFixed(1)}%
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-2 rounded">
+                          <div className="text-xs text-gray-600">期待値</div>
+                          <div className="font-bold text-green-700">
+                            +{result.statistics.expected_value_diff.toFixed(0)}円
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {result.ai_interpretation && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="text-xs text-gray-600 mb-1">AIの解釈:</div>
+                          <p className="text-sm text-gray-700">
+                            {result.ai_interpretation.summary}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {researchResult.phase1_results.length > 5 && (
+                    <div className="text-center text-sm text-gray-500">
+                      他 {researchResult.phase1_results.length - 5} 件の条件
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ルール候補 */}
+            {researchResult.rule_candidates && researchResult.rule_candidates.length > 0 && (
+              <div>
+                <h3 className="font-bold text-lg mb-3">⭐ ルール候補</h3>
+                <div className="space-y-3">
+                  {researchResult.rule_candidates.map((rule: any, idx: number) => (
+                    <div key={idx} className="border-2 border-purple-200 bg-purple-50 rounded-lg p-4">
+                      <h4 className="font-bold text-purple-900 mb-2">{rule.name}</h4>
+                      
+                      {rule.ai_reasoning && (
+                        <div className="mb-3 text-sm">
+                          <div className="text-gray-700 mb-1">
+                            仮説: {rule.ai_reasoning.hypothesis}
+                          </div>
+                          <div className="text-gray-600 text-xs">
+                            根拠: {rule.ai_reasoning.reasoning}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-white p-2 rounded">
+                          <div className="text-xs text-gray-600">期待値</div>
+                          <div className="font-bold text-green-700">
+                            +{rule.statistics.expected_value_diff.toFixed(0)}円
+                          </div>
+                        </div>
+                        <div className="bg-white p-2 rounded">
+                          <div className="text-xs text-gray-600">信頼度</div>
+                          <div className="font-bold text-blue-700">
+                            {rule.confidence.confidence_level.toFixed(0)}%
+                          </div>
+                        </div>
+                        <div className="bg-white p-2 rounded">
+                          <div className="text-xs text-gray-600">サンプル</div>
+                          <div className="font-bold text-purple-700">
+                            {rule.statistics.sample_size}走
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 flex gap-2">
+                        <button className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 transition-colors">
+                          保存
+                        </button>
+                        <button className="px-3 py-1 bg-white text-purple-600 border border-purple-600 rounded text-sm hover:bg-purple-50 transition-colors">
+                          詳細
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 保存済み条件セクション */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
