@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDbAsync } from '@/lib/db';
 import { auth } from '@/lib/auth';
 import { runRaceSimulation } from '@/lib/race-simulator/simulation-orchestrator';
-import { generateTimeline, smoothTimeline } from '@/lib/race-simulator/timeline-generator';
+import { generateTimeline } from '@/lib/race-simulator/timeline-generator';
 import { getCourseInfo } from '@/lib/race-simulator/course-database';
 import type { TrackBias } from '@/types/race-simulator';
 
@@ -74,10 +74,7 @@ export async function POST(request: NextRequest) {
     // ========================================
     console.log('[API] タイムライン生成中...');
 
-    let timeline = generateTimeline(result, courseInfo, 10); // 10fps
-
-    // 滑らかに補間
-    timeline = smoothTimeline(timeline, 0.3);
+    const timeline = generateTimeline(result, courseInfo, 10); // 10fps
 
     console.log(`[API] タイムライン生成完了: ${timeline.length}フレーム`);
 

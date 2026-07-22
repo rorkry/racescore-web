@@ -268,7 +268,7 @@ export default function RaceSimulator3DProto({
   
   // 馬作成
   const createHorses = (scene: THREE.Scene, initialFrame: RaceTimelineKeyframe) => {
-    const waku Colors = [
+    const wakuColors = [
       0xFFFFFF, // 1枠 白
       0x000000, // 2枠 黒
       0xFF0000, // 3枠 赤
