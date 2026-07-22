@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbAsync } from '@/lib/db';
 import { auth } from '@/lib/auth';
-import { runRaceSimulation } from '@/lib/race-simulator/simulation-orchestrator';
-import { generateTimeline } from '@/lib/race-simulator/timeline-generator';
-import { getCourseInfo } from '@/lib/race-simulator/course-database';
 import type { TrackBias } from '@/types/race-simulator';
+import { buildSimulatorResponse, mapSimulatorError } from './handler';
 
 /**
  * POST /api/simulator
- * レースシミュレーションを実行し、3D可視化用のタイムラインを返す
+ * レースシミュレーションを実行し、3D可視化用のタイムラインを返す。
+ *
+ * コース解決は buildSimulatorResponse 内で resolveCourseLayout を 1 回だけ実行し、
+ * 同じ ResolvedCourse を orchestrator と API レスポンス（courseInfo）で共有する。
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +32,7 @@ export async function POST(request: NextRequest) {
     const db = await getDbAsync();
 
     // ========================================
-    // 1. レース情報取得
+    // レース情報取得（距離・馬場の生値）
     // ========================================
     const wakujunQuery = `
       SELECT distance, track_type
@@ -60,123 +61,27 @@ export async function POST(request: NextRequest) {
     const distance = parseInt(distanceMatch[1], 10);
     const rawTrackType = raceInfo.track_type;
 
-    // ========================================
-    // 2. シミュレーション実行
-    // ========================================
     console.log(`[API] シミュレーション開始: ${year}${date} ${place} ${raceNumber}R ${distance}m`);
 
-    const result = await runRaceSimulation(db, {
+    // ========================================
+    // コース解決 → シミュレーション → タイムライン → レスポンス
+    // （resolveCourseLayout は buildSimulatorResponse 内で 1 回だけ）
+    // ========================================
+    const payload = await buildSimulatorResponse(db, {
       year,
       date,
       place,
       raceNumber,
-      distance, // レース距離を明示的に渡す
-      trackBias: trackBias as TrackBias | undefined,
-      enableDetailedLog: true,
-    });
-
-    // ========================================
-    // 3. コース情報取得
-    // ========================================
-
-    // trackType を正規化（'芝' → 'turf', 'ダート' → 'dirt'）
-    const normalizedTrackType = 
-      rawTrackType === '芝' || rawTrackType === 'turf' ? 'turf' :
-      rawTrackType === 'ダート' || rawTrackType === 'dirt' ? 'dirt' :
-      null;
-    
-    if (!normalizedTrackType) {
-      console.error('[COURSEINFO] API: 未対応のtrackType:', rawTrackType);
-      return NextResponse.json(
-        { error: `未対応のtrackType: ${rawTrackType}` },
-        { status: 400 }
-      );
-    }
-
-    const courseInfo = getCourseInfo(place, distance, normalizedTrackType);
-    
-    console.warn('[COURSEINFO] API: getCourseInfo結果', {
-      place,
       distance,
       rawTrackType,
-      normalizedTrackType,
-      courseInfo: courseInfo ? 'LOADED' : 'NULL',
-      courseInfoKeys: courseInfo ? Object.keys(courseInfo) : [],
-      courseInfoValue: courseInfo
+      trackBias: trackBias as TrackBias | undefined,
     });
 
-    // ========================================
-    // 4. タイムライン生成
-    // ========================================
-    console.warn('[API] ========== タイムライン生成開始 ==========');
-    console.warn('[API] シミュレーション結果:', {
-      raceKey: result.raceKey,
-      totalHorses: result.finalStandings.length,
-      totalPhases: Object.keys(result.phases).length
-    });
-
-    const timeline = generateTimeline(result);
-
-    console.warn('[API] ========== タイムライン生成完了 ==========');
-    console.warn('[API] タイムライン情報:', {
-      keyframes: timeline.keyframes.length,
-      totalDuration: timeline.totalDuration,
-      courseDistance: timeline.courseDistance
-    });
-
-    // ========================================
-    // 5. レスポンス
-    // ========================================
-    return NextResponse.json({
-      success: true,
-      raceKey: result.raceKey,
-      courseName: `${place} ${distance}m ${rawTrackType}`,
-      distance,
-      finalStandings: result.finalStandings.slice(0, 10).map(h => ({
-        position: h.position,
-        horseNumber: h.horseNumber,
-        horseName: h.horseName,
-        waku: h.waku,
-      })),
-      timeline: {
-        raceKey: timeline.raceKey,
-        totalDuration: timeline.totalDuration,
-        courseDistance: timeline.courseDistance,
-        keyframes: timeline.keyframes.map(f => ({
-          time: parseFloat(f.time.toFixed(2)),
-          phase: f.phase,
-          horses: f.horses.map(h => ({
-            horseNumber: h.horseNumber,
-            horseName: h.horseName,
-            currentDistance: parseFloat(h.currentDistance.toFixed(1)),
-            currentVelocity: parseFloat(h.currentVelocity.toFixed(1)),
-            acceleration: parseFloat(h.acceleration.toFixed(2)),
-            lateralPosition: parseFloat(h.lateralPosition.toFixed(2)),
-            position: h.position,
-            distanceFromLeader: parseFloat(h.distanceFromLeader.toFixed(1)),
-            staminaRemaining: parseFloat(h.staminaRemaining.toFixed(1)),
-            blocked: h.blocked,
-            outerPath: h.outerPath,
-          })),
-        })),
-      },
-      phaseEvents: {
-        start: result.phases.start.events,
-        formation: result.phases.formation.events,
-        straight: result.phases.straight.events,
-      },
-      // Phase 4.2プロトタイプ用
-      simulation: result,
-      courseInfo: courseInfo,
-    });
+    return NextResponse.json(payload);
   } catch (error) {
+    // CourseInputError → 400 / CourseBoundariesError → 422 / その他 → 500
     console.error('[API] シミュレーションエラー:', error);
-    return NextResponse.json(
-      {
-        error: 'Simulation failed',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+    const { status, body } = mapSimulatorError(error);
+    return NextResponse.json(body, { status });
   }
 }
