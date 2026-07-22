@@ -101,6 +101,14 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
   const courseDistance = result.phases.goal?.distanceRange.end || 1600;
   
   console.warn('[TimelineGenerator] ========== タイムライン生成完了 ==========');
+  console.warn('[TimelineGenerator] フェーズ別件数:', {
+    start: result.phases.start?.horses?.length || 0,
+    formation: result.phases.formation?.horses?.length || 0,
+    pace: result.phases.pace?.horses?.length || 0,
+    corner3_4: result.phases.corner3_4?.horses?.length || 0,
+    straight: result.phases.straight?.horses?.length || 0,
+    goal: result.phases.goal?.horses?.length || 0,
+  });
   console.warn(`[TimelineGenerator] キーフレーム数: ${uniqueKeyframes.length}件`);
   console.warn(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
   console.warn(`[TimelineGenerator] コース距離: ${courseDistance}m`);
