@@ -1077,25 +1077,38 @@ ${is_promising ? '有望' : '不十分'}
   }
   
   /**
-   * フィールドの表示名を取得
+   * フィールドの表示名を取得（前走/今走を明記）
    */
   private getFieldLabel(field: string): string {
-    const labels: Record<string, string> = {
-      makikaeshi: '巻き返し指数',
-      potential: 'ポテンシャル指数',
-      popularity: '人気',
-      waku: '枠番',
-      distance: '距離',
-      place: '競馬場',
-      weight_carried: '斤量',
-      win_odds: '単勝オッズ',
-      place_odds_low: '複勝オッズ',
-      sire: '父',
-      finish_position: '着順',
-      field_size: '頭数'
+    // 前走指数（indicesテーブル由来）
+    const previousRaceIndices: Record<string, string> = {
+      makikaeshi: '前走巻き返し指数',
+      potential: '前走ポテンシャル指数',
+      L4F: '前走L4F',
+      T2F: '前走T2F',
+      revouma: '前走レボウマ',
+      cushion: '前走クッション値'
     };
     
-    return labels[field] || field;
+    // 今走情報（umadataテーブル由来）
+    const currentRaceFields: Record<string, string> = {
+      popularity: '今走人気',
+      waku: '今走枠番',
+      distance: '今走距離',
+      place: '今走競馬場',
+      weight_carried: '今走斤量',
+      win_odds: '今走単勝オッズ',
+      place_odds_low: '今走複勝オッズ',
+      sire: '今走父',
+      jockey: '今走騎手',
+      trainer: '今走調教師',
+      field_size: '今走頭数',
+      gender: '性別',
+      age: '年齢',
+      track_condition: '今走馬場状態'
+    };
+    
+    return previousRaceIndices[field] || currentRaceFields[field] || field;
   }
   
   /**

@@ -82,6 +82,17 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
   4. 枠番（具体的な数値: 3枠以内、6枠以上）
   5. 人気（具体的な数値: 3番人気以内、7番人気以下）
 
+【条件名の命名規則（必須）】
+🚨 **条件名には必ず「前走」「今走」を明記すること**
+  - ❌ 悪い例: "巻き返し指数4.0以上×ダート" → どちらの時点か不明
+  - ✅ 良い例: "前走巻き返し指数4.0以上×今走ダート" → 明確
+  
+  - ❌ 悪い例: "ポテンシャル5.0以上×斤量54kg以下" → 不明確
+  - ✅ 良い例: "前走ポテンシャル5.0以上×今走斤量54kg以下" → 明確
+  
+  - ❌ 悪い例: "ディープ産駒×芝×人気薄" → 不明確
+  - ✅ 良い例: "今走ディープ産駒×今走芝×今走7番人気以下" → 明確
+
 【条件生成のポイント】
 - 1つの条件は1-3個のフィールドを組み合わせる
 - あまりに限定的な条件は避ける（サンプル数確保）
@@ -201,24 +212,24 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 
 【重点的に検証すべき条件】
 1. **前走指数 × 今走条件**（最優先・最も効果的）
-   - 例: makikaeshi >= 4.0 かつ distance LIKE "ダ%" 
-   - 例: potential >= 5.0 かつ waku <= 3 （3枠以内）
-   - 例: L4F >= 5.0 かつ place = "東京"
+   - 例: 前走makikaeshi >= 4.0 かつ 今走distance LIKE "ダ%" 
+   - 例: 前走potential >= 5.0 かつ 今走waku <= 3 （3枠以内）
+   - 例: 前走L4F >= 5.0 かつ 今走place = "東京"
    
-2. **前走指数 × 人気**
-   - 例: makikaeshi >= 4.0 かつ popularity >= 7 （7番人気以下）
-   - 例: potential >= 6.0 かつ popularity <= 3 （3番人気以内）
-   - 例: makikaeshi >= 3.0 かつ popularity BETWEEN 4 AND 6 （4-6番人気）
+2. **前走指数 × 今走人気**
+   - 例: 前走makikaeshi >= 4.0 かつ 今走popularity >= 7 （7番人気以下）
+   - 例: 前走potential >= 6.0 かつ 今走popularity <= 3 （3番人気以内）
+   - 例: 前走makikaeshi >= 3.0 かつ 今走popularity BETWEEN 4 AND 6 （4-6番人気）
    
-3. **種牡馬 × コース × 前走指数**
-   - 例: sire = "ディープインパクト" かつ distance LIKE "芝%" かつ potential >= 4.0
+3. **今走種牡馬 × 今走コース × 前走指数**
+   - 例: 今走sire = "ディープインパクト" かつ 今走distance LIKE "芝%" かつ 前走potential >= 4.0
    
-4. **枠番 × コース × 前走指数**
-   - 例: waku <= 3 （3枠以内） かつ distance LIKE "芝%" かつ makikaeshi >= 3.0
-   - 例: waku >= 6 （6枠以上） かつ distance LIKE "ダ%" かつ potential >= 4.0
+4. **今走枠番 × 今走コース × 前走指数**
+   - 例: 今走waku <= 3 （3枠以内） かつ 今走distance LIKE "芝%" かつ 前走makikaeshi >= 3.0
+   - 例: 今走waku >= 6 （6枠以上） かつ 今走distance LIKE "ダ%" かつ 前走potential >= 4.0
    
-5. **騎手・調教師 × 前走指数**
-   - 例: jockey = "武豊" かつ potential >= 5.0
+5. **今走騎手・調教師 × 前走指数**
+   - 例: 今走jockey = "武豊" かつ 前走potential >= 5.0
 
 【必須: 抽象的な表現を使わず、具体的な数値を指定】
 - ❌ 「人気薄」「内枠」「外枠」「軽斤量」 → 抽象的で不明確
@@ -237,40 +248,40 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 4. expected_outcome: 期待される結果（例: 三着内率35%以上、複勝回収率110%以上）
 5. reasoning: 根拠（この仮説を立てた理由、80文字以内）
 
-【条件の例（前走指数を活用・具体的な数値で指定）】
-例1: 前走指数×コース
+【条件の例（前走指数を活用・具体的な数値で指定・前走/今走を明記）】
+例1: 前走指数×今走コース
 {
-  "name": "前走巻き返し指数3.0以上×ダート",
+  "name": "前走巻き返し指数3.0以上×今走ダート",
   "conditions": [
     { "field": "makikaeshi", "operator": "gte", "value": 3.0 },
     { "field": "distance", "operator": "contains", "value": "ダ" }
   ],
-  "hypothesis": "前走で巻き返し指数が高かった馬はダートで好走する",
+  "hypothesis": "前走で巻き返し指数が高かった馬は今走ダートで好走する",
   "expected_outcome": "三着内率45%以上、複勝回収率120%以上",
   "reasoning": "巻き返し力がある馬はダートで能力を発揮しやすい"
 }
 
-例2: 前走指数×人気（具体的な番人気で指定）
+例2: 前走指数×今走人気（具体的な番人気で指定）
 {
-  "name": "前走ポテンシャル5.0以上×7番人気以下",
+  "name": "前走ポテンシャル5.0以上×今走7番人気以下",
   "conditions": [
     { "field": "potential", "operator": "gte", "value": 5.0 },
     { "field": "popularity", "operator": "gte", "value": 7 }
   ],
-  "hypothesis": "前走でポテンシャルが高かった馬は7番人気以下でも期待値がある",
+  "hypothesis": "前走でポテンシャルが高かった馬は今走7番人気以下でも期待値がある",
   "expected_outcome": "単勝回収率150%以上",
   "reasoning": "人気に反映されていない能力を前走指数で検出"
 }
 
-例3: 前走指数×枠番×コース（具体的な枠番で指定）
+例3: 前走指数×今走枠番×今走コース（具体的な枠番で指定）
 {
-  "name": "前走ポテンシャル4.0以上×3枠以内×芝",
+  "name": "前走ポテンシャル4.0以上×今走3枠以内×今走芝",
   "conditions": [
     { "field": "potential", "operator": "gte", "value": 4.0 },
     { "field": "waku", "operator": "lte", "value": 3 },
     { "field": "distance", "operator": "contains", "value": "芝" }
   ],
-  "hypothesis": "前走でポテンシャルが高く、3枠以内を引いた馬は芝で有利",
+  "hypothesis": "前走でポテンシャルが高く、今走3枠以内を引いた馬は芝で有利",
   "expected_outcome": "勝率18%以上、複勝回収率115%以上",
   "reasoning": "能力と位置取りの相乗効果"
 }
@@ -297,9 +308,9 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 4. expected_outcome: 期待される結果（例: 回収率120%以上）
 5. reasoning: 根拠（この仮説を立てた理由、80文字以内）
 
-【条件の例】
+【条件の例（前走/今走を明記）】
 {
-  "name": "ディープ産駒×芝2000m",
+  "name": "今走ディープ産駒×今走芝2000m",
   "conditions": [
     {
       "field": "sire",
@@ -312,7 +323,7 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
       "value": "芝"
     }
   ],
-  "hypothesis": "ディープを母父に持つ馬は芝中距離で期待値が高い",
+  "hypothesis": "今走ディープ産駒は今走芝中距離で期待値が高い",
   "expected_outcome": "回収率120%以上、三着内率40%以上",
   "reasoning": "ディープは芝で圧倒的な成績を残しており、その血を引く馬は芝適性が高い"
 }
@@ -370,7 +381,7 @@ function parseConditions(conditions: any[]): RuleCondition[] {
  * デフォルトの条件候補（フォールバック）
  */
 export function getDefaultConditions(theme: string): ConditionCandidate[] {
-  // テーマに応じたデフォルト条件（前走指数を活用・具体的な数値で指定）
+  // テーマに応じたデフォルト条件（前走指数を活用・具体的な数値で指定・前走/今走を明記）
   if (theme.includes('指数') || theme.includes('ポテンシャル')) {
     return [
       {
@@ -383,12 +394,12 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
         reasoning: '巻き返し力がある馬は継続して好走しやすい'
       },
       {
-        name: '前走ポテンシャル5.0以上×ダート',
+        name: '前走ポテンシャル5.0以上×今走ダート',
         conditions: [
           { field: 'potential', operator: 'gte', value: 5.0 },
           { field: 'distance', operator: 'contains', value: 'ダ' }
         ],
-        hypothesis: '前走でポテンシャルが高かった馬はダートで実力を発揮',
+        hypothesis: '前走でポテンシャルが高かった馬は今走ダートで実力を発揮',
         expected_outcome: '三着内率45%以上、複勝回収率120%以上',
         reasoning: 'ポテンシャルの高い馬はダートで安定'
       }
@@ -398,12 +409,12 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
   if (theme.includes('枠') || theme.includes('waku')) {
     return [
       {
-        name: '3枠以内×芝1600m',
+        name: '今走3枠以内×今走芝1600m',
         conditions: [
           { field: 'waku', operator: 'lte', value: 3 },
           { field: 'distance', operator: 'eq', value: '芝1600' }
         ],
-        hypothesis: '芝1600mでは3枠以内が有利',
+        hypothesis: '今走芝1600mでは3枠以内が有利',
         expected_outcome: '勝率15%以上、複勝回収率105%以上',
         reasoning: '3枠以内の位置取り有利性'
       }
@@ -413,57 +424,57 @@ export function getDefaultConditions(theme: string): ConditionCandidate[] {
   if (theme.includes('血統') || theme.includes('sire')) {
     return [
       {
-        name: 'ディープ産駒×芝',
+        name: '今走ディープ産駒×今走芝',
         conditions: [
           { field: 'sire', operator: 'eq', value: 'ディープインパクト' },
           { field: 'distance', operator: 'contains', value: '芝' }
         ],
-        hypothesis: 'ディープ産駒は芝で期待値が高い',
+        hypothesis: '今走ディープ産駒は今走芝で期待値が高い',
         expected_outcome: '回収率120%以上、三着内率40%以上',
         reasoning: 'ディープは芝で圧倒的な成績を残している'
       }
     ];
   }
   
-  // 汎用デフォルト（前走指数を活用・具体的な数値で指定）
+  // 汎用デフォルト（前走指数を活用・具体的な数値で指定・前走/今走を明記）
   return [
     {
-      name: '前走巻き返し指数3.0以上×ダート',
+      name: '前走巻き返し指数3.0以上×今走ダート',
       conditions: [
         { field: 'makikaeshi', operator: 'gte', value: 3.0 },
         { field: 'distance', operator: 'contains', value: 'ダ' }
       ],
-      hypothesis: '前走で巻き返し指数が高かった馬はダートで好走する',
+      hypothesis: '前走で巻き返し指数が高かった馬は今走ダートで好走する',
       expected_outcome: '三着内率45%以上、複勝回収率120%以上',
       reasoning: '巻き返し力のある馬はダートで安定'
     },
     {
-      name: '前走ポテンシャル5.0以上×3枠以内',
+      name: '前走ポテンシャル5.0以上×今走3枠以内',
       conditions: [
         { field: 'potential', operator: 'gte', value: 5.0 },
         { field: 'waku', operator: 'lte', value: 3 }
       ],
-      hypothesis: '前走でポテンシャルが高く、3枠以内を引いた馬は有利',
+      hypothesis: '前走でポテンシャルが高く、今走3枠以内を引いた馬は有利',
       expected_outcome: '勝率18%以上、複勝回収率115%以上',
       reasoning: '能力と位置取りの相乗効果'
     },
     {
-      name: '前走L4F 5.0以上×芝',
+      name: '前走L4F 5.0以上×今走芝',
       conditions: [
         { field: 'L4F', operator: 'gte', value: 5.0 },
         { field: 'distance', operator: 'contains', value: '芝' }
       ],
-      hypothesis: '前走で上がりが良かった馬は芝で末脚を発揮',
+      hypothesis: '前走で上がりが良かった馬は今走芝で末脚を発揮',
       expected_outcome: '三着内率35%以上、複勝回収率110%以上',
       reasoning: '上がりの脚がある馬は芝で有利'
     },
     {
-      name: '前走巻き返し指数4.0以上×7番人気以下',
+      name: '前走巻き返し指数4.0以上×今走7番人気以下',
       conditions: [
         { field: 'makikaeshi', operator: 'gte', value: 4.0 },
         { field: 'popularity', operator: 'gte', value: 7 }
       ],
-      hypothesis: '前走で高い巻き返し指数を持つ馬は7番人気以下でも期待値がある',
+      hypothesis: '前走で高い巻き返し指数を持つ馬は今走7番人気以下でも期待値がある',
       expected_outcome: '単勝回収率150%以上',
       reasoning: '人気に反映されていない巻き返し力'
     }
