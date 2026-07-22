@@ -65,16 +65,32 @@ export async function POST(request: NextRequest) {
 
     const distanceMatch = raceInfo.distance.match(/(\d+)/);
     const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 1600;
-    const trackType = raceInfo.track_type;
+    const rawTrackType = raceInfo.track_type;
 
-    const courseInfo = getCourseInfo(place, distance, trackType as 'turf' | 'dirt');
+    // trackType を正規化（'芝' → 'turf', 'ダート' → 'dirt'）
+    const normalizedTrackType = 
+      rawTrackType === '芝' || rawTrackType === 'turf' ? 'turf' :
+      rawTrackType === 'ダート' || rawTrackType === 'dirt' ? 'dirt' :
+      null;
+    
+    if (!normalizedTrackType) {
+      console.error('[COURSEINFO] API: 未対応のtrackType:', rawTrackType);
+      return NextResponse.json(
+        { error: `未対応のtrackType: ${rawTrackType}` },
+        { status: 400 }
+      );
+    }
+
+    const courseInfo = getCourseInfo(place, distance, normalizedTrackType);
     
     console.warn('[COURSEINFO] API: getCourseInfo結果', {
       place,
       distance,
-      trackType,
+      rawTrackType,
+      normalizedTrackType,
       courseInfo: courseInfo ? 'LOADED' : 'NULL',
-      courseInfoKeys: courseInfo ? Object.keys(courseInfo) : []
+      courseInfoKeys: courseInfo ? Object.keys(courseInfo) : [],
+      courseInfoValue: courseInfo
     });
 
     // ========================================
