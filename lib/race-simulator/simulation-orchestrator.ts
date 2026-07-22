@@ -184,10 +184,24 @@ export async function runRaceSimulation(
     horses: structuredClone(formationPhaseResult.horses),
   };
   
-  // paceはformationと同じ値だが、独立したスナップショット
+  // paceはformationより進める（簡易実装）
+  const paceHorses = structuredClone(formationPhaseResult.horses).map(horse => {
+    // formationからpaceまで距離を進める（例: 150m進める）
+    const paceProgress = 150;
+    return {
+      ...horse,
+      currentDistance: horse.currentDistance + paceProgress,
+    };
+  });
+  
   const paceSnapshot = {
     ...formationPhaseResult,
-    horses: structuredClone(formationPhaseResult.horses),
+    phaseName: 'ペース形成',
+    horses: paceHorses,
+    distanceRange: {
+      start: formationPhaseResult.distanceRange.end,
+      end: formationPhaseResult.distanceRange.end + 150,
+    },
   };
   
   // Phase 3-4: コーナーフェーズ
@@ -221,10 +235,25 @@ export async function runRaceSimulation(
     horses: structuredClone(straightPhaseResult.horses),
   };
   
-  // goalはstraightと同じ値だが、独立したスナップショット
+  // goalはゴール地点まで進める（簡易実装）
+  const goalHorses = structuredClone(straightPhaseResult.horses).map((horse, index) => {
+    // 着順に応じてゴール距離を設定
+    // 先頭馬はraceDistance、後続は少し手前
+    const goalDistance = distance - (index * 0.5); // 着差0.5m
+    return {
+      ...horse,
+      currentDistance: goalDistance,
+    };
+  });
+  
   const goalSnapshot = {
     ...straightPhaseResult,
-    horses: structuredClone(straightPhaseResult.horses),
+    phaseName: 'ゴール',
+    horses: goalHorses,
+    distanceRange: {
+      start: straightPhaseResult.distanceRange.end,
+      end: distance,
+    },
   };
   
   // ========================================
