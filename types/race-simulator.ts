@@ -65,6 +65,11 @@ export interface HorseState {
   internalLane: number;       // 内外ライン（1=最内, 8=最外）
   distanceFromLeader: number; // 先頭からの距離（メートル）
   
+  // 【Phase 4.1 追加】走行データ（シミュレーション計算結果）
+  currentDistance: number;    // スタートから現在地までの走行距離（m）
+  currentVelocity: number;    // 現在速度（m/s）
+  lateralPosition: number;    // 横位置（m、コース中央を0として -10〜+10）
+  
   // 能力値（0-100スケール）
   capabilities: HorseCapabilities;
   
@@ -115,6 +120,7 @@ export interface SimulationResult {
 export interface PhaseResult {
   phaseName: string;
   distanceRange: { start: number; end: number };
+  timeRange: { start: number; end: number }; // 【Phase 4.1 追加】経過時間（秒）
   horses: HorseState[];
   paceInfo: {
     averageSpeed: number;

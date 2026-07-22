@@ -152,15 +152,39 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
       }
     }
     
+    // ========================================
+    // 【Phase 4.1】速度・距離を計算
+    // ========================================
+    // スタートダッシュの速度（m/s）
+    // 基本速度 15m/s + スコアによる補正
+    const baseVelocity = 15.0;
+    const velocityBonus = (startDashScore - 50) / 50 * 3; // ±3m/s
+    const velocity = Math.max(10, Math.min(20, baseVelocity + velocityBonus));
+    
+    // このフェーズでの走行距離（200m）
+    const phaseDistance = 200;
+    const avgVelocity = velocity * 0.9; // 加速中なので平均速度は低め
+    
+    // 順位に応じた距離差（前の馬ほど先に進む）
+    const distanceGap = (finalPosition - 1) * 2.5; // 1馬身≒2.5m
+    const actualDistance = phaseDistance - distanceGap;
+    
     // HorseState を更新
     horse.position = finalPosition;
     horse.internalLane = waku;
-    horse.distanceFromLeader = (finalPosition - 1) * 2; // 1馬身≒2m
+    horse.currentDistance = actualDistance;
+    horse.currentVelocity = velocity;
+    horse.distanceFromLeader = distanceGap; // currentDistanceの差から計算
     
+    // 横位置（レーン移動があれば反映）
     if (cutIn) {
-      horse.outerPath = false; // 内に切れ込んだ
+      horse.lateralPosition = (waku - 4.5) * 2.5 - 3; // 内に寄る
+      horse.outerPath = false;
     } else if (waku >= 6 && finalPosition > totalHorses * 0.5) {
-      horse.outerPath = true; // 外を回っている
+      horse.lateralPosition = (waku - 4.5) * 2.5 + 2; // 外に膨らむ
+      horse.outerPath = true;
+    } else {
+      horse.lateralPosition = (waku - 4.5) * 2.5;
     }
   }
   
@@ -172,9 +196,30 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
     h.position = idx + 1;
   });
   
+  // ========================================
+  // 【Phase 4.1】整合性チェック
+  // ========================================
+  const leadHorse = sortedHorses[0];
+  for (const horse of sortedHorses) {
+    // distanceFromLeader = 先頭馬のcurrentDistance - 自馬のcurrentDistance
+    const calculatedGap = leadHorse.currentDistance - horse.currentDistance;
+    
+    if (Math.abs(calculatedGap - horse.distanceFromLeader) > 0.1) {
+      console.warn(`[StartPhase] 整合性エラー: ${horse.horseName} distanceFromLeader=${horse.distanceFromLeader.toFixed(1)}m, 計算値=${calculatedGap.toFixed(1)}m`);
+      // 修正
+      horse.distanceFromLeader = calculatedGap;
+    }
+  }
+  
+  // 所要時間を計算
+  const phaseDistance = 200;
+  const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
+  const phaseTime = phaseDistance / avgVelocity;
+  
   console.log('[StartPhase] === スタートフェーズ完了 ===');
+  console.log(`  距離: ${phaseDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${phaseTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
-    console.log(`  ${h.position}番手: ${h.horseName} (${h.waku}枠, start=${h.capabilities.startSpeed.toFixed(0)})`);
+    console.log(`  ${h.position}番手: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, 速度=${h.currentVelocity.toFixed(1)}m/s)`);
   });
   
   // 先頭グループを特定
@@ -185,9 +230,10 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
   return {
     phaseName: 'スタート〜隊列形成',
     distanceRange: { start: 0, end: 200 },
+    timeRange: { start: 0, end: phaseTime },
     horses: sortedHorses,
     paceInfo: {
-      averageSpeed: 0, // この段階では未計算
+      averageSpeed: avgVelocity,
       leadingHorses,
       paceType: 'middle', // 仮
     },

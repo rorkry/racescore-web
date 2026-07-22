@@ -141,21 +141,58 @@ export function executeFormationPhase(
   }
   
   // ========================================
-  // 5. 位置を再ソート
+  // 5. 速度・距離を更新
   // ========================================
-  const sortedHorses = [...horses].sort((a, b) => a.position - b.position);
+  const phaseDistance = 400; // 200m-600m
+  const baseVelocity = paceType === 'high' ? 17.0 : paceType === 'slow' ? 14.0 : 15.5;
   
-  // 位置を1から連番に正規化
+  for (const horse of horses) {
+    // 能力による速度補正
+    const velocityFactor = 1 + (horse.capabilities.cruiseSpeed - 50) / 100 * 0.3;
+    horse.currentVelocity = baseVelocity * velocityFactor;
+    
+    // スタミナ消費による速度低下
+    if (horse.staminaRemaining < 50) {
+      horse.currentVelocity *= 0.9;
+    }
+    
+    // このフェーズでの走行距離を加算
+    const avgVelocityInPhase = (horse.currentVelocity + baseVelocity) / 2;
+    const phaseTime = phaseDistance / avgVelocityInPhase;
+    horse.currentDistance += avgVelocityInPhase * phaseTime;
+  }
+  
+  // ========================================
+  // 6. 位置を再ソート（currentDistanceで）
+  // ========================================
+  const sortedHorses = [...horses].sort((a, b) => b.currentDistance - a.currentDistance);
+  
+  // 順位を更新
   sortedHorses.forEach((h, idx) => {
     h.position = idx + 1;
-    h.distanceFromLeader = (h.position - 1) * 2.5; // 1馬身≒2.5m（距離が伸びた）
   });
   
+  // distanceFromLeaderを計算
+  const leadHorse = sortedHorses[0];
+  for (const horse of sortedHorses) {
+    horse.distanceFromLeader = leadHorse.currentDistance - horse.currentDistance;
+    
+    // 整合性チェック
+    if (horse.distanceFromLeader < 0) {
+      console.error(`[FormationPhase] エラー: ${horse.horseName} distanceFromLeader < 0`);
+      horse.distanceFromLeader = 0;
+    }
+  }
+  
+  const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
+  const phaseTime = phaseDistance / avgVelocity;
+  const prevPhaseTime = prevPhase.timeRange.end;
+  
   console.log('[FormationPhase] === 隊列形成フェーズ完了 ===');
-  console.log(`  ペース: ${paceType}`);
-  console.log(`  先行${frontRunners}頭`);
+  console.log(`  ペース: ${paceType}, 速度: ${avgVelocity.toFixed(1)}m/s`);
+  console.log(`  先行${frontRunners}頭, 所要時間: ${phaseTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
-    console.log(`  ${h.position}番手: ${h.horseName} (スタミナ残${h.staminaRemaining.toFixed(0)}%)`);
+    console.log(`  ${h.position}番手: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, スタミナ残${h.staminaRemaining.toFixed(0)}%)`);
   });
   
   // 先頭グループを特定
@@ -166,9 +203,10 @@ export function executeFormationPhase(
   return {
     phaseName: '隊列確定〜ペース形成',
     distanceRange: { start: 200, end: 600 },
+    timeRange: { start: prevPhaseTime, end: prevPhaseTime + phaseTime },
     horses: sortedHorses,
     paceInfo: {
-      averageSpeed: paceType === 'high' ? 85 : paceType === 'slow' ? 65 : 75,
+      averageSpeed: avgVelocity,
       leadingHorses,
       paceType,
     },

@@ -171,45 +171,60 @@ export function executeStraightPhase(
   }
   
   // ========================================
-  // 2. 最終順位を計算
+  // 2. 速度・距離を更新（追い込み力に基づく）
   // ========================================
-  // 現在の position と finalChaseScore を組み合わせて最終順位を決定
+  const straightDistance = courseInfo?.straightLength || 400;
   
-  const finalScores = horses.map(horse => {
-    const positionAdvantage = (totalHorses - horse.position + 1) * 5; // 前にいるほど有利
-    const finalScore = positionAdvantage + (horse as any).finalChaseScore;
+  for (const horse of horses) {
+    // finalChaseScoreを速度に変換
+    const chaseScore = (horse as any).finalChaseScore || horse.capabilities.acceleration;
     
-    return {
-      horse,
-      finalScore,
-    };
-  });
+    // 直線での速度（m/s）
+    // chaseScore 0-100 → velocity 14-20 m/s
+    const straightVelocity = 14 + (chaseScore / 100) * 6;
+    horse.currentVelocity = straightVelocity;
+    
+    // 直線での走行距離を加算
+    const straightTime = straightDistance / straightVelocity;
+    horse.currentDistance += straightDistance;
+  }
   
-  // スコアでソート（高い方が上位）
-  finalScores.sort((a, b) => b.finalScore - a.finalScore);
+  // ========================================
+  // 3. 最終順位を計算（currentDistanceで）
+  // ========================================
+  const sortedHorses = [...horses].sort((a, b) => b.currentDistance - a.currentDistance);
   
-  // 最終順位を割り当て
-  finalScores.forEach((item, idx) => {
-    const prevPosition = item.horse.position;
-    item.horse.position = idx + 1;
+  // 順位を更新
+  sortedHorses.forEach((h, idx) => {
+    const prevPosition = h.position;
+    h.position = idx + 1;
     
     // 順位変動をイベントに記録
-    if (item.horse.position < prevPosition) {
-      const gain = prevPosition - item.horse.position;
+    if (h.position < prevPosition) {
+      const gain = prevPosition - h.position;
       events.push({
-        horseNumber: item.horse.horseNumber,
-        horseName: item.horse.horseName,
+        horseNumber: h.horseNumber,
+        horseName: h.horseName,
         event: 'overtake',
-        description: `追い込んで${gain}頭抜き（${prevPosition}番手→${item.horse.position}番手）`
+        description: `追い込んで${gain}頭抜き（${prevPosition}番手→${h.position}番手）`
       });
     }
   });
   
-  const sortedHorses = finalScores.map(item => item.horse);
+  // distanceFromLeaderを計算
+  const leadHorse = sortedHorses[0];
+  for (const horse of sortedHorses) {
+    horse.distanceFromLeader = leadHorse.currentDistance - horse.currentDistance;
+  }
+  
+  const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
+  const straightTime = straightDistance / avgVelocity;
+  const prevPhaseTime = prevPhase.timeRange.end;
   
   console.log('[StraightPhase] === 直線フェーズ完了 ===');
+  console.log(`  直線距離: ${straightDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${straightTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
-    console.log(`  ${h.position}着: ${h.horseName} (追込力=${((h as any).finalChaseScore || 0).toFixed(0)})`);
+    console.log(`  ${h.position}着: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, 速度=${h.currentVelocity.toFixed(1)}m/s)`);
   });
   
   // 先頭グループを特定
@@ -217,12 +232,16 @@ export function executeStraightPhase(
     .filter(h => h.position <= 3)
     .map(h => h.horseNumber);
   
+  const straightStart = courseInfo?.distance ? courseInfo.distance - courseInfo.straightLength : 1400;
+  const goalDistance = courseInfo?.distance || 1600;
+  
   return {
     phaseName: '直線〜ゴール',
-    distanceRange: { start: courseInfo?.distance ? courseInfo.distance - courseInfo.straightLength : 1400, end: courseInfo?.distance || 1600 },
+    distanceRange: { start: straightStart, end: goalDistance },
+    timeRange: { start: prevPhaseTime, end: prevPhaseTime + straightTime },
     horses: sortedHorses,
     paceInfo: {
-      averageSpeed: 0,
+      averageSpeed: avgVelocity,
       leadingHorses,
       paceType,
     },

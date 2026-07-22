@@ -17,6 +17,7 @@ import { getCourseInfo } from './course-database';
 import { executeStartPhase } from './engines/start-phase';
 import { executeFormationPhase } from './engines/formation-phase';
 import { executeStraightPhase } from './engines/straight-phase';
+import { validateSimulation } from './validation';
 
 /**
  * レースシミュレーションを実行
@@ -126,6 +127,10 @@ export async function runRaceSimulation(
       position: 0, // 初期値、StartPhaseで決定
       internalLane: waku,
       distanceFromLeader: 0,
+      // 【Phase 4.1】走行データ初期化
+      currentDistance: 0, // スタート地点
+      currentVelocity: 0, // 停止状態
+      lateralPosition: (waku - 4.5) * 2.5, // 枠番に応じた横位置（m）
       capabilities,
       leadingIntention,
       pfs,
@@ -196,6 +201,19 @@ export async function runRaceSimulation(
     console.log(`  ${idx + 1}着: ${h.horseName} (${h.horseNumber}番, ${h.waku}枠)`);
   });
   console.log('========================================');
+  
+  // ========================================
+  // 【Phase 4.1】整合性検証
+  // ========================================
+  const validation = validateSimulation(result, currentDistance);
+  
+  if (!validation.valid) {
+    console.error('[Simulator] 整合性エラーが検出されました！');
+  } else if (validation.warnings.length > 0) {
+    console.warn('[Simulator] 警告がありますが、シミュレーションは有効です。');
+  } else {
+    console.log('[Simulator] ✅ 整合性検証: すべて正常');
+  }
   
   return result;
 }
