@@ -288,10 +288,42 @@ export class AutonomousResearchAgent {
       });
     }
     
-    // Phase 2: 有望テーマの深掘り
+    // Phase 2: 有望テーマの深掘り（今回の結果 + 過去の有望テーマ）
     session.phase = 2;
     session.progress = 50;
-    console.log(`\n[Phase 2 Start] Deep diving ${promising.length} promising themes...`);
+    
+    // 過去の有望テーマも深掘り対象に追加
+    console.log(`\n[Phase 2 Start] Loading past promising themes...`);
+    try {
+      const pastPromising = await getPromisingThemes(this.userId, 3); // 上位3件
+      console.log(`[Phase 2] Found ${pastPromising.length} past promising themes`);
+      
+      // 過去の有望テーマを ConditionResult 形式に変換
+      for (const past of pastPromising) {
+        const pastResult: ConditionResult = {
+          candidate: {
+            name: past.condition_name,
+            conditions: past.conditions,
+            hypothesis: '過去の有望テーマを再検証',
+            expected_outcome: `期待値: ${past.expected_value_diff.toFixed(0)}円`,
+            reason: '過去の研究で有望と判定されたテーマ'
+          },
+          statistics: past.statistics,
+          confidence: { confidence_level: 80, is_significant: true },
+          is_promising: true,
+          promising_score: past.promising_score,
+          promising_reasons: ['過去の研究で有望'],
+          promising_warnings: [],
+          debug_info: { evaluated_at: past.last_tested_at.toISOString() }
+        };
+        
+        promising.push(pastResult);
+      }
+    } catch (error) {
+      console.warn('[Phase 2] Failed to load past promising themes:', error);
+    }
+    
+    console.log(`[Phase 2 Start] Deep diving ${promising.length} promising themes (including past themes)...`);
     session.phase2_results = await this.phase2_deepDivePromising(promising);
     
     const synergies = session.phase2_results.filter(r => r.is_promising);
@@ -308,9 +340,30 @@ export class AutonomousResearchAgent {
   }
   
   /**
-   * Phase 1: 単独条件の探索（強化版）
+   * Phase 1: 単独条件の探索（メモリ統合版）
    */
   private async phase1_exploreConditions(theme: ResearchTheme): Promise<ConditionResult[]> {
+    console.log(`[Phase 1] Loading research memory...`);
+    
+    // 過去の研究結果を読み込む
+    let pastResults: any[] = [];
+    let promisingThemes: any[] = [];
+    let avoidThemes: any[] = [];
+    
+    try {
+      pastResults = await getResearchHistory(this.userId, { limit: 100 });
+      promisingThemes = pastResults.filter(r => r.is_promising);
+      avoidThemes = pastResults.filter(r => r.exploration_status === 'avoid');
+      
+      console.log(`[Phase 1] Memory loaded:`);
+      console.log(`  - Total past results: ${pastResults.length}`);
+      console.log(`  - Promising themes: ${promisingThemes.length}`);
+      console.log(`  - Themes to avoid: ${avoidThemes.length}`);
+    } catch (error) {
+      console.warn('[Phase 1] Failed to load memory (table may not exist yet):', error);
+      // メモリ読み込み失敗でも研究は続行
+    }
+    
     console.log(`[Phase 1] Generating condition candidates (theme-based)...`);
     
     // AIに条件候補を生成させる（テーマベース: 10個）
@@ -321,6 +374,26 @@ export class AutonomousResearchAgent {
     candidates = this.removeDuplicateConditions(candidates);
     
     console.log(`[Phase 1] Generated ${candidates.length} unique candidates (after deduplication)`);
+    
+    // すでに試した条件をスキップ
+    const filteredCandidates: typeof candidates = [];
+    for (const candidate of candidates) {
+      try {
+        const alreadyTested = await hasBeenTested(this.userId, candidate.conditions);
+        if (alreadyTested) {
+          console.log(`[Phase 1] Skip: ${candidate.name} (already tested)`);
+          continue;
+        }
+        filteredCandidates.push(candidate);
+      } catch (error) {
+        // メモリチェック失敗でも条件は残す
+        filteredCandidates.push(candidate);
+      }
+    }
+    
+    candidates = filteredCandidates;
+    
+    console.log(`[Phase 1] After memory filter: ${candidates.length} candidates`);
     console.log(`[Phase 1] Starting evaluation...`);
     
     // バッチ処理で並列実行（一度に5個ずつ）
@@ -412,13 +485,27 @@ export class AutonomousResearchAgent {
 
     console.log(`[Phase 2] Deep diving ${promising.length} promising themes...`);
     
-    // 有望な条件から深掘り候補を生成
-    const deepDiveCandidates: ConditionCandidate[] = [];
+    // 有望な条件から深掘り候補を生成（親IDをマッピング）
+    const deepDiveCandidates: Array<{ candidate: ConditionCandidate; parentId?: string }> = [];
     
     for (const result of promising) {
+      // 親条件のIDを取得（メモリから）
+      let parentId: string | undefined;
+      try {
+        const conditionHash = (await import('./research-memory')).generateConditionHash(result.candidate.conditions);
+        const existing = await (await import('@/lib/db')).getDbAsync().then(db => 
+          db.query('SELECT id FROM research_memory WHERE user_id = $1 AND condition_hash = $2', [this.userId, conditionHash])
+        );
+        if (existing.rows.length > 0) {
+          parentId = existing.rows[0].id;
+        }
+      } catch (error) {
+        console.warn('[Phase 2] Failed to get parent ID:', error);
+      }
+      
       // 各有望条件から派生条件を生成
       const variations = await this.generateDeepDiveVariations(result);
-      deepDiveCandidates.push(...variations);
+      variations.forEach(v => deepDiveCandidates.push({ candidate: v, parentId }));
     }
     
     console.log(`[Phase 2] Generated ${deepDiveCandidates.length} deep dive candidates`);
@@ -435,7 +522,19 @@ export class AutonomousResearchAgent {
       console.log(`[Phase 2] Batch ${batchNum}/${totalBatches}`);
       
       const batchResults = await Promise.all(
-        batch.map(c => this.evaluateCondition(c))
+        batch.map(async ({ candidate, parentId }) => {
+          const result = await this.evaluateCondition(candidate);
+          
+          // メモリに保存（親IDを記録）
+          try {
+            await saveToMemory(this.userId, result, parentId);
+            console.log(`[Phase 2] Saved to memory: ${result.candidate.name} (parent: ${parentId || 'none'})`);
+          } catch (error) {
+            console.warn('[Phase 2] Failed to save to memory:', error);
+          }
+          
+          return result;
+        })
       );
       
       results.push(...batchResults);
