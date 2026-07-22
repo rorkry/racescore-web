@@ -8,6 +8,7 @@ import type { Rule, RuleCondition } from '@/types/rule';
 import { AnalysisConnector } from './analysis-connector';
 import { generateConditions, getDefaultConditions, type ResearchTheme } from './condition-generator';
 import { evaluatePromising, generatePromisingReport, type ConditionStatistics, type ConfidenceMetrics } from './promising-evaluator';
+import { saveToMemory, getResearchHistory, hasBeenTested, getPromisingThemes } from './research-memory';
 
 // 研究エージェントのシステムプロンプト
 const RESEARCH_AGENT_SYSTEM_PROMPT = `
@@ -381,6 +382,18 @@ export class AutonomousResearchAgent {
     
     const promisingResults = results.filter(r => r.is_promising);
     console.log(`[Phase 1] Completed: ${results.length} evaluated, ${promisingResults.length} promising`);
+    
+    // 結果をメモリに保存
+    console.log(`[Phase 1] Saving results to memory...`);
+    try {
+      for (const result of results) {
+        await saveToMemory(this.userId, result);
+      }
+      console.log(`[Phase 1] Memory saved: ${results.length} conditions`);
+    } catch (error) {
+      console.error('[Phase 1] Failed to save to memory:', error);
+      // メモリ保存失敗でも研究は続行
+    }
     
     return results;
   }
