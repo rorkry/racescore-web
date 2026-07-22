@@ -127,17 +127,28 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
     straight: result.phases.straight?.horses?.length || 0,
     goal: result.phases.goal?.horses?.length || 0,
   });
-  console.warn(`[TimelineGenerator] キーフレーム数: ${uniqueKeyframes.length}件`);
+  console.warn(`[TimelineGenerator] 元キーフレーム数: ${uniqueKeyframes.length}件`);
   console.warn(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
   console.warn(`[TimelineGenerator] コース距離: ${courseDistance}m`);
   
-  // キーフレーム診断ログ（必ず実行）
-  if (uniqueKeyframes.length === 0) {
+  // ========================================
+  // キーフレーム補間（10fps）
+  // ========================================
+  const interpolatedKeyframes = interpolateKeyframes(uniqueKeyframes, totalDuration);
+  
+  console.warn('[TimelineGenerator] 補間完了:', {
+    元キーフレーム数: uniqueKeyframes.length,
+    補間後キーフレーム数: interpolatedKeyframes.length,
+    fps: 10
+  });
+  
+  // キーフレーム診断ログ（補間後のデータで実行）
+  if (interpolatedKeyframes.length === 0) {
     console.error('[TimelineGenerator] ❌ キーフレームが0件です！');
   } else {
-    const firstFrame = uniqueKeyframes[0];
-    const midFrame = uniqueKeyframes[Math.floor(uniqueKeyframes.length / 2)];
-    const lastFrame = uniqueKeyframes[uniqueKeyframes.length - 1];
+    const firstFrame = interpolatedKeyframes[0];
+    const midFrame = interpolatedKeyframes[Math.floor(interpolatedKeyframes.length / 2)];
+    const lastFrame = interpolatedKeyframes[interpolatedKeyframes.length - 1];
     
     // 馬1番
     const horse1First = firstFrame.horses.find(h => h.horseNumber === 1);
@@ -207,7 +218,7 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
     raceKey: result.raceKey,
     totalDuration,
     courseDistance,
-    keyframes: uniqueKeyframes,
+    keyframes: interpolatedKeyframes, // 補間済みキーフレームを返す
   };
 }
 
@@ -447,4 +458,100 @@ function easeInOut(t: number): number {
  */
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+/**
+ * キーフレームを10fpsで補間
+ */
+function interpolateKeyframes(
+  sourceKeyframes: TimelineFrame[],
+  totalDuration: number
+): TimelineFrame[] {
+  if (sourceKeyframes.length === 0) {
+    return [];
+  }
+  
+  if (sourceKeyframes.length === 1) {
+    return sourceKeyframes;
+  }
+  
+  const fps = 10;
+  const frameCount = Math.ceil(totalDuration * fps);
+  const interpolatedFrames: TimelineFrame[] = [];
+  
+  for (let i = 0; i < frameCount; i++) {
+    const currentTime = (i / fps);
+    
+    // 前後のキーフレームを探す
+    let prevFrame = sourceKeyframes[0];
+    let nextFrame = sourceKeyframes[sourceKeyframes.length - 1];
+    
+    for (let j = 0; j < sourceKeyframes.length - 1; j++) {
+      if (sourceKeyframes[j].time <= currentTime && sourceKeyframes[j + 1].time >= currentTime) {
+        prevFrame = sourceKeyframes[j];
+        nextFrame = sourceKeyframes[j + 1];
+        break;
+      }
+    }
+    
+    // 補間係数を計算
+    const timeDiff = nextFrame.time - prevFrame.time;
+    const t = timeDiff > 0 ? (currentTime - prevFrame.time) / timeDiff : 0;
+    
+    // 各馬を補間
+    const interpolatedHorses = prevFrame.horses.map(prevHorse => {
+      const nextHorse = nextFrame.horses.find(h => h.horseNumber === prevHorse.horseNumber);
+      if (!nextHorse) {
+        return prevHorse;
+      }
+      
+      return {
+        horseNumber: prevHorse.horseNumber,
+        horseName: prevHorse.horseName,
+        waku: prevHorse.waku,
+        
+        // 線形補間
+        currentDistance: lerp(prevHorse.currentDistance, nextHorse.currentDistance, t),
+        currentVelocity: lerp(prevHorse.currentVelocity, nextHorse.currentVelocity, t),
+        acceleration: lerp(prevHorse.acceleration || 0, nextHorse.acceleration || 0, t),
+        lateralPosition: lerp(prevHorse.lateralPosition, nextHorse.lateralPosition, t),
+        distanceFromLeader: lerp(prevHorse.distanceFromLeader, nextHorse.distanceFromLeader, t),
+        staminaRemaining: lerp(prevHorse.staminaRemaining, nextHorse.staminaRemaining, t),
+        
+        // boolean値は前後どちらか近い方
+        blocked: t < 0.5 ? prevHorse.blocked : nextHorse.blocked,
+        outerPath: t < 0.5 ? prevHorse.outerPath : nextHorse.outerPath,
+        
+        // position は補間後に再計算（暫定的に前の値を使用）
+        position: prevHorse.position,
+        
+        // その他のフィールド
+        internalLane: prevHorse.internalLane,
+        capabilities: prevHorse.capabilities,
+        leadingIntention: prevHorse.leadingIntention,
+        pastPositionPattern: prevHorse.pastPositionPattern,
+        runningStyle: prevHorse.runningStyle,
+        baseSpeed: prevHorse.baseSpeed,
+        laneChangeState: t < 0.5 ? prevHorse.laneChangeState : nextHorse.laneChangeState,
+        accelerationStarted: prevHorse.accelerationStarted || nextHorse.accelerationStarted,
+        weight: prevHorse.weight,
+      };
+    });
+    
+    // currentDistance でソートして position を再計算
+    const sortedHorses = [...interpolatedHorses].sort((a, b) => b.currentDistance - a.currentDistance);
+    sortedHorses.forEach((horse, index) => {
+      horse.position = index + 1;
+    });
+    
+    interpolatedFrames.push({
+      time: currentTime,
+      phase: prevFrame.phase,
+      eventType: t < 0.5 ? prevFrame.eventType : nextFrame.eventType,
+      eventReason: t < 0.5 ? prevFrame.eventReason : nextFrame.eventReason,
+      horses: sortedHorses,
+    });
+  }
+  
+  return interpolatedFrames;
 }
