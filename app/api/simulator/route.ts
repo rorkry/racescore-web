@@ -74,35 +74,13 @@ export async function POST(request: NextRequest) {
     // ========================================
     console.log('[API] タイムライン生成中...');
 
-    const timeline = generateTimeline(result, courseInfo, 10); // 10fps
+    const timeline = generateTimeline(result);
 
-    console.log(`[API] タイムライン生成完了: ${timeline.length}フレーム`);
+    console.log(`[API] タイムライン生成完了: ${timeline.keyframes.length}フレーム`);
 
     // ========================================
     // 4. レスポンス
     // ========================================
-    
-    // デバッグ: 変数の型チェック
-    console.log('[DEBUG] result.finalStandings:', {
-      type: typeof result.finalStandings,
-      isArray: Array.isArray(result.finalStandings),
-      value: result.finalStandings
-    });
-    
-    console.log('[DEBUG] timeline:', {
-      type: typeof timeline,
-      isArray: Array.isArray(timeline),
-      length: Array.isArray(timeline) ? timeline.length : 'N/A'
-    });
-    
-    if (Array.isArray(timeline) && timeline.length > 0) {
-      console.log('[DEBUG] timeline[0].horses:', {
-        type: typeof timeline[0].horses,
-        isArray: Array.isArray(timeline[0].horses),
-        value: timeline[0].horses
-      });
-    }
-    
     return NextResponse.json({
       success: true,
       raceKey: result.raceKey,
@@ -114,21 +92,27 @@ export async function POST(request: NextRequest) {
         horseName: h.horseName,
         waku: h.waku,
       })),
-      timeline: timeline.map(f => ({
-        time: parseFloat(f.time.toFixed(2)),
-        distance: parseFloat(f.distance.toFixed(1)),
-        horses: f.horses.map(h => ({
-          n: h.horseNumber,
-          p: [
-            parseFloat(h.x.toFixed(1)),
-            parseFloat(h.y.toFixed(1)),
-            parseFloat(h.z.toFixed(1)),
-          ],
-          v: parseFloat(h.velocity.toFixed(1)),
-          pos: h.position,
-          stamina: h.staminaRemaining,
+      timeline: {
+        raceKey: timeline.raceKey,
+        totalDuration: timeline.totalDuration,
+        courseDistance: timeline.courseDistance,
+        keyframes: timeline.keyframes.map(f => ({
+          time: parseFloat(f.time.toFixed(2)),
+          phase: f.phase,
+          horses: f.horses.map(h => ({
+            horseNumber: h.horseNumber,
+            horseName: h.horseName,
+            currentDistance: parseFloat(h.currentDistance.toFixed(1)),
+            currentVelocity: parseFloat(h.currentVelocity.toFixed(1)),
+            lateralPosition: parseFloat(h.lateralPosition.toFixed(2)),
+            position: h.position,
+            distanceFromLeader: parseFloat(h.distanceFromLeader.toFixed(1)),
+            staminaRemaining: parseFloat(h.staminaRemaining.toFixed(1)),
+            blocked: h.blocked,
+            outerPath: h.outerPath,
+          })),
         })),
-      })),
+      },
       phaseEvents: {
         start: result.phases.start.events,
         formation: result.phases.formation.events,
