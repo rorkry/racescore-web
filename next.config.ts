@@ -4,8 +4,9 @@ const nextConfig: NextConfig = {
   // 本番ビルドの最適化
   compress: true,
 
-  // 使用済みエクスポートのみをバンドルに含める（tree-shaking強化）
+  // Turbopackを無効化（NextAuth互換性のため）
   experimental: {
+    turbo: undefined,
     optimizePackageImports: ['recharts', 'framer-motion', 'lucide-react'],
   },
 
