@@ -115,6 +115,9 @@ export async function POST(request: NextRequest) {
         formation: result.phases.formation.events,
         straight: result.phases.straight.events,
       },
+      // Phase 4.2プロトタイプ用
+      simulation: result,
+      courseInfo: courseInfo,
     });
   } catch (error) {
     console.error('[API] シミュレーションエラー:', error);

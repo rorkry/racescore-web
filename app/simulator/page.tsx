@@ -1,8 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import RaceSimulator3D from '@/app/components/RaceSimulator3D';
-import type { TimelineFrame } from '@/lib/race-simulator/timeline-generator';
+import dynamic from 'next/dynamic';
+
+// Phase 4.2プロトタイプ（SSR無効化）
+const RaceSimulator3DProto = dynamic(
+  () => import('@/app/components/RaceSimulator3DProto'),
+  { ssr: false, loading: () => <div className="text-center py-12">3Dシミュレーター読み込み中...</div> }
+);
 
 interface SimulationResult {
   courseName: string;
@@ -24,6 +29,8 @@ interface SimulationResult {
       stamina: number;
     }>;
   }>;
+  simulation?: any;
+  courseInfo?: any;
 }
 
 export default function SimulatorPage() {
@@ -80,24 +87,6 @@ export default function SimulatorPage() {
       setLoading(false);
     }
   };
-
-  // タイムラインをTimelineFrame形式に変換
-  const timeline: TimelineFrame[] = result?.timeline.map(f => ({
-    time: f.time,
-    distance: f.distance,
-    horses: f.horses.map(h => ({
-      horseNumber: h.n,
-      horseName: result.finalStandings.find(s => s.horseNumber === h.n)?.horseName || '',
-      x: h.p[0],
-      y: h.p[1],
-      z: h.p[2],
-      velocity: h.v,
-      position: h.pos,
-      staminaRemaining: h.stamina,
-      isAccelerating: false,
-      isBlocked: false,
-    })),
-  })) || [];
 
   return (
     <main className="min-h-screen bg-gray-50 p-6">
@@ -254,25 +243,14 @@ export default function SimulatorPage() {
           </div>
         )}
 
-        {/* 3D可視化 */}
-        {result && (
+        {/* 3D可視化（Phase 4.2プロトタイプ） */}
+        {result && result.simulation && (
           <>
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">🎬 3Dシミュレーション</h2>
-                <a
-                  href={`/3d-simulator?raceKey=${year}${date}_${place}_${raceNumber.padStart(2, '0')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                >
-                  🎮 Phase 4.2プロトタイプで見る
-                </a>
-              </div>
-              <RaceSimulator3D
-                timeline={timeline}
-                courseDistance={result.distance}
-                courseName={result.courseName}
+              <h2 className="text-xl font-bold mb-4">🎬 3Dシミュレーション（Phase 4.2）</h2>
+              <RaceSimulator3DProto
+                simulationResult={result.simulation}
+                courseInfo={result.courseInfo || null}
               />
             </div>
 
