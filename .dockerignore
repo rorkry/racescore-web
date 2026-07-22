@@ -1,0 +1,38 @@
+# ビルド生成物
+.next
+node_modules
+
+# Git
+.git
+.gitignore
+
+# ログ
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# 環境変数
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# テスト
+coverage
+.nyc_output
+
+# その他
+README.md
+.editorconfig
+.eslintrc*
+.prettierrc*
