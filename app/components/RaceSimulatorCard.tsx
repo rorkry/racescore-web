@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import dynamic from 'next/dynamic';
 
 // 3Dシミュレーター（SSR無効化）
@@ -33,6 +33,16 @@ export default function RaceSimulatorCard({
   error,
   onRetry,
 }: RaceSimulatorCardProps) {
+  // CourseInfo追跡（simulationResult変更時）
+  useEffect(() => {
+    if (simulationResult) {
+      console.warn('[COURSEINFO] RaceSimulatorCard:', {
+        courseInfo: simulationResult.courseInfo ? 'LOADED' : 'NULL',
+        courseInfoKeys: simulationResult.courseInfo ? Object.keys(simulationResult.courseInfo) : []
+      });
+    }
+  }, [simulationResult]);
+  
   // ローディング状態
   if (loading) {
     return (
@@ -91,12 +101,6 @@ export default function RaceSimulatorCard({
     );
   }
 
-  // CourseInfo追跡
-  console.warn('[COURSEINFO] RaceSimulatorCard:', {
-    courseInfo: simulationResult.courseInfo ? 'LOADED' : 'NULL',
-    courseInfoKeys: simulationResult.courseInfo ? Object.keys(simulationResult.courseInfo) : []
-  });
-  
   // 正常表示
   return (
     <div className="space-y-4">

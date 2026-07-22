@@ -21,13 +21,6 @@ export default function RaceSimulator3DProto({
   simulationResult,
   courseInfo,
 }: RaceSimulator3DProtoProps) {
-  // CourseInfo追跡
-  console.warn('[COURSEINFO] RaceSimulator3DProto:', {
-    courseInfo: courseInfo ? 'LOADED' : 'NULL',
-    courseInfoKeys: courseInfo ? Object.keys(courseInfo) : [],
-    courseInfoValue: courseInfo
-  });
-  
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -59,6 +52,15 @@ export default function RaceSimulator3DProto({
   
   // 画面内デバッグHUD用の状態
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  
+  // CourseInfo追跡（初回のみ）
+  useEffect(() => {
+    console.warn('[COURSEINFO] RaceSimulator3DProto:', {
+      courseInfo: courseInfo ? 'LOADED' : 'NULL',
+      courseInfoKeys: courseInfo ? Object.keys(courseInfo) : [],
+      courseInfoValue: courseInfo
+    });
+  }, [courseInfo]);
   
   // タイムライン生成
   useEffect(() => {
