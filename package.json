@@ -4,7 +4,8 @@
   "private": true,
   "packageManager": "npm@10.9.4",
   "engines": {
-    "node": ">=20.9.0"
+    "node": "20.x",
+    "npm": "10.9.4"
   },
   "scripts": {
     "dev": "next dev --webpack",
