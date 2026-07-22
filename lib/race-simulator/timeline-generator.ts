@@ -104,44 +104,74 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
   console.log(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
   console.log(`[TimelineGenerator] コース距離: ${courseDistance}m`);
   
-  // キーフレーム診断ログ（馬1番について）
+  // キーフレーム診断ログ
   if (uniqueKeyframes.length > 0) {
     const firstFrame = uniqueKeyframes[0];
     const midFrame = uniqueKeyframes[Math.floor(uniqueKeyframes.length / 2)];
     const lastFrame = uniqueKeyframes[uniqueKeyframes.length - 1];
     
+    // 馬1番
     const horse1First = firstFrame.horses.find(h => h.horseNumber === 1);
     const horse1Mid = midFrame.horses.find(h => h.horseNumber === 1);
     const horse1Last = lastFrame.horses.find(h => h.horseNumber === 1);
     
-    console.log('[TimelineGenerator] === キーフレーム診断（馬1番） ===');
-    console.log('[TimelineGenerator] 先頭フレーム:', {
-      time: firstFrame.time,
-      horse1: horse1First ? {
-        currentDistance: horse1First.currentDistance,
-        currentVelocity: horse1First.currentVelocity,
-        position: horse1First.position,
-        distanceFromLeader: horse1First.distanceFromLeader
-      } : 'NOT FOUND'
+    // 先頭馬（position === 1）
+    const leaderFirst = firstFrame.horses.find(h => h.position === 1);
+    const leaderMid = midFrame.horses.find(h => h.position === 1);
+    const leaderLast = lastFrame.horses.find(h => h.position === 1);
+    
+    console.log('[TimelineGenerator] === キーフレーム診断 ===');
+    
+    // 同一参照チェック
+    console.log('[TimelineGenerator] 同一参照チェック:', {
+      horses配列: firstFrame.horses === midFrame.horses,
+      馬1番: horse1First === horse1Mid,
+      先頭馬: leaderFirst === leaderMid
     });
-    console.log('[TimelineGenerator] 中間フレーム:', {
-      time: midFrame.time,
-      horse1: horse1Mid ? {
-        currentDistance: horse1Mid.currentDistance,
-        currentVelocity: horse1Mid.currentVelocity,
-        position: horse1Mid.position,
-        distanceFromLeader: horse1Mid.distanceFromLeader
-      } : 'NOT FOUND'
-    });
-    console.log('[TimelineGenerator] 最終フレーム:', {
-      time: lastFrame.time,
-      horse1: horse1Last ? {
-        currentDistance: horse1Last.currentDistance,
-        currentVelocity: horse1Last.currentVelocity,
-        position: horse1Last.position,
-        distanceFromLeader: horse1Last.distanceFromLeader
-      } : 'NOT FOUND'
-    });
+    
+    console.log('[TimelineGenerator] 馬1番:');
+    console.log('  先頭フレーム (t=' + firstFrame.time.toFixed(1) + 's):', horse1First ? {
+      currentDistance: horse1First.currentDistance.toFixed(1),
+      currentVelocity: horse1First.currentVelocity.toFixed(1),
+      position: horse1First.position,
+      distanceFromLeader: horse1First.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
+    
+    console.log('  中間フレーム (t=' + midFrame.time.toFixed(1) + 's):', horse1Mid ? {
+      currentDistance: horse1Mid.currentDistance.toFixed(1),
+      currentVelocity: horse1Mid.currentVelocity.toFixed(1),
+      position: horse1Mid.position,
+      distanceFromLeader: horse1Mid.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
+    
+    console.log('  最終フレーム (t=' + lastFrame.time.toFixed(1) + 's):', horse1Last ? {
+      currentDistance: horse1Last.currentDistance.toFixed(1),
+      currentVelocity: horse1Last.currentVelocity.toFixed(1),
+      position: horse1Last.position,
+      distanceFromLeader: horse1Last.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
+    
+    console.log('[TimelineGenerator] 先頭馬 (position=1):');
+    console.log('  先頭フレーム:', leaderFirst ? {
+      horseNumber: leaderFirst.horseNumber,
+      horseName: leaderFirst.horseName,
+      currentDistance: leaderFirst.currentDistance.toFixed(1),
+      distanceFromLeader: leaderFirst.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
+    
+    console.log('  中間フレーム:', leaderMid ? {
+      horseNumber: leaderMid.horseNumber,
+      horseName: leaderMid.horseName,
+      currentDistance: leaderMid.currentDistance.toFixed(1),
+      distanceFromLeader: leaderMid.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
+    
+    console.log('  最終フレーム:', leaderLast ? {
+      horseNumber: leaderLast.horseNumber,
+      horseName: leaderLast.horseName,
+      currentDistance: leaderLast.currentDistance.toFixed(1),
+      distanceFromLeader: leaderLast.distanceFromLeader.toFixed(1)
+    } : 'NOT FOUND');
   }
   
   return {
