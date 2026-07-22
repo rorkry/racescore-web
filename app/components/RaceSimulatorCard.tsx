@@ -91,6 +91,12 @@ export default function RaceSimulatorCard({
     );
   }
 
+  // CourseInfo追跡
+  console.warn('[COURSEINFO] RaceSimulatorCard:', {
+    courseInfo: simulationResult.courseInfo ? 'LOADED' : 'NULL',
+    courseInfoKeys: simulationResult.courseInfo ? Object.keys(simulationResult.courseInfo) : []
+  });
+  
   // 正常表示
   return (
     <div className="space-y-4">

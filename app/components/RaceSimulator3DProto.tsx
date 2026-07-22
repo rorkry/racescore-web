@@ -17,15 +17,16 @@ interface RaceSimulator3DProtoProps {
  * 目標: 実在する1レースを、現在のシミュレーション結果に沿って、
  *       スタートからゴールまで3Dで再生できること
  */
-// コンポーネント外でログ（確実に実行される）
-console.log('[SimulatorDebug] ===  RaceSimulator3DProto.tsx が読み込まれました ===');
-
 export default function RaceSimulator3DProto({
   simulationResult,
   courseInfo,
 }: RaceSimulator3DProtoProps) {
-  // コンポーネントマウント時に即座にログ
-  console.log('[SimulatorDebug] RaceSimulator3DProto マウント開始', { simulationResult: !!simulationResult, courseInfo: !!courseInfo });
+  // CourseInfo追跡
+  console.warn('[COURSEINFO] RaceSimulator3DProto:', {
+    courseInfo: courseInfo ? 'LOADED' : 'NULL',
+    courseInfoKeys: courseInfo ? Object.keys(courseInfo) : [],
+    courseInfoValue: courseInfo
+  });
   
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -55,6 +56,9 @@ export default function RaceSimulator3DProto({
   const lastDebugAtRef = useRef<number>(0); // デバッグログ出力時刻
   const previousDistanceRef = useRef<number | null>(null); // 前回の距離
   const debugInitializedRef = useRef<boolean>(false); // 初回ログ出力済み
+  
+  // 画面内デバッグHUD用の状態
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   
   // タイムライン生成
   useEffect(() => {
@@ -383,7 +387,7 @@ export default function RaceSimulator3DProto({
   
   // 馬の位置更新
   const updateHorses = (currentState: RaceTimelineKeyframe) => {
-    // デバッグ: 1秒に1回だけログ出力
+    // デバッグ: 1秒に1回だけ更新
     const now = performance.now();
     if (now - lastDebugAtRef.current >= 1000) {
       lastDebugAtRef.current = now;
@@ -397,41 +401,26 @@ export default function RaceSimulator3DProto({
           ? horse1.currentDistance - previousDistanceRef.current 
           : null;
         
-        console.log('[SimulatorDebug] 1秒間隔診断:', {
-          currentTime: currentTimeRef.current.toFixed(2) + '秒',
-          frameTime: currentState.time.toFixed(2) + '秒',
+        // 画面内HUDに表示
+        setDebugInfo({
+          time: currentTimeRef.current.toFixed(1) + 's',
+          frameTime: currentState.time.toFixed(1) + 's',
           phase: currentState.phase,
-          horse1: {
-            horseNumber: horse1.horseNumber,
-            horseName: horse1.horseName,
-            currentDistance: horse1.currentDistance.toFixed(1) + 'm',
-            distanceDelta: distanceDelta !== null ? distanceDelta.toFixed(1) + 'm' : 'N/A',
-            currentVelocity: horse1.currentVelocity.toFixed(1) + 'm/s',
-            lateralPosition: horse1.lateralPosition.toFixed(2),
-            position: horse1.position
-          },
-          timeline座標: {
-            x: trackPos.x.toFixed(1),
-            y: trackPos.y.toFixed(1),
-            z: trackPos.z.toFixed(1)
-          },
-          mesh座標: mesh1 ? {
-            x: mesh1.position.x.toFixed(1),
-            y: mesh1.position.y.toFixed(1),
-            z: mesh1.position.z.toFixed(1)
-          } : 'mesh not found',
-          座標差: mesh1 ? {
-            dx: (trackPos.x - mesh1.position.x).toFixed(1),
-            dy: (trackPos.y - (mesh1.position.y - 1)).toFixed(1),
-            dz: (trackPos.z - mesh1.position.z).toFixed(1)
-          } : null,
+          currentDistance: horse1.currentDistance.toFixed(1) + 'm',
+          distanceDelta: distanceDelta !== null ? '+' + distanceDelta.toFixed(1) + 'm' : 'N/A',
+          velocity: horse1.currentVelocity.toFixed(1) + 'm/s',
+          position: horse1.position,
+          timelineXYZ: `(${trackPos.x.toFixed(1)}, ${trackPos.y.toFixed(1)}, ${trackPos.z.toFixed(1)})`,
+          meshXYZ: mesh1 ? `(${mesh1.position.x.toFixed(1)}, ${mesh1.position.y.toFixed(1)}, ${mesh1.position.z.toFixed(1)})` : 'NO MESH',
+          deltaXYZ: mesh1 ? `(${(trackPos.x - mesh1.position.x).toFixed(1)}, ${(trackPos.y - (mesh1.position.y - 1)).toFixed(1)}, ${(trackPos.z - mesh1.position.z).toFixed(1)})` : 'N/A',
+          courseInfo: courseInfo ? 'LOADED' : 'NULL',
+          fallback: !courseInfo ? 'YES' : 'NO',
           meshCount: horseMeshesRef.current.size,
-          horsesCount: currentState.horses.length
         });
         
         previousDistanceRef.current = horse1.currentDistance;
       } else {
-        console.warn('[SimulatorDebug] horse1 が見つかりません');
+        setDebugInfo({ error: 'horse1 not found' });
       }
     }
     
@@ -501,9 +490,36 @@ export default function RaceSimulator3DProto({
       {/* 3Dビュー */}
       <div 
         ref={containerRef}
-        className="w-full h-[600px] border border-gray-300 rounded-lg overflow-hidden bg-black"
+        className="w-full h-[600px] border border-gray-300 rounded-lg overflow-hidden bg-black relative"
         style={{ touchAction: 'none' }}
-      />
+      >
+        {/* コンポーネント情報（左上） */}
+        <div className="absolute left-2 top-2 z-50 bg-red-600 px-2 py-1 text-xs text-white font-mono rounded">
+          DEBUG: RaceSimulator3DProto e23c15f
+        </div>
+        
+        {/* CourseInfo 追跡（右上） */}
+        <div className="absolute right-2 top-2 z-50 bg-blue-600 px-2 py-1 text-xs text-white font-mono rounded">
+          CourseInfo: {courseInfo ? 'LOADED ✓' : 'NULL ✗'}
+        </div>
+        
+        {/* デバッグHUD（左下） */}
+        {debugInfo && (
+          <div className="absolute bottom-2 left-2 z-50 bg-black/90 p-3 rounded text-xs text-green-400 font-mono whitespace-pre-wrap max-w-md">
+            <div className="text-yellow-400 font-bold mb-1">DEBUG HUD (1s更新)</div>
+            {Object.entries(debugInfo).map(([key, value]) => (
+              <div key={key} className="flex gap-2">
+                <span className="text-gray-400 w-24">{key}:</span>
+                <span className={
+                  key === 'fallback' && value === 'YES' ? 'text-red-400 font-bold' :
+                  key === 'distanceDelta' && value !== 'N/A' ? 'text-cyan-400 font-bold' :
+                  ''
+                }>{String(value)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       
       {/* コントロールパネル */}
       <div className="bg-white border border-gray-300 rounded-lg p-4 space-y-4">

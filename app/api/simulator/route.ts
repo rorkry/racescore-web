@@ -68,6 +68,14 @@ export async function POST(request: NextRequest) {
     const trackType = raceInfo.track_type;
 
     const courseInfo = getCourseInfo(place, distance, trackType as 'turf' | 'dirt');
+    
+    console.warn('[COURSEINFO] API: getCourseInfo結果', {
+      place,
+      distance,
+      trackType,
+      courseInfo: courseInfo ? 'LOADED' : 'NULL',
+      courseInfoKeys: courseInfo ? Object.keys(courseInfo) : []
+    });
 
     // ========================================
     // 3. タイムライン生成
