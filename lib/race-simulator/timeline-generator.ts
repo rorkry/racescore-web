@@ -142,6 +142,50 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
     fps: 10
   });
   
+  // 馬1番の距離変化を詳細確認
+  if (interpolatedKeyframes.length > 0) {
+    const horse1Frames = interpolatedKeyframes
+      .map((f, idx) => ({ idx, horse: f.horses.find(h => h.horseNumber === 1), time: f.time }))
+      .filter(x => x.horse);
+    
+    if (horse1Frames.length > 0) {
+      const first = horse1Frames[0];
+      const mid = horse1Frames[Math.floor(horse1Frames.length / 2)];
+      const last = horse1Frames[horse1Frames.length - 1];
+      
+      // 10秒、20秒、30秒時点を探す
+      const at10s = horse1Frames.find(x => x.time >= 10);
+      const at20s = horse1Frames.find(x => x.time >= 20);
+      const at30s = horse1Frames.find(x => x.time >= 30);
+      
+      console.warn('[TimelineGenerator] 馬1番の距離変化:', {
+        先頭: first.horse?.currentDistance.toFixed(1) + 'm',
+        中間: mid.horse?.currentDistance.toFixed(1) + 'm',
+        最終: last.horse?.currentDistance.toFixed(1) + 'm',
+        '10秒時点': at10s?.horse?.currentDistance.toFixed(1) + 'm' || 'N/A',
+        '20秒時点': at20s?.horse?.currentDistance.toFixed(1) + 'm' || 'N/A',
+        '30秒時点': at30s?.horse?.currentDistance.toFixed(1) + 'm' || 'N/A',
+      });
+      
+      // 隣接フレーム間の距離差を確認（最初の10フレーム）
+      const deltaCheck = horse1Frames.slice(0, Math.min(10, horse1Frames.length - 1)).map((frame, i) => {
+        if (i === horse1Frames.length - 1) return null;
+        const next = horse1Frames[i + 1];
+        const delta = (next.horse?.currentDistance || 0) - (frame.horse?.currentDistance || 0);
+        return delta;
+      }).filter(d => d !== null);
+      
+      const allPositive = deltaCheck.every(d => d! > 0);
+      const allZero = deltaCheck.every(d => d === 0);
+      
+      console.warn('[TimelineGenerator] 隣接フレーム間の距離差:', {
+        最初の10フレーム: deltaCheck.map(d => d?.toFixed(2) + 'm').join(', '),
+        全て正の値: allPositive ? 'YES ✓' : 'NO ❌',
+        全てゼロ: allZero ? 'YES ❌' : 'NO ✓',
+      });
+    }
+  }
+  
   // キーフレーム診断ログ（補間後のデータで実行）
   if (interpolatedKeyframes.length === 0) {
     console.error('[TimelineGenerator] ❌ キーフレームが0件です！');
