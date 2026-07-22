@@ -206,22 +206,39 @@ export async function runRaceSimulation(
   
   // Phase 3-4: コーナーフェーズ
   const straightStart = courseInfo ? distance - courseInfo.straightLength : distance * 0.8;
+  
+  // 【重要】paceの後に実行するため、paceHorsesから開始
   const cornerPhaseResult = executeCornerPhase({
-    horses: structuredClone(formationPhaseResult.horses),
+    horses: structuredClone(paceHorses),
     courseInfo,
     totalHorses,
     straightStart,
   }, formationPhaseResult);
   
   // 【重要】即座にスナップショット作成
+  // corner3_4はpaceより進める（簡易実装）
+  const cornerHorses = structuredClone(cornerPhaseResult.horses).map(horse => {
+    // paceからcorner3_4まで距離を進める（例: 150m進める）
+    const cornerProgress = 150;
+    return {
+      ...horse,
+      currentDistance: horse.currentDistance + cornerProgress,
+    };
+  });
+  
   const cornerSnapshot = {
     ...cornerPhaseResult,
-    horses: structuredClone(cornerPhaseResult.horses),
+    phaseName: 'コーナー',
+    horses: cornerHorses,
+    distanceRange: {
+      start: paceSnapshot.distanceRange.end,
+      end: Math.min(paceSnapshot.distanceRange.end + 150, straightStart),
+    },
   };
   
   // Phase 5: 直線〜ゴール
   const straightPhaseResult = executeStraightPhase({
-    horses: structuredClone(cornerPhaseResult.horses),
+    horses: structuredClone(cornerHorses),
     paceType: cornerPhaseResult.paceInfo.paceType,
     trackBias,
     courseInfo,
@@ -236,10 +253,13 @@ export async function runRaceSimulation(
   };
   
   // goalはゴール地点まで進める（簡易実装）
-  const goalHorses = structuredClone(straightPhaseResult.horses).map((horse, index) => {
-    // 着順に応じてゴール距離を設定
-    // 先頭馬はraceDistance、後続は少し手前
-    const goalDistance = distance - (index * 0.5); // 着差0.5m
+  const goalHorses = structuredClone(straightPhaseResult.horses).map(horse => {
+    // 着順に応じてゴール距離を設定（horse.positionを使用）
+    // 先頭馬はraceDistance、後続は着差0.5m
+    const finishPosition = horse.position;
+    const goalDistance = finishPosition === 1
+      ? distance
+      : distance - (finishPosition - 1) * 0.5;
     return {
       ...horse,
       currentDistance: goalDistance,
@@ -312,6 +332,22 @@ export async function runRaceSimulation(
   console.warn('[Simulator] オブジェクト参照チェック（修正後）:', {
     '馬1番オブジェクト同一': horse1_start === horse1_formation,
     '期待値': 'false',
+  });
+  
+  // 【検証】単調増加チェック
+  const distanceCheck = {
+    'start < formation': horse1_start!.currentDistance < horse1_formation!.currentDistance,
+    'formation < pace': horse1_formation!.currentDistance < horse1_pace!.currentDistance,
+    'pace < corner3_4': horse1_pace!.currentDistance < horse1_corner!.currentDistance,
+    'corner3_4 < straight': horse1_corner!.currentDistance < horse1_straight!.currentDistance,
+    'straight <= goal': horse1_straight!.currentDistance <= horse1_goal!.currentDistance,
+  };
+  
+  const allIncreasing = Object.values(distanceCheck).every(v => v === true);
+  
+  console.warn('[Simulator] 単調増加チェック:', {
+    ...distanceCheck,
+    '全て増加': allIncreasing ? 'YES ✓' : 'NO ❌',
   });
   
   console.log('========================================');
