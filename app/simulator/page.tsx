@@ -244,15 +244,27 @@ export default function SimulatorPage() {
         )}
 
         {/* 3D可視化（Phase 4.2プロトタイプ） */}
-        {result && result.simulation && (
+        {result && (
           <>
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">🎬 3Dシミュレーション（Phase 4.2）</h2>
-              <RaceSimulator3DProto
-                simulationResult={result.simulation}
-                courseInfo={result.courseInfo || null}
-              />
-            </div>
+            {result.simulation ? (
+              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 className="text-xl font-bold mb-4">🎬 3Dシミュレーション（Phase 4.2）</h2>
+                <RaceSimulator3DProto
+                  simulationResult={result.simulation}
+                  courseInfo={result.courseInfo || null}
+                />
+              </div>
+            ) : (
+              <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-6">
+                <strong>デバッグ:</strong> result.simulationが存在しません。APIレスポンスを確認してください。
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-semibold">レスポンスデータ</summary>
+                  <pre className="mt-2 text-xs overflow-x-auto">
+                    {JSON.stringify(Object.keys(result), null, 2)}
+                  </pre>
+                </details>
+              </div>
+            )}
 
             {/* 予想着順 */}
             <div className="bg-white rounded-lg shadow-md p-6">
