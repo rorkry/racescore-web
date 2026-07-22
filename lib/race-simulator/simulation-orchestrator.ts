@@ -1,0 +1,212 @@
+/**
+ * シミュレーション統括エンジン
+ * 
+ * 各Phase を順次実行し、最終結果を返す
+ */
+
+import type { 
+  SimulationInput, 
+  SimulationResult, 
+  HorseState, 
+  CourseInfo,
+  TrackBias
+} from '@/types/race-simulator';
+import { fetchHorseIndices, calculateLeadingIntention, getPastPositionPattern } from './data-fetcher';
+import { analyzeCapabilities, logCapabilities } from './capability-analyzer';
+import { getCourseInfo } from './course-database';
+import { executeStartPhase } from './engines/start-phase';
+import { executeFormationPhase } from './engines/formation-phase';
+import { executeStraightPhase } from './engines/straight-phase';
+
+/**
+ * レースシミュレーションを実行
+ */
+export async function runRaceSimulation(
+  db: any,
+  input: SimulationInput
+): Promise<SimulationResult> {
+  const { year, date, place, raceNumber, trackBias, enableDetailedLog } = input;
+  
+  console.log('========================================');
+  console.log(`[Simulator] レースシミュレーション開始`);
+  console.log(`  ${year}年${date} ${place} ${raceNumber}R`);
+  console.log('========================================');
+  
+  // ========================================
+  // 1. 出走馬データを取得
+  // ========================================
+  const wakujunQuery = `
+    SELECT umaban, umamei, waku, distance, track_type, kinryo
+    FROM wakujun
+    WHERE year = $1 AND date = $2 AND place = $3 AND race_number = $4
+    ORDER BY umaban::INTEGER
+  `;
+  
+  const horses = await db.prepare(wakujunQuery).all(year, date, place, raceNumber) as Array<{
+    umaban: string;
+    umamei: string;
+    waku: string;
+    distance: string;
+    track_type: string;
+    kinryo: string;
+  }>;
+  
+  if (horses.length === 0) {
+    throw new Error(`No horses found for ${year}${date} ${place} ${raceNumber}R`);
+  }
+  
+  const totalHorses = horses.length;
+  
+  // 距離と馬場を抽出
+  const distanceMatch = horses[0].distance.match(/(\d+)/);
+  if (!distanceMatch) {
+    throw new Error(`Invalid distance format: ${horses[0].distance}`);
+  }
+  const currentDistance = parseInt(distanceMatch[1], 10);
+  const trackType = horses[0].track_type;
+  const targetSurface = horses[0].distance.includes('芝') ? '芝' : 'ダート';
+  
+  // 現在のレース日付（日付フィルタ用）
+  const currentRaceDateNum = getCurrentRaceDateNumber(date, year);
+  
+  // ========================================
+  // 2. コース情報を取得
+  // ========================================
+  const courseInfo = getCourseInfo(place, currentDistance, trackType as 'turf' | 'dirt');
+  
+  console.log(`[Simulator] コース: ${place} ${currentDistance}m ${trackType}`);
+  if (courseInfo) {
+    console.log(`  直線: ${courseInfo.straightLength}m`);
+    console.log(`  坂: ${courseInfo.slopes.length}箇所`);
+    console.log(`  傾向: ${courseInfo.paceTendency}`);
+  }
+  
+  // ========================================
+  // 3. 各馬のデータを取得＆能力分析
+  // ========================================
+  const horseStates: HorseState[] = [];
+  
+  for (const horse of horses) {
+    const horseNumber = parseInt(horse.umaban, 10);
+    const horseName = horse.umamei;
+    const waku = parseInt(horse.waku, 10);
+    const weight = parseFloat(horse.kinryo) || 55.0;
+    
+    // 指数データ取得
+    const indices = await fetchHorseIndices(
+      db,
+      horseName,
+      currentDistance,
+      targetSurface,
+      currentRaceDateNum
+    );
+    
+    indices.horseNumber = horseNumber;
+    
+    // 能力分析
+    const capabilities = analyzeCapabilities(indices, totalHorses);
+    
+    // 先行意欲スコア
+    const leadingIntention = calculateLeadingIntention(indices);
+    
+    // 過去通過順パターン
+    const pastPositionPattern = getPastPositionPattern(indices.pastPositions);
+    
+    // PFS
+    const pfs = indices.avgData.PFS || 50;
+    
+    if (enableDetailedLog) {
+      logCapabilities(horseName, capabilities, indices);
+    }
+    
+    // HorseState を構築
+    const horseState: HorseState = {
+      horseNumber,
+      horseName,
+      position: 0, // 初期値、StartPhaseで決定
+      internalLane: waku,
+      distanceFromLeader: 0,
+      capabilities,
+      leadingIntention,
+      pfs,
+      pastPositionPattern,
+      staminaRemaining: capabilities.stamina, // 初期値=スタミナ能力値
+      blocked: false,
+      outerPath: false,
+      waku,
+      weight,
+      trackBiasEffect: 0,
+    };
+    
+    horseStates.push(horseState);
+  }
+  
+  // ========================================
+  // 4. Phase別シミュレーション実行
+  // ========================================
+  
+  // Phase 1: スタート〜隊列形成
+  const startPhaseResult = executeStartPhase({
+    horses: horseStates,
+    totalHorses,
+  });
+  
+  // Phase 2: 隊列確定〜ペース形成
+  const formationPhaseResult = executeFormationPhase({
+    horses: startPhaseResult.horses,
+    courseInfo,
+    totalHorses,
+  }, startPhaseResult);
+  
+  // Phase 3-4: コーナーフェーズ（今回は簡略化してスキップ）
+  // TODO: 実装
+  
+  // Phase 5: 直線〜ゴール
+  const straightPhaseResult = executeStraightPhase({
+    horses: formationPhaseResult.horses,
+    paceType: formationPhaseResult.paceInfo.paceType,
+    trackBias,
+    courseInfo,
+    totalHorses,
+  }, formationPhaseResult);
+  
+  // ========================================
+  // 5. 結果をまとめる
+  // ========================================
+  const raceKey = `${year}${date}_${place}_${raceNumber}`;
+  
+  const result: SimulationResult = {
+    raceKey,
+    phases: {
+      start: startPhaseResult,
+      formation: formationPhaseResult,
+      pace: formationPhaseResult, // 同じ
+      corner3_4: formationPhaseResult, // 簡略化
+      straight: straightPhaseResult,
+      goal: straightPhaseResult, // 同じ
+    },
+    finalStandings: straightPhaseResult.horses,
+  };
+  
+  console.log('========================================');
+  console.log('[Simulator] シミュレーション完了');
+  console.log('========================================');
+  console.log('【予想着順】');
+  result.finalStandings.slice(0, 10).forEach((h, idx) => {
+    console.log(`  ${idx + 1}着: ${h.horseName} (${h.horseNumber}番, ${h.waku}枠)`);
+  });
+  console.log('========================================');
+  
+  return result;
+}
+
+/**
+ * 現在のレース日付をYYYYMMDD形式の数値に変換
+ */
+function getCurrentRaceDateNumber(date: string, year: string): number {
+  const dateStr = String(date).padStart(4, '0');
+  const month = parseInt(dateStr.substring(0, 2), 10);
+  const day = parseInt(dateStr.substring(2, 4), 10);
+  const currentYear = parseInt(year, 10) || new Date().getFullYear();
+  return currentYear * 10000 + month * 100 + day;
+}
