@@ -17,6 +17,16 @@ export interface TrackPosition {
 // fallback警告を初回のみ出力するためのフラグ
 let fallbackWarningShown = false;
 
+// デバッグ用：最後に使用した座標生成器
+let lastGeometrySource: 'specific' | 'generic' | 'fallback' = 'fallback';
+
+/**
+ * 最後に使用した座標生成器を取得（デバッグ用）
+ */
+export function getLastGeometrySource(): string {
+  return lastGeometrySource;
+}
+
 /**
  * コース上の距離とlateralPositionから3D座標を計算
  */
@@ -27,6 +37,7 @@ export function getTrackPosition(
 ): TrackPosition {
   // fallback: 直線コースとして扱う
   if (!courseInfo) {
+    lastGeometrySource = 'fallback';
     if (!fallbackWarningShown) {
       console.warn('[CourseGeometry] CourseInfo未設定: fallback使用 (この警告は初回のみ表示)');
       console.warn('[CourseGeometry] fallback理由: courseInfo が null または undefined');
@@ -34,6 +45,10 @@ export function getTrackPosition(
     }
     return getLinearTrackPosition(distance, lateralPosition, 1600);
   }
+  
+  // courseInfo があっても、実際の形状データがない場合は generic
+  // （現状はすべて generic 扱い、将来的に hakodate などのspecific実装を追加）
+  lastGeometrySource = 'generic';
   
   const totalDistance = courseInfo.distance;
   const straightStart = totalDistance - courseInfo.straightLength;

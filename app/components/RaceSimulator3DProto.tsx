@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateTimeline, interpolateTimeline, type RaceTimeline, type RaceTimelineKeyframe } from '@/lib/race-simulator/timeline-generator';
-import { getTrackPosition, getCourseBounds } from '@/lib/race-simulator/course-geometry';
+import { getTrackPosition, getCourseBounds, getLastGeometrySource } from '@/lib/race-simulator/course-geometry';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -404,6 +404,7 @@ export default function RaceSimulator3DProto({
           : null;
         
         // 画面内HUDに表示
+        const geometrySource = getLastGeometrySource();
         setDebugInfo({
           time: currentTimeRef.current.toFixed(1) + 's',
           frameTime: currentState.time.toFixed(1) + 's',
@@ -416,7 +417,7 @@ export default function RaceSimulator3DProto({
           meshXYZ: mesh1 ? `(${mesh1.position.x.toFixed(1)}, ${mesh1.position.y.toFixed(1)}, ${mesh1.position.z.toFixed(1)})` : 'NO MESH',
           deltaXYZ: mesh1 ? `(${(trackPos.x - mesh1.position.x).toFixed(1)}, ${(trackPos.y - (mesh1.position.y - 1)).toFixed(1)}, ${(trackPos.z - mesh1.position.z).toFixed(1)})` : 'N/A',
           courseInfo: courseInfo ? 'LOADED' : 'NULL',
-          fallback: !courseInfo ? 'YES' : 'NO',
+          geometrySource: geometrySource.toUpperCase(),
           meshCount: horseMeshesRef.current.size,
         });
         
