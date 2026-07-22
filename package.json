@@ -6,8 +6,8 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "TURBOPACK=0 next build",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "generate-courses": "node scripts/generate-course-db.js",
