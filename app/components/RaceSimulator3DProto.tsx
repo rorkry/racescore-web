@@ -44,6 +44,8 @@ export default function RaceSimulator3DProto({
   const [selectedHorse, setSelectedHorse] = useState<number | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(true);
   const lastTimeRef = useRef<number>(0);
+  const currentTimeRef = useRef<number>(0); // 内部再生時刻（毎フレーム更新）
+  const lastUIUpdateRef = useRef<number>(0); // 最後にUI更新した時刻
   
   // タイムライン生成
   useEffect(() => {
@@ -151,20 +153,26 @@ export default function RaceSimulator3DProto({
       const deltaTime = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
       
-      // 再生中の時間更新
+      // 再生中の時間更新（ref使用、毎フレーム）
       if (isPlaying) {
-        setCurrentTime(prev => {
-          const next = prev + deltaTime * playbackSpeed;
-          if (next >= timeline.totalDuration) {
-            setIsPlaying(false);
-            return timeline.totalDuration;
+        const next = currentTimeRef.current + deltaTime * playbackSpeed;
+        if (next >= timeline.totalDuration) {
+          currentTimeRef.current = timeline.totalDuration;
+          setIsPlaying(false);
+          setCurrentTime(timeline.totalDuration); // 最終フレームでUI更新
+        } else {
+          currentTimeRef.current = next;
+          
+          // UI更新は100msごと（60fps → 10fps）
+          if (now - lastUIUpdateRef.current >= 100) {
+            setCurrentTime(currentTimeRef.current);
+            lastUIUpdateRef.current = now;
           }
-          return next;
-        });
+        }
       }
       
-      // 現在状態を補間
-      const currentState = interpolateTimeline(timeline, currentTime);
+      // 現在状態を補間（refから取得）
+      const currentState = interpolateTimeline(timeline, currentTimeRef.current);
       
       if (currentState) {
         // 馬の位置更新
@@ -176,9 +184,12 @@ export default function RaceSimulator3DProto({
         }
       }
       
-      // コントロール更新
+      // コントロール更新（追従カメラ時は無効化）
       if (controlsRef.current) {
-        controlsRef.current.update();
+        controlsRef.current.enabled = cameraMode !== 'follow';
+        if (cameraMode !== 'follow') {
+          controlsRef.current.update();
+        }
       }
       
       // レンダリング
@@ -359,8 +370,18 @@ export default function RaceSimulator3DProto({
   const currentState = interpolateTimeline(timeline, currentTime);
   const selectedHorseState = currentState?.horses.find(h => h.horseNumber === selectedHorse);
   
+  // Fallback使用チェック
+  const usingFallback = !courseInfo || !courseInfo.corners || courseInfo.corners.length === 0;
+  
   return (
     <div className="space-y-4">
+      {/* Fallback警告 */}
+      {usingFallback && (
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded">
+          ⚠️ <strong>プロトタイプ形状:</strong> コース情報が未登録のため、直線コースとして表示しています
+        </div>
+      )}
+      
       {/* 3Dビュー */}
       <div 
         ref={containerRef}
@@ -379,7 +400,11 @@ export default function RaceSimulator3DProto({
             {isPlaying ? '⏸ 一時停止' : '▶ 再生'}
           </button>
           <button
-            onClick={() => { setCurrentTime(0); setIsPlaying(false); }}
+            onClick={() => { 
+              currentTimeRef.current = 0;
+              setCurrentTime(0); 
+              setIsPlaying(false); 
+            }}
             className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
           >
             ⏮ 最初に戻る
@@ -451,7 +476,11 @@ export default function RaceSimulator3DProto({
             max={timeline.totalDuration}
             step={0.1}
             value={currentTime}
-            onChange={(e) => setCurrentTime(parseFloat(e.target.value))}
+            onChange={(e) => {
+              const newTime = parseFloat(e.target.value);
+              currentTimeRef.current = newTime;
+              setCurrentTime(newTime);
+            }}
             className="w-full"
           />
         </div>
