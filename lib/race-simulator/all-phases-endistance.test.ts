@@ -6,8 +6,7 @@
  *
  * 検証内容:
  *   - 函館芝1200 / 東京ダート1400 / 福島芝1800 で全フェーズ実行
- *   - formation/pace/corner/straight: 各フェーズ終了値が対応 boundary.end の許容誤差1m以内
- *   - start: 固定200m使用のため boundary との不整合は許容（次段階で修正予定）
+ *   - start/formation/pace/corner/straight: 各フェーズ終了値が対応 boundary.end の許容誤差1m以内
  *   - 全フェーズ単調非減少（後退なし）
  *   - raceDistance 超過0件
  *   - 負の距離0件
@@ -97,10 +96,10 @@ function testCourse(label: string, place: string, distance: number, surface: str
     horses.push(makeDummyHorse(i, i));
   }
 
-  // Phase 1: start（今回のスコープ外、固定200m使用のため boundary 不整合）
+  // Phase 1: start
   let result: PhaseResult;
   try {
-    result = executeStartPhase({ horses, totalHorses });
+    result = executeStartPhase({ horses, totalHorses, endDistance: boundaries.start.end });
   } catch (e) {
     check(`${label}: start実行`, false, (e as Error).message);
     return;
@@ -109,9 +108,24 @@ function testCourse(label: string, place: string, distance: number, surface: str
 
   const startHorses = result.horses;
   const startMax = Math.max(...startHorses.map(h => h.currentDistance));
-  // start は今回のスコープ外（固定 200m 使用）のため、boundary.end との乖離は許容
+  check(`${label}: start終了値 <= endDistance`, startMax <= boundaries.start.end + EPS, `max=${startMax.toFixed(1)}, boundary=${boundaries.start.end}`);
+  check(`${label}: start先頭馬が boundary.end に到達（許容1m）`, Math.abs(startMax - boundaries.start.end) <= 1.0, `diff=${Math.abs(startMax - boundaries.start.end).toFixed(1)}m`);
   check(`${label}: start終了値 <= raceDistance`, startMax <= distance + EPS, `max=${startMax.toFixed(1)}`);
-  console.log(`    [Note] start は固定200m（boundary.start.end=${boundaries.start.end}との乖離は既知の制限）`);
+  
+  // distanceFromLeader の整合性確認
+  let distanceFromLeaderMismatchCount = 0;
+  for (const horse of startHorses) {
+    const calculated = startMax - horse.currentDistance;
+    if (Math.abs(calculated - horse.distanceFromLeader) > 0.1) {
+      console.warn(`    [警告] ${horse.horseName}: distanceFromLeader=${horse.distanceFromLeader.toFixed(1)}, calculated=${calculated.toFixed(1)}`);
+      distanceFromLeaderMismatchCount++;
+    }
+  }
+  check(`${label}: start全馬のdistanceFromLeader整合性`, distanceFromLeaderMismatchCount === 0, `不一致=${distanceFromLeaderMismatchCount}件`);
+  
+  // 全馬が異なるcurrentDistanceを持つか確認
+  const uniqueDistances = new Set(startHorses.map(h => h.currentDistance.toFixed(1)));
+  check(`${label}: start全馬が異なる距離`, uniqueDistances.size === startHorses.length, `unique=${uniqueDistances.size}, total=${startHorses.length}`);
 
   // Phase 2: formation
   try {
@@ -245,6 +259,52 @@ function testCourse(label: string, place: string, distance: number, surface: str
   console.log(`    straight : ${straightMax.toFixed(1)}m (boundary=${boundaries.straight.end}=${distance})`);
 }
 
+/**
+ * 異常入力テスト
+ */
+function testAbnormalInputs() {
+  console.log(`\n========================================`);
+  console.log(`[Test] 異常入力検出`);
+  console.log(`========================================`);
+
+  const totalHorses = 8;
+  const horses: HorseState[] = [];
+  for (let i = 1; i <= totalHorses; i++) {
+    horses.push(makeDummyHorse(i, i));
+  }
+
+  // テスト1: endDistance = 0
+  try {
+    executeStartPhase({ horses: structuredClone(horses), totalHorses, endDistance: 0 });
+    check('異常入力: endDistance=0', false, 'エラーが発生しなかった');
+  } catch (e) {
+    check('異常入力: endDistance=0', (e as Error).message.includes('must be positive'), (e as Error).message);
+  }
+
+  // テスト2: endDistance = NaN
+  try {
+    executeStartPhase({ horses: structuredClone(horses), totalHorses, endDistance: NaN });
+    check('異常入力: endDistance=NaN', false, 'エラーが発生しなかった');
+  } catch (e) {
+    check('異常入力: endDistance=NaN', (e as Error).message.includes('invalid'), (e as Error).message);
+  }
+
+  // テスト3: endDistance = Infinity
+  try {
+    executeStartPhase({ horses: structuredClone(horses), totalHorses, endDistance: Infinity });
+    check('異常入力: endDistance=Infinity', false, 'エラーが発生しなかった');
+  } catch (e) {
+    check('異常入力: endDistance=Infinity', (e as Error).message.includes('invalid'), (e as Error).message);
+  }
+
+  // テスト4: endDistanceが現在位置より小さい（後退検出）
+  const horsesWithDistance = structuredClone(horses);
+  horsesWithDistance[0].currentDistance = 100;
+  horsesWithDistance[1].currentDistance = 95;
+  const result = executeStartPhase({ horses: horsesWithDistance, totalHorses, endDistance: 50 });
+  check('異常入力: endDistance < 現在位置', result.horses[0].currentDistance >= 100, '後退を防いだ');
+}
+
 function main() {
   console.log('======================================================');
   console.log(' 全フェーズ endDistance 駆動 統合テスト');
@@ -253,6 +313,8 @@ function main() {
   testCourse('函館芝1200', '函館', 1200, '芝');
   testCourse('東京ダート1400', '東京', 1400, 'ダート');
   testCourse('福島芝1800', '福島', 1800, '芝');
+  
+  testAbnormalInputs();
 
   console.log('\n======================================================');
   console.log(` 結果: 成功 ${passCount}件 / 失敗 ${failCount}件`);

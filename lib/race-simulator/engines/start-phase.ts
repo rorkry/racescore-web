@@ -16,6 +16,7 @@ import type { HorseState, PhaseResult, SimulationEvent } from '@/types/race-simu
 export interface StartPhaseInput {
   horses: HorseState[];
   totalHorses: number;
+  endDistance: number; // このフェーズの終端距離（boundaries.start.end）
 }
 
 export interface StartPhaseOutput {
@@ -27,9 +28,39 @@ export interface StartPhaseOutput {
  * スタートフェーズを実行
  */
 export function executeStartPhase(input: StartPhaseInput): PhaseResult {
-  const { horses, totalHorses } = input;
+  const { horses, totalHorses, endDistance } = input;
+  
+  // ========================================
+  // 入力検証
+  // ========================================
+  if (endDistance <= 0) {
+    throw new Error(`[StartPhase] endDistance must be positive, got ${endDistance}`);
+  }
+  if (isNaN(endDistance) || !isFinite(endDistance)) {
+    throw new Error(`[StartPhase] endDistance is invalid (NaN or Infinity)`);
+  }
+  
+  // 既存の馬の先頭距離を確認（後退を防ぐ）
+  const maxCurrentDistance = Math.max(...horses.map(h => h.currentDistance || 0));
+  if (endDistance < maxCurrentDistance) {
+    console.warn(`[StartPhase] ⚠️ endDistance(${endDistance}m) < 現在の先頭距離(${maxCurrentDistance}m) → 後退を防ぐため処理をスキップ`);
+    // この場合、現在の状態を維持して即座に返す
+    return {
+      phaseName: 'スタート〜隊列形成',
+      distanceRange: { start: 0, end: maxCurrentDistance },
+      timeRange: { start: 0, end: 0 },
+      horses,
+      paceInfo: {
+        averageSpeed: 15.0,
+        leadingHorses: [],
+        paceType: 'middle',
+      },
+      events: [],
+    };
+  }
   
   console.log('[StartPhase] === スタートフェーズ開始 ===');
+  console.log(`  目標距離: ${endDistance}m`);
   
   // 枠番順にソート（内枠から処理）
   const sortedByWaku = [...horses].sort((a, b) => a.waku - b.waku);
@@ -153,7 +184,7 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
     }
     
     // ========================================
-    // 【Phase 4.1】速度・距離を計算
+    // 速度を計算
     // ========================================
     // スタートダッシュの速度（m/s）
     // 基本速度 15m/s + スコアによる補正
@@ -161,20 +192,11 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
     const velocityBonus = (startDashScore - 50) / 50 * 3; // ±3m/s
     const velocity = Math.max(10, Math.min(20, baseVelocity + velocityBonus));
     
-    // このフェーズでの走行距離（200m）
-    const phaseDistance = 200;
-    const avgVelocity = velocity * 0.9; // 加速中なので平均速度は低め
-    
-    // 順位に応じた距離差（前の馬ほど先に進む）
-    const distanceGap = (finalPosition - 1) * 2.5; // 1馬身≒2.5m
-    const actualDistance = phaseDistance - distanceGap;
-    
-    // HorseState を更新
+    // HorseState を更新（currentDistanceは後で一括設定）
     horse.position = finalPosition;
     horse.internalLane = waku;
-    horse.currentDistance = actualDistance;
     horse.currentVelocity = velocity;
-    horse.distanceFromLeader = distanceGap; // currentDistanceの差から計算
+    horse.startDashScore = startDashScore; // スコアを保持（デバッグ用）
     
     // 横位置（レーン移動があれば反映）
     if (cutIn) {
@@ -197,27 +219,44 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
   });
   
   // ========================================
-  // 【Phase 4.1】整合性チェック
+  // currentDistance を設定（正規化後の position を使用）
   // ========================================
-  const leadHorse = sortedHorses[0];
+  // 先頭馬（position = 1）を endDistance に到達させる
+  // 他の馬は 1馬身≒2.5m ずつ後方に配置
   for (const horse of sortedHorses) {
-    // distanceFromLeader = 先頭馬のcurrentDistance - 自馬のcurrentDistance
-    const calculatedGap = leadHorse.currentDistance - horse.currentDistance;
+    const distanceGap = (horse.position - 1) * 2.5;
+    horse.currentDistance = Math.max(0, endDistance - distanceGap);
     
-    if (Math.abs(calculatedGap - horse.distanceFromLeader) > 0.1) {
-      console.warn(`[StartPhase] 整合性エラー: ${horse.horseName} distanceFromLeader=${horse.distanceFromLeader.toFixed(1)}m, 計算値=${calculatedGap.toFixed(1)}m`);
-      // 修正
-      horse.distanceFromLeader = calculatedGap;
+    // 検証
+    if (horse.currentDistance > endDistance) {
+      console.warn(`[StartPhase] ⚠️ ${horse.horseName}: currentDistance(${horse.currentDistance}) > endDistance(${endDistance}) → 修正`);
+      horse.currentDistance = endDistance;
+    }
+    if (horse.currentDistance < 0 || isNaN(horse.currentDistance) || !isFinite(horse.currentDistance)) {
+      console.error(`[StartPhase] ❌ ${horse.horseName}: 不正な距離 → 0に修正`);
+      horse.currentDistance = 0;
     }
   }
   
+  // ========================================
+  // distanceFromLeader を正しく再計算
+  // ========================================
+  const leaderDistance = Math.max(...sortedHorses.map(h => h.currentDistance));
+  for (const horse of sortedHorses) {
+    horse.distanceFromLeader = leaderDistance - horse.currentDistance;
+  }
+  
+  // デバッグ用の一時フィールドを削除
+  for (const horse of sortedHorses) {
+    delete (horse as any).startDashScore;
+  }
+  
   // 所要時間を計算
-  const phaseDistance = 200;
   const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
-  const phaseTime = phaseDistance / avgVelocity;
+  const phaseTime = endDistance / (avgVelocity * 0.9); // 加速中なので平均速度は低め
   
   console.log('[StartPhase] === スタートフェーズ完了 ===');
-  console.log(`  距離: ${phaseDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${phaseTime.toFixed(1)}秒`);
+  console.log(`  距離: ${endDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${phaseTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
     console.log(`  ${h.position}番手: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, 速度=${h.currentVelocity.toFixed(1)}m/s)`);
   });
@@ -229,7 +268,7 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
   
   return {
     phaseName: 'スタート〜隊列形成',
-    distanceRange: { start: 0, end: 200 },
+    distanceRange: { start: 0, end: endDistance },
     timeRange: { start: 0, end: phaseTime },
     horses: sortedHorses,
     paceInfo: {

@@ -186,6 +186,7 @@ export async function runRaceSimulation(
   const startPhaseResult = executeStartPhase({
     horses: horseStates,
     totalHorses,
+    endDistance: boundaries.start.end,
   });
   
   // 【重要】即座にスナップショット作成（次フェーズ実行前）
