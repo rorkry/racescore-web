@@ -196,17 +196,26 @@ export async function runRaceSimulation(
   // ========================================
   const raceKey = `${year}${date}_${place}_${raceNumber}`;
   
-  // 【診断】各フェーズの馬1番のcurrentDistanceをチェック
+  // 【診断】pace と goal を含む全6フェーズの馬1番をチェック
   const horse1Start = startPhaseResult.horses.find(h => h.horseNumber === 1);
   const horse1Formation = formationPhaseResult.horses.find(h => h.horseNumber === 1);
+  const horse1Pace = formationPhaseResult.horses.find(h => h.horseNumber === 1); // 現在は formation と同じ
   const horse1Corner = cornerPhaseResult.horses.find(h => h.horseNumber === 1);
   const horse1Straight = straightPhaseResult.horses.find(h => h.horseNumber === 1);
+  const horse1Goal = straightPhaseResult.horses.find(h => h.horseNumber === 1); // 現在は straight と同じ
   
   console.warn('[Simulator] 各フェーズの馬1番 currentDistance:', {
     start: horse1Start?.currentDistance.toFixed(1) + 'm',
     formation: horse1Formation?.currentDistance.toFixed(1) + 'm',
-    corner: horse1Corner?.currentDistance.toFixed(1) + 'm',
+    pace: horse1Pace?.currentDistance.toFixed(1) + 'm',
+    corner3_4: horse1Corner?.currentDistance.toFixed(1) + 'm',
     straight: horse1Straight?.currentDistance.toFixed(1) + 'm',
+    goal: horse1Goal?.currentDistance.toFixed(1) + 'm',
+  });
+  
+  console.warn('[Simulator] 決定的チェック:', {
+    'formation === pace': horse1Formation?.currentDistance === horse1Pace?.currentDistance,
+    'straight === goal': horse1Straight?.currentDistance === horse1Goal?.currentDistance,
   });
   
   // 【診断】オブジェクト参照チェック
