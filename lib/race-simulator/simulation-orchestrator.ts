@@ -8,13 +8,11 @@ import type {
   SimulationInput, 
   SimulationResult, 
   HorseState, 
-  CourseInfo,
   TrackBias
 } from '@/types/race-simulator';
 import { fetchHorseIndices, calculateLeadingIntention, getPastPositionPattern } from './data-fetcher';
 import { analyzeCapabilities, logCapabilities } from './capability-analyzer';
-import { getCourseInfo, normalizeTrackType } from './course-database';
-import { buildPhaseBoundaries } from './phase-boundaries';
+import { resolveCourseLayout } from './course-resolver';
 import { executeStartPhase } from './engines/start-phase';
 import { executeFormationPhase } from './engines/formation-phase';
 import { executeCornerPhase } from './engines/corner-phase';
@@ -73,38 +71,33 @@ export async function runRaceSimulation(
   const currentRaceDateNum = getCurrentRaceDateNumber(date, year);
   
   // ========================================
-  // 2. コース情報を取得
+  // 2. コース解決（CourseResolver へ一本化）
+  //    trackType 正規化 / CourseInfo 取得 / PhaseBoundaries 生成を
+  //    resolver に統合する。
+  //    - input.resolvedCourse が渡された場合は再解決しない（resolver 呼び出し 0 回）
+  //    - 未指定時のみ orchestrator が内部で 1 回だけ解決する
+  //    - 直線競走など境界が成立しない場合は CourseBoundariesError がそのまま伝播する
+  //      （偽コーナー/偽境界へ黙って変換しない）
   // ========================================
   console.warn('[Simulator] 距離情報:', {
     入力distance: distance,
     DB_currentDistance: currentDistance,
     不一致: distance !== currentDistance ? 'YES ❌' : 'NO ✓'
   });
-  
-  // trackType を 'turf' | 'dirt' に正規化（DBは '芝' / 'ダート' 表記のことがある）
-  // 正規化しないと getCourseInfo が誤って 'dirt' 扱いになり courseInfo=null になっていた
-  const normalizedTrackType = normalizeTrackType(trackType);
-  if (!normalizedTrackType) {
-    console.error(`[Simulator] ⚠️ 未対応の track_type: "${trackType}" → courseInfo は null 扱い`);
-  }
-  
-  // 明示的に入力されたdistanceを使用
-  const courseInfo = normalizedTrackType
-    ? getCourseInfo(place, distance, normalizedTrackType)
-    : null;
-  
-  console.log(`[Simulator] コース: ${place} ${distance}m ${trackType}(→${normalizedTrackType})`);
-  if (courseInfo) {
-    console.log(`  直線: ${courseInfo.straightLength}m`);
-    console.log(`  坂: ${courseInfo.slopes.length}箇所`);
-    console.log(`  傾向: ${courseInfo.paceTendency}`);
-    console.log(`  CourseInfo.distance: ${courseInfo.distance}m`);
-  }
-  
-  // ========================================
-  // 2b. フェーズ境界を一元生成
-  // ========================================
-  const boundaries = buildPhaseBoundaries(distance, courseInfo);
+
+  const resolved = input.resolvedCourse
+    ?? resolveCourseLayout({ place, trackType, distance });
+
+  const courseInfo = resolved.courseInfo;
+  const boundaries = resolved.boundaries;
+
+  console.log(`[Simulator] コース解決: ${resolved.place} ${resolved.distance}m ${resolved.trackType}（入力trackType="${trackType}"）`);
+  console.log(`  resolutionSource: ${resolved.resolutionSource}`);
+  console.log(`  provenance: ${resolved.provenance}`);
+  console.log(`  warnings: [${resolved.warnings.map(w => w.code).join(', ') || 'なし'}]`);
+  console.log(`  直線: ${courseInfo.straightLength}m / 坂: ${courseInfo.slopes.length}箇所 / 傾向: ${courseInfo.paceTendency}`);
+  console.log(`  CourseInfo.distance: ${courseInfo.distance}m / resolver呼び出し: ${input.resolvedCourse ? '0回（注入）' : '1回（内部解決）'}`);
+
   console.log('[Simulator] フェーズ境界:', {
     start: `[${boundaries.start.start}, ${boundaries.start.end}]`,
     formation: `[${boundaries.formation.start}, ${boundaries.formation.end}]`,

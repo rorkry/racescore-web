@@ -2,6 +2,10 @@
  * レースシミュレーター用の型定義
  */
 
+// 型のみの循環参照（course-resolver は本ファイルの型を参照する）。
+// import type のため実行時サイクルは発生しない。
+import type { ResolvedCourse } from './course-resolver';
+
 // ===================================
 // コース情報
 // ===================================
@@ -199,4 +203,12 @@ export interface SimulationInput {
   // オプション
   trackBias?: TrackBias;      // ユーザー入力の馬場バイアス
   enableDetailedLog?: boolean; // 詳細ログ出力
+
+  /**
+   * 事前解決済みコース。
+   * 呼び出し側（API 等）が resolveCourseLayout() を 1 回実行した結果を渡すと、
+   * orchestrator は内部で再解決しない（resolver 呼び出し 0 回）。
+   * 未指定時のみ orchestrator が内部で 1 回だけ解決する。
+   */
+  resolvedCourse?: ResolvedCourse;
 }
