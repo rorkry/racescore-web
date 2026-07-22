@@ -34,6 +34,13 @@ export function getCourseInfo(
     trackType,
     straightLength: legacy.straightLength,
     startToFirstCorner: legacy.distanceToFirstCorner,
+    
+    // 【Phase 4.1改善】コースジオメトリ
+    courseWidth: 15, // JRA標準: 約15m
+    innerRailSafetyMargin: 1.5, // 内柵から1.5m
+    outerRailSafetyMargin: 1.0, // 外柵から1.0m
+    clockwise: false, // JRAは左回り
+    
     corners,
     slopes,
     innerAdvantage: legacy.innerFrameAdvantage,

@@ -1,20 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbAsync } from '@/lib/db';
 import { runRaceSimulation } from '@/lib/race-simulator/simulation-orchestrator';
+import { runAnomalyTests } from '@/lib/race-simulator/validation-tests';
 
 /**
  * Phase 4.1 実データ検証用エンドポイント
  * 
  * 実際のレースデータを使用してシミュレーションを実行し、
  * 詳細なログを返す
+ * 
+ * オプション:
+ * - raceKeys: 実データで検証するレースキーの配列
+ * - runAnomalyTests: 異常系テストを実行するか（デフォルト: false）
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { raceKeys } = body; // レースキーの配列
+    const { raceKeys, runAnomalyTests: shouldRunAnomalyTests } = body;
 
     const db = await getDbAsync();
     const results = [];
+    
+    // 異常系テストを実行
+    let anomalyTestResults: any[] = [];
+    if (shouldRunAnomalyTests) {
+      console.log('[Validation] === 異常系テスト実行 ===');
+      anomalyTestResults = runAnomalyTests(1600); // 仮の距離
+      console.log(`[Validation] 異常系テスト: ${anomalyTestResults.filter(t => t.passed).length}/${anomalyTestResults.length}件成功`);
+    }
 
     for (const raceKey of raceKeys) {
       console.log('========================================');
@@ -68,11 +81,21 @@ export async function POST(request: NextRequest) {
         goal: extractPhaseDetails(simulation.phases.goal),
       };
 
+      // 統計情報を計算
+      const stats = calculateRaceStats(simulation, horses.rows.length);
+      
       results.push({
         raceKey,
+        course: `${place} ${simulation.phases.start.distanceRange.end}m`,
+        distance: simulation.phases.goal.distanceRange.end,
         horseCount: horses.rows.length,
+        courseInfo: simulation.validation?.stats?.courseInfo || 'fallback使用',
+        usedFallback: simulation.validation?.warnings?.some((w: string) => w.includes('FALLBACK')) || false,
+        validationErrors: simulation.validation?.errors?.length || 0,
+        validationWarnings: simulation.validation?.warnings?.length || 0,
         phaseDetails,
-        validation,
+        validation: simulation.validation,
+        stats,
         finalStandings: simulation.finalStandings.slice(0, 10).map(h => ({
           position: h.position,
           horseName: h.horseName,
@@ -84,7 +107,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ results }, { status: 200 });
+    return NextResponse.json({ 
+      realDataTests: results,
+      anomalyTests: anomalyTestResults,
+      summary: {
+        realDataCount: results.length,
+        anomalyTestCount: anomalyTestResults.length,
+        anomalyTestsPassed: anomalyTestResults.filter(t => t.passed).length,
+      }
+    }, { status: 200 });
   } catch (error: any) {
     console.error('[Validation] エラー:', error);
     return NextResponse.json(
@@ -92,6 +123,54 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * レース統計を計算
+ */
+function calculateRaceStats(simulation: any, horseCount: number) {
+  const allHorses = simulation.finalStandings;
+  
+  const maxVelocity = Math.max(...allHorses.map((h: any) => h.currentVelocity));
+  const minVelocity = Math.min(...allHorses.map((h: any) => h.currentVelocity));
+  
+  const maxExtraDistance = Math.max(...allHorses.map((h: any) => 
+    Math.max(0, h.currentDistance - simulation.phases.goal.distanceRange.end)
+  ));
+  
+  const lateralPositions = allHorses.map((h: any) => h.lateralPosition);
+  const maxLateralMove = Math.max(...lateralPositions) - Math.min(...lateralPositions);
+  
+  const blockEvents = Object.values(simulation.phases).flatMap((phase: any) => 
+    phase.events?.filter((e: any) => e.event === 'blocked') || []
+  ).length;
+  
+  const laneChangeEvents = Object.values(simulation.phases).flatMap((phase: any) => 
+    phase.events?.filter((e: any) => e.event === 'cut-in') || []
+  ).length;
+  
+  const accelerationEvents = Object.values(simulation.phases).flatMap((phase: any) => 
+    phase.events?.filter((e: any) => e.event === 'accelerate') || []
+  );
+  
+  const accelerationDistances = accelerationEvents.map((e: any) => {
+    const horse = simulation.phases.corner3_4?.horses?.find((h: any) => h.horseNumber === e.horseNumber);
+    return horse?.accelerationStartDistance || 0;
+  }).filter(d => d > 0);
+  
+  const accelerationSpread = accelerationDistances.length > 0
+    ? `${Math.min(...accelerationDistances).toFixed(0)}m 〜 ${Math.max(...accelerationDistances).toFixed(0)}m`
+    : 'なし';
+  
+  return {
+    maxVelocity: maxVelocity.toFixed(1) + ' m/s',
+    minVelocity: minVelocity.toFixed(1) + ' m/s',
+    maxExtraDistance: maxExtraDistance.toFixed(1) + ' m',
+    maxLateralMove: maxLateralMove.toFixed(1) + ' m',
+    blockEventCount: blockEvents,
+    laneChangeCount: laneChangeEvents,
+    accelerationSpread,
+  };
 }
 
 /**

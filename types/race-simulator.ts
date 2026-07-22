@@ -16,6 +16,12 @@ export interface CourseInfo {
   straightLength: number;     // 直線距離（m）
   startToFirstCorner: number; // スタートから1コーナーまで（m）
   
+  // 【Phase 4.1改善】コースジオメトリ
+  courseWidth?: number;       // コース幅（m）デフォルト15m
+  innerRailSafetyMargin?: number; // 内柵からの安全余裕（m）デフォルト1.5m
+  outerRailSafetyMargin?: number; // 外柵からの安全余裕（m）デフォルト1.0m
+  clockwise?: boolean;        // 時計回り（デフォルト: 左回り=false）
+  
   corners: Corner[];
   slopes: Slope[];
   
@@ -69,6 +75,17 @@ export interface HorseState {
   currentDistance: number;    // スタートから現在地までの走行距離（m）
   currentVelocity: number;    // 現在速度（m/s）
   lateralPosition: number;    // 横位置（m、コース中央を0として -10〜+10）
+  
+  // 【Phase 4.1改善】横移動制御
+  targetLateralPosition?: number; // 目標横位置（m）
+  lateralVelocity?: number; // 横移動速度（m/s）
+  laneChangeState?: 'none' | 'planning' | 'moving' | 'completed'; // レーン変更状態
+  laneChangeStartedAt?: number; // レーン変更開始時刻（秒）
+  laneChangeReason?: string; // レーン変更理由
+  
+  // スパート制御
+  accelerationStarted?: boolean; // 加速開始済みか
+  accelerationStartDistance?: number; // 加速開始地点（m）
   
   // 能力値（0-100スケール）
   capabilities: HorseCapabilities;
