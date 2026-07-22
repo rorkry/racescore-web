@@ -165,31 +165,67 @@ export async function runRaceSimulation(
     totalHorses,
   });
   
-  // Phase 2: 隊列確定〜ペース形成
+  // 【重要】即座にスナップショット作成（次フェーズ実行前）
+  const startSnapshot = {
+    ...startPhaseResult,
+    horses: structuredClone(startPhaseResult.horses),
+  };
+  
+  // Phase 2: 隊列確定〜ペース形成（前フェーズのコピーを渡す）
   const formationPhaseResult = executeFormationPhase({
-    horses: startPhaseResult.horses,
+    horses: structuredClone(startPhaseResult.horses),
     courseInfo,
     totalHorses,
   }, startPhaseResult);
   
+  // 【重要】即座にスナップショット作成
+  const formationSnapshot = {
+    ...formationPhaseResult,
+    horses: structuredClone(formationPhaseResult.horses),
+  };
+  
+  // paceはformationと同じ値だが、独立したスナップショット
+  const paceSnapshot = {
+    ...formationPhaseResult,
+    horses: structuredClone(formationPhaseResult.horses),
+  };
+  
   // Phase 3-4: コーナーフェーズ
   const straightStart = courseInfo ? distance - courseInfo.straightLength : distance * 0.8;
   const cornerPhaseResult = executeCornerPhase({
-    horses: formationPhaseResult.horses,
+    horses: structuredClone(formationPhaseResult.horses),
     courseInfo,
     totalHorses,
     straightStart,
   }, formationPhaseResult);
   
+  // 【重要】即座にスナップショット作成
+  const cornerSnapshot = {
+    ...cornerPhaseResult,
+    horses: structuredClone(cornerPhaseResult.horses),
+  };
+  
   // Phase 5: 直線〜ゴール
   const straightPhaseResult = executeStraightPhase({
-    horses: cornerPhaseResult.horses,
+    horses: structuredClone(cornerPhaseResult.horses),
     paceType: cornerPhaseResult.paceInfo.paceType,
     trackBias,
     courseInfo,
     totalHorses,
     raceDistance: distance, // API入力のdistanceを明示的に渡す
   }, cornerPhaseResult);
+  
+  // 【重要】即座にスナップショット作成
+  const straightSnapshot = {
+    ...straightPhaseResult,
+    horses: structuredClone(straightPhaseResult.horses),
+  };
+  
+  // goalはstraightと同じ値だが、独立したスナップショット
+  const goalSnapshot = {
+    ...straightPhaseResult,
+    horses: structuredClone(straightPhaseResult.horses),
+  };
   
   // ========================================
   // 5. 結果をまとめる
@@ -212,39 +248,6 @@ export async function runRaceSimulation(
   console.warn('[Simulator] オブジェクト参照チェック（修正前）:', {
     '馬1番オブジェクト同一': horse1Start === horse1Formation && horse1Formation === horse1Corner,
   });
-  
-  // 【修正】各フェーズの馬状態をディープコピーして保存
-  const startSnapshot = {
-    ...startPhaseResult,
-    horses: structuredClone(startPhaseResult.horses),
-  };
-  
-  const formationSnapshot = {
-    ...formationPhaseResult,
-    horses: structuredClone(formationPhaseResult.horses),
-  };
-  
-  // paceはformationとは独立したスナップショット
-  const paceSnapshot = {
-    ...formationPhaseResult,
-    horses: structuredClone(formationPhaseResult.horses),
-  };
-  
-  const cornerSnapshot = {
-    ...cornerPhaseResult,
-    horses: structuredClone(cornerPhaseResult.horses),
-  };
-  
-  const straightSnapshot = {
-    ...straightPhaseResult,
-    horses: structuredClone(straightPhaseResult.horses),
-  };
-  
-  // goalはstraightとは独立したスナップショット
-  const goalSnapshot = {
-    ...straightPhaseResult,
-    horses: structuredClone(straightPhaseResult.horses),
-  };
   
   const result: SimulationResult = {
     raceKey,
