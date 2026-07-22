@@ -81,6 +81,28 @@ export async function POST(request: NextRequest) {
     // ========================================
     // 4. レスポンス
     // ========================================
+    
+    // デバッグ: 変数の型チェック
+    console.log('[DEBUG] result.finalStandings:', {
+      type: typeof result.finalStandings,
+      isArray: Array.isArray(result.finalStandings),
+      value: result.finalStandings
+    });
+    
+    console.log('[DEBUG] timeline:', {
+      type: typeof timeline,
+      isArray: Array.isArray(timeline),
+      length: Array.isArray(timeline) ? timeline.length : 'N/A'
+    });
+    
+    if (Array.isArray(timeline) && timeline.length > 0) {
+      console.log('[DEBUG] timeline[0].horses:', {
+        type: typeof timeline[0].horses,
+        isArray: Array.isArray(timeline[0].horses),
+        value: timeline[0].horses
+      });
+    }
+    
     return NextResponse.json({
       success: true,
       raceKey: result.raceKey,
