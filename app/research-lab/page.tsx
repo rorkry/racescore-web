@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ConditionDebugView from '@/app/components/ConditionDebugView';
+import ResearchMemoryView from '@/app/components/ResearchMemoryView';
+import PromisingThemesView from '@/app/components/PromisingThemesView';
 
 interface SavedCondition {
   id: string;
@@ -658,14 +660,24 @@ export default function ResearchLabPage() {
           )}
         </div>
 
-        {/* 研究履歴セクション */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-bold mb-4">📚 研究履歴</h2>
+        {/* 有望テーマセクション */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-xl font-bold mb-4">🌟 有望テーマ一覧</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            AIが過去の研究で発見した、期待値がプラスのテーマです。今後の研究で優先的に深掘りされます。
+          </p>
           
-          <div className="text-center py-8 text-gray-500">
-            <div className="text-4xl mb-3">🕐</div>
-            <p>研究履歴機能は実装予定です</p>
-          </div>
+          <PromisingThemesView />
+        </div>
+
+        {/* 研究メモリセクション */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-bold mb-4">🧠 研究メモリ（学習履歴）</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            過去に検証した全ての条件の履歴です。AIは過去の結果を学習し、重複検証を避けます。
+          </p>
+          
+          <ResearchMemoryView />
         </div>
 
         {/* 使い方ガイド */}
