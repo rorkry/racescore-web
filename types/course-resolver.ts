@@ -138,34 +138,71 @@ export interface GenericLayoutResult {
 }
 
 // ===================================
-// ResolvedCourse（resolver の最終出力）
+// 警告（warning）
+// ===================================
+
+/** 安定した警告コード（表示文とは別に機械可読なコードを持つ） */
+export type CourseWarningCode =
+  | 'GENERIC_MODEL_USED'      // 完全な generic フォールバックを使用
+  | 'PLACE_UNRECOGNIZED'      // place が正式名/別名に一致しない
+  | 'PARTIAL_REGISTRY_MATCH'  // geometry か layout の片方のみ登録済み
+  | 'CORNERS_MISSING'         // コーナーが未登録
+  | 'CORNERS_DERIVED'         // コーナーを推定生成した
+  | 'SLOPES_MISSING'          // 坂の存在は既知だが位置が未登録
+  | 'RAIL_UNKNOWN'            // 使用柵 / 1 周距離が不明
+  | 'DIRECTION_GENERIC';      // 回り方向が generic
+
+export interface CourseWarning {
+  code: CourseWarningCode;
+  message: string;
+}
+
+// ===================================
+// 解決ソース
 // ===================================
 
 /**
- * resolveCourseLayout の出力（Step 2 で本体実装）。
- * Step 1 では型のみ定義する。
+ * 解決の由来（provenance とは別軸）。
+ *  - registry:         geometry / layout の両方が登録データから解決
+ *  - registry-partial: 片方のみ登録データ、他方は generic 補完
+ *  - generic:          両方とも未登録（完全 generic フォールバック）
  */
-export interface ResolvedCourse {
-  // 正規化済みキー
+export type ResolutionSource = 'registry' | 'registry-partial' | 'generic';
+
+// ===================================
+// ResolvedCourseParts（境界生成前の中間結果）
+// ===================================
+
+/**
+ * 境界生成前の解決結果。
+ * buildPhaseBoundaries を呼ぶ前の状態であり、直線競走など境界が成立しない
+ * ケースでもここまでは必ず生成できる（テストで layout を検証するために公開する）。
+ */
+export interface ResolvedCourseParts {
   place: string;
   trackType: 'turf' | 'dirt';
   distance: number;
 
-  // 分離データ
   geometry: RacecourseGeometry;
   layout: RaceLayout;
 
-  // 項目別 provenance
   geometryProvenance: GeometryProvenance;
   layoutProvenance: LayoutProvenance;
 
-  // 互換合成 & 境界
+  provenance: DataProvenance;         // 全体の代表 provenance（最弱値）
+  resolutionSource: ResolutionSource; // 解決の由来
+  warnings: CourseWarning[];
+}
+
+// ===================================
+// ResolvedCourse（resolver の最終出力）
+// ===================================
+
+/**
+ * resolveCourseLayout の出力。
+ * ResolvedCourseParts に、互換合成した CourseInfo と PhaseBoundaries を加えたもの。
+ */
+export interface ResolvedCourse extends ResolvedCourseParts {
   courseInfo: CourseInfo;          // 既存エンジン互換（geometry+layout から合成）
-  boundaries: PhaseBoundaries;     // buildPhaseBoundaries の結果
-
-  // 全体の代表 provenance（最弱値）
-  provenance: DataProvenance;
-
-  // generic 使用や推定の警告
-  warnings: string[];
+  boundaries: PhaseBoundaries;     // buildPhaseBoundaries の結果（1回だけ生成）
 }
