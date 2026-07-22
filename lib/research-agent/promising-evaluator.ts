@@ -87,14 +87,25 @@ export function evaluatePromising(
     }
   }
 
-  // 5. 偶然性排除（一撃依存チェック）
+  // 5. 実用性チェック（勝率・複勝率の範囲）
+  const practicalityCheck = evaluatePracticality(statistics);
+  score += practicalityCheck.score;
+  if (practicalityCheck.message) {
+    if (practicalityCheck.isGood) {
+      reasons.push(practicalityCheck.message);
+    } else {
+      warnings.push(practicalityCheck.message);
+    }
+  }
+
+  // 6. 偶然性排除（一撃依存チェック）
   const luckyPunchCheck = detectLuckyPunch(statistics);
   if (luckyPunchCheck.is_lucky_punch) {
-    score -= 30; // 大きくペナルティ
+    score -= 40; // 大きくペナルティ（強化）
     warnings.push(luckyPunchCheck.reason);
   }
 
-  // 6. ベースラインとの比較（あれば）
+  // 7. ベースラインとの比較（あれば）
   if (baseline) {
     const baselineScore = evaluateVsBaseline(statistics, baseline);
     score += baselineScore.score;
@@ -123,18 +134,71 @@ export function evaluatePromising(
 }
 
 /**
- * サンプル数の評価
+ * サンプル数の評価（厳格化: 100件以上を基準に）
  */
 function evaluateSampleSize(sampleSize: number): { score: number; message?: string; isGood: boolean } {
-  if (sampleSize >= 100) {
+  if (sampleSize >= 200) {
     return { score: 30, message: `サンプル数が十分（${sampleSize}走）`, isGood: true };
-  } else if (sampleSize >= 50) {
+  } else if (sampleSize >= 100) {
     return { score: 20, message: `サンプル数が中程度（${sampleSize}走）`, isGood: true };
-  } else if (sampleSize >= 30) {
-    return { score: 10, message: `サンプル数が最低限（${sampleSize}走）`, isGood: false };
+  } else if (sampleSize >= 50) {
+    return { score: 5, message: `サンプル数が最低限（${sampleSize}走）`, isGood: false };
   } else {
-    return { score: 0, message: `サンプル数が不足（${sampleSize}走、最低30走必要）`, isGood: false };
+    return { score: -10, message: `サンプル数が不足（${sampleSize}走、最低100走推奨）`, isGood: false };
   }
+}
+
+/**
+ * 実用性の評価（勝率・複勝率の範囲チェック）
+ * 馬券として実用的な条件かを判定
+ */
+function evaluatePracticality(statistics: ConditionStatistics): { score: number; message?: string; isGood: boolean } {
+  const winRate = statistics.win_rate * 100;
+  const showRate = statistics.show_rate * 100;
+  
+  let score = 0;
+  const messages: string[] = [];
+  let isGood = true;
+  
+  // 勝率チェック（理想: 10〜30%）
+  if (winRate >= 10 && winRate <= 30) {
+    score += 15;
+    messages.push(`勝率が理想範囲（${winRate.toFixed(1)}%）`);
+  } else if (winRate >= 5 && winRate < 10) {
+    score += 5;
+    messages.push(`勝率がやや低い（${winRate.toFixed(1)}%）`);
+    isGood = false;
+  } else if (winRate < 5) {
+    score -= 20;
+    messages.push(`勝率が極端に低い（${winRate.toFixed(1)}%、一撃依存の可能性）`);
+    isGood = false;
+  } else if (winRate > 30) {
+    score += 5;
+    messages.push(`勝率が高い（${winRate.toFixed(1)}%）`);
+  }
+  
+  // 複勝率チェック（理想: 30〜45%）
+  if (showRate >= 30 && showRate <= 45) {
+    score += 15;
+    messages.push(`複勝率が理想範囲（${showRate.toFixed(1)}%）`);
+  } else if (showRate >= 20 && showRate < 30) {
+    score += 5;
+    messages.push(`複勝率がやや低い（${showRate.toFixed(1)}%）`);
+    isGood = false;
+  } else if (showRate < 20) {
+    score -= 15;
+    messages.push(`複勝率が低い（${showRate.toFixed(1)}%、再現性に疑問）`);
+    isGood = false;
+  } else if (showRate > 45) {
+    score += 5;
+    messages.push(`複勝率が高い（${showRate.toFixed(1)}%）`);
+  }
+  
+  return { 
+    score, 
+    message: messages.join('、'),
+    isGood 
+  };
 }
 
 /**
@@ -183,30 +247,38 @@ function evaluateConfidence(confidenceLevel: number): { score: number; message?:
 }
 
 /**
- * 一撃依存（ラッキーパンチ）の検出
+ * 一撃依存（ラッキーパンチ）の検出（強化版）
  */
 function detectLuckyPunch(statistics: ConditionStatistics): { is_lucky_punch: boolean; reason: string } {
-  // パターン1: 三着内率が低いのに回収率が異常に高い
-  if (statistics.show_rate < 0.1 && statistics.place_return_rate > 150) {
+  // パターン1: 勝率が極端に低い（<5%）のに回収率が高い
+  if (statistics.win_rate < 0.05 && statistics.win_return_rate > 150) {
     return {
       is_lucky_punch: true,
-      reason: '三着内率が低い（<10%）のに回収率が高すぎる（>150%）。一撃依存の可能性が高い'
+      reason: '勝率が極端に低い（<5%）のに単勝回収率が高い（>150%）。一発大穴依存の可能性が高い'
     };
   }
 
-  // パターン2: サンプル数が少ないのに期待値が異常に高い
-  if (statistics.sample_size < 30 && statistics.expected_value_diff > 100) {
+  // パターン2: 三着内率が低い（<20%）のに回収率が異常に高い
+  if (statistics.show_rate < 0.2 && statistics.place_return_rate > 150) {
     return {
       is_lucky_punch: true,
-      reason: 'サンプル数が少ない（<30走）のに期待値が高すぎる（>+100円）。偶然の可能性が高い'
+      reason: '複勝率が低い（<20%）のに回収率が高すぎる（>150%）。一撃依存の可能性が高い'
     };
   }
 
-  // パターン3: 勝率が極端に低いのに回収率が高い
-  if (statistics.win_rate < 0.02 && statistics.win_return_rate > 200) {
+  // パターン3: サンプル数が少ない（<50）のに期待値が異常に高い
+  if (statistics.sample_size < 50 && statistics.expected_value_diff > 100) {
     return {
       is_lucky_punch: true,
-      reason: '勝率が極端に低い（<2%）のに単勝回収率が高い（>200%）。一発大穴依存の可能性'
+      reason: 'サンプル数が少ない（<50走）のに期待値が高すぎる（>+100円）。偶然の可能性が高い'
+    };
+  }
+
+  // パターン4: 勝率と複勝率のバランスが悪い（複勝率が勝率の3倍未満）
+  if (statistics.win_rate > 0 && statistics.show_rate / statistics.win_rate < 3) {
+    return {
+      is_lucky_punch: true,
+      reason: '勝率と複勝率のバランスが不自然。データの信頼性に疑問'
     };
   }
 

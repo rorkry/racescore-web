@@ -300,10 +300,10 @@ export class AutonomousResearchAgent {
    * Phase 1: 単独条件の探索（強化版）
    */
   private async phase1_exploreConditions(theme: ResearchTheme): Promise<ConditionResult[]> {
-    console.log(`[Phase 1] Generating condition candidates...`);
+    console.log(`[Phase 1] Generating condition candidates (theme-based)...`);
     
-    // AIに条件候補を生成させる（20-30個）
-    const targetCount = 20;
+    // AIに条件候補を生成させる（テーマベース: 10個）
+    const targetCount = 10;
     let candidates = await this.generateConditionCandidates(theme, targetCount);
     
     // 重複チェック
