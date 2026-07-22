@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateTimeline, interpolateTimeline, type RaceTimeline, type RaceTimelineKeyframe } from '@/lib/race-simulator/timeline-generator';
-import { getTrackPosition, getCourseBounds, getLastGeometrySource } from '@/lib/race-simulator/course-geometry';
+import { getCourseBounds, getLastGeometrySource } from '@/lib/race-simulator/course-geometry';
+import { buildVisualCourseCurve, sampleRacePose, type VisualCourseCurve } from '@/lib/race-simulator/course-curve';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -49,6 +50,9 @@ export default function RaceSimulator3DProto({
   const lastDebugAtRef = useRef<number>(0); // デバッグログ出力時刻
   const previousDistanceRef = useRef<number | null>(null); // 前回の距離
   const debugInitializedRef = useRef<boolean>(false); // 初回ログ出力済み
+  
+  // Visual Step 1B: 周回コース曲線（1回だけ構築、courseInfo変化時のみ再構築）
+  const visualCurveRef = useRef<VisualCourseCurve | null>(null);
   
   // 画面内デバッグHUD用の状態
   const [debugInfo, setDebugInfo] = useState<any>(null);
@@ -126,6 +130,31 @@ export default function RaceSimulator3DProto({
     
     debugInitializedRef.current = true;
   }, [simulationResult, courseInfo]);
+  
+  // Visual Step 1B: 周回コース曲線の構築（courseInfo変化時のみ1回実行）
+  useEffect(() => {
+    if (!courseInfo) {
+      visualCurveRef.current = null;
+      console.warn('[VisualCurve] courseInfo が null のため curve 未構築');
+      return;
+    }
+    
+    try {
+      const curve = buildVisualCourseCurve(courseInfo);
+      visualCurveRef.current = curve;
+      console.log('[VisualCurve] 周回コース曲線を構築:', {
+        raceDistance: curve.raceDistance,
+        loopLength: curve.loopLength.toFixed(1),
+        startOffset: curve.startOffset.toFixed(1),
+        clockwise: curve.clockwise,
+        provenance: curve.provenance,
+        warnings: curve.warnings.length,
+      });
+    } catch (e) {
+      console.error('[VisualCurve] 曲線構築エラー:', e);
+      visualCurveRef.current = null;
+    }
+  }, [courseInfo]);
   
   // Three.js初期化
   useEffect(() => {
@@ -397,14 +426,14 @@ export default function RaceSimulator3DProto({
       const horse1 = currentState.horses.find(h => h.horseNumber === 1);
       const mesh1 = horse1 ? horseMeshesRef.current.get(horse1.horseNumber) : null;
       
-      if (horse1) {
-        const trackPos = getTrackPosition(horse1.currentDistance, horse1.lateralPosition, courseInfo);
+      if (horse1 && visualCurveRef.current) {
+        // Visual Step 1B: 新しい sampleRacePose を使用
+        const pose = sampleRacePose(visualCurveRef.current, horse1.currentDistance, horse1.lateralPosition);
         const distanceDelta = previousDistanceRef.current !== null 
           ? horse1.currentDistance - previousDistanceRef.current 
           : null;
         
         // 画面内HUDに表示
-        const geometrySource = getLastGeometrySource();
         setDebugInfo({
           time: currentTimeRef.current.toFixed(1) + 's',
           frameTime: currentState.time.toFixed(1) + 's',
@@ -413,43 +442,89 @@ export default function RaceSimulator3DProto({
           distanceDelta: distanceDelta !== null ? '+' + distanceDelta.toFixed(1) + 'm' : 'N/A',
           velocity: horse1.currentVelocity.toFixed(1) + 'm/s',
           position: horse1.position,
-          timelineXYZ: `(${trackPos.x.toFixed(1)}, ${trackPos.y.toFixed(1)}, ${trackPos.z.toFixed(1)})`,
+          poseXYZ: `(${pose.position.x.toFixed(1)}, ${pose.position.y.toFixed(1)}, ${pose.position.z.toFixed(1)})`,
+          heading: pose.heading.toFixed(3) + 'rad',
           meshXYZ: mesh1 ? `(${mesh1.position.x.toFixed(1)}, ${mesh1.position.y.toFixed(1)}, ${mesh1.position.z.toFixed(1)})` : 'NO MESH',
-          deltaXYZ: mesh1 ? `(${(trackPos.x - mesh1.position.x).toFixed(1)}, ${(trackPos.y - (mesh1.position.y - 1)).toFixed(1)}, ${(trackPos.z - mesh1.position.z).toFixed(1)})` : 'N/A',
+          curveLoop: visualCurveRef.current.loopLength.toFixed(1) + 'm',
+          curveStart: visualCurveRef.current.startOffset.toFixed(1) + 'm',
+          clockwise: visualCurveRef.current.clockwise ? 'CW' : 'CCW',
           courseInfo: courseInfo ? 'LOADED' : 'NULL',
-          geometrySource: geometrySource.toUpperCase(),
           meshCount: horseMeshesRef.current.size,
         });
         
         previousDistanceRef.current = horse1.currentDistance;
+      } else if (horse1) {
+        // curve が未構築の場合
+        setDebugInfo({ 
+          error: 'visualCurve not built',
+          currentDistance: horse1.currentDistance.toFixed(1) + 'm',
+        });
       } else {
         setDebugInfo({ error: 'horse1 not found' });
       }
     }
     
+    // Visual Step 1B: 全馬を新しい周回曲線上へ配置
+    if (!visualCurveRef.current) {
+      // curve 未構築時は馬を更新しない（初期位置のまま）
+      if (!debugInitializedRef.current) {
+        console.warn('[updateHorses] visualCurve が未構築のため馬位置を更新しません');
+        debugInitializedRef.current = true;
+      }
+      return;
+    }
+    
+    const curve = visualCurveRef.current;
+    
     for (const horse of currentState.horses) {
       const mesh = horseMeshesRef.current.get(horse.horseNumber);
       if (!mesh) continue;
 
-      // 3D座標を取得
-      const trackPos = getTrackPosition(horse.currentDistance, horse.lateralPosition, courseInfo);
-
-      mesh.position.set(trackPos.x, trackPos.y + 1, trackPos.z);
-      
-      // 進行方向を向く
-      const angle = Math.atan2(trackPos.tangent.x, trackPos.tangent.z);
-      mesh.rotation.y = angle;
-      
-      // 状態による色変更
-      const body = mesh.children[0] as THREE.Mesh;
-      if (body && body.material instanceof THREE.MeshStandardMaterial) {
-        if (horse.blocked) {
-          body.material.emissive.setHex(0xFF0000); // ブロック: 赤
-        } else if (horse.accelerationStarted) {
-          body.material.emissive.setHex(0x00FF00); // 加速: 緑
-        } else {
-          body.material.emissive.setHex(0x000000); // 通常
+      // Visual Step 1B: sampleRacePose で3D座標を取得
+      // lateralPosition の符号は既存と同じ（正=外側）なので変換不要
+      try {
+        const pose = sampleRacePose(curve, horse.currentDistance, horse.lateralPosition);
+        
+        // NaN チェック（sampleRacePose は clamp/throw するが念のため）
+        if (!Number.isFinite(pose.position.x) || !Number.isFinite(pose.position.z) || !Number.isFinite(pose.heading)) {
+          // 大量ログ回避: 馬ごと・フレームごとではなく最初の1回だけ警告
+          if (horse.horseNumber === 1) {
+            console.error('[updateHorses] 不正な座標:', {
+              horseNumber: horse.horseNumber,
+              currentDistance: horse.currentDistance,
+              pose,
+            });
+          }
+          continue; // この馬はスキップ（前フレームの位置のまま）
         }
+        
+        // 位置: 走路面から最小限の高さ（馬体が埋まらない程度）
+        // elevation=0 なので pose.position.y=0、+1.0 で馬体の底面が地面付近
+        mesh.position.set(pose.position.x, pose.position.y + 1.0, pose.position.z);
+        
+        // 向き: heading を使用（カプセルの長軸=Z軸なので rotation.y でOK）
+        mesh.rotation.y = pose.heading;
+        
+        // 状態による色変更（既存ロジック維持）
+        const body = mesh.children[0] as THREE.Mesh;
+        if (body && body.material instanceof THREE.MeshStandardMaterial) {
+          if (horse.blocked) {
+            body.material.emissive.setHex(0xFF0000); // ブロック: 赤
+          } else if (horse.accelerationStarted) {
+            body.material.emissive.setHex(0x00FF00); // 加速: 緑
+          } else {
+            body.material.emissive.setHex(0x000000); // 通常
+          }
+        }
+      } catch (e) {
+        // sampleRacePose が RangeError を投げた場合（NaN など）
+        if (horse.horseNumber === 1) {
+          console.error('[updateHorses] sampleRacePose エラー:', e, {
+            horseNumber: horse.horseNumber,
+            currentDistance: horse.currentDistance,
+          });
+        }
+        continue;
       }
     }
   };
@@ -457,18 +532,29 @@ export default function RaceSimulator3DProto({
   // 追従カメラ更新
   const updateFollowCamera = (currentState: RaceTimelineKeyframe) => {
     const horse = currentState.horses.find(h => h.horseNumber === selectedHorse);
-    if (!horse || !cameraRef.current) return;
+    if (!horse || !cameraRef.current || !visualCurveRef.current) return;
     
-    const trackPos = getTrackPosition(horse.currentDistance, horse.lateralPosition, courseInfo);
-    
-    // カメラを馬の後方・上方に配置
-    const cameraOffset = new THREE.Vector3(-trackPos.tangent.x * 15, 10, -trackPos.tangent.z * 15);
-    const targetPos = new THREE.Vector3(trackPos.x, trackPos.y + 2, trackPos.z);
-    const cameraPos = targetPos.clone().add(cameraOffset);
-    
-    // 滑らかに移動
-    cameraRef.current.position.lerp(cameraPos, 0.1);
-    cameraRef.current.lookAt(targetPos);
+    // Visual Step 1B: sampleRacePose で座標取得
+    try {
+      const pose = sampleRacePose(visualCurveRef.current, horse.currentDistance, horse.lateralPosition);
+      
+      if (!Number.isFinite(pose.position.x) || !Number.isFinite(pose.position.z)) {
+        return; // 不正座標の場合はカメラ更新しない
+      }
+      
+      // カメラを馬の後方・上方に配置
+      // tangent は進行方向なので、その逆方向へオフセット
+      const cameraOffset = new THREE.Vector3(-pose.tangent.x * 15, 10, -pose.tangent.z * 15);
+      const targetPos = new THREE.Vector3(pose.position.x, pose.position.y + 2, pose.position.z);
+      const cameraPos = targetPos.clone().add(cameraOffset);
+      
+      // 滑らかに移動
+      cameraRef.current.position.lerp(cameraPos, 0.1);
+      cameraRef.current.lookAt(targetPos);
+    } catch (e) {
+      // sampleRacePose エラー時はカメラ更新しない
+      return;
+    }
   };
   
   if (!timeline) {
