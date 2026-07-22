@@ -9,7 +9,7 @@ async function loadPdfLibs() {
   ]);
   return { jsPDF, html2canvas };
 }
-import CourseStyleRacePace from '@/app/components/CourseStyleRacePace';
+import RaceSimulatorCard from '@/app/components/RaceSimulatorCard';
 import SagaAICard, { type SagaAIResponse } from '@/app/components/SagaAICard';
 import HorseDetailModal from '@/app/components/HorseDetailModal';
 import HorseActionPopup from '@/app/components/HorseActionPopup';
@@ -309,6 +309,11 @@ export default function RaceCardPage() {
   const showSagaAI = useFeatureAccess('saga-ai');
   const { status: sessionStatus } = useSession();
 
+  // シミュレーション用のステート
+  const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+
   // グローバルにレース情報を共有（AIチャット用）
   useEffect(() => {
     if (typeof window !== 'undefined' && selectedVenue && selectedRace) {
@@ -461,6 +466,52 @@ export default function RaceCardPage() {
       setHorsesWithPastHorseRaceMemo(s);
     } catch { /* noop */ }
   }
+
+  // シミュレーション実行
+  const runSimulation = async () => {
+    if (!selectedVenue || !selectedRace) return;
+    
+    setSimulationLoading(true);
+    setSimulationError(null);
+    setSimulationResult(null);
+
+    try {
+      const response = await fetch('/api/simulator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year: String(selectedYear),
+          date: date,
+          place: selectedVenue,
+          raceNumber: selectedRace,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'シミュレーション失敗');
+      }
+
+      setSimulationResult(result);
+    } catch (err) {
+      setSimulationError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSimulationLoading(false);
+    }
+  };
+
+  // レース変更時にシミュレーション自動実行
+  useEffect(() => {
+    if (selectedYear && date && selectedVenue && selectedRace && showRacePace) {
+      runSimulation();
+    } else {
+      // レースが選択されていない場合はリセット
+      setSimulationResult(null);
+      setSimulationError(null);
+    }
+  }, [selectedYear, date, selectedVenue, selectedRace, showRacePace]);
+
   const [sortMode, setSortMode] = useState<'score' | 'umaban'>('umaban'); // 馬番順で高速表示
 
   // 表示順と同じソート済み馬リスト（上下ナビゲーションに使用）
@@ -1671,18 +1722,12 @@ export default function RaceCardPage() {
             className="space-y-6 racecard-fadein"
           >
             {selectedRace && showRacePace && (
-              <div id="race-pace-card">
-                <CourseStyleRacePace
-                  year={String(selectedYear)}
-                  date={date}
-                  place={selectedVenue}
-                  raceNumber={selectedRace}
-                  kisouScores={
-                    raceCard.horses?.reduce((acc, horse) => {
-                      acc[parseInt(horse.umaban, 10)] = horse.score || 0;
-                      return acc;
-                    }, {} as Record<number, number>)
-                  }
+              <div id="race-simulator-card">
+                <RaceSimulatorCard
+                  simulationResult={simulationResult}
+                  loading={simulationLoading}
+                  error={simulationError}
+                  onRetry={runSimulation}
                 />
               </div>
             )}
