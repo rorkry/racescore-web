@@ -13,7 +13,8 @@ import type {
 } from '@/types/race-simulator';
 import { fetchHorseIndices, calculateLeadingIntention, getPastPositionPattern } from './data-fetcher';
 import { analyzeCapabilities, logCapabilities } from './capability-analyzer';
-import { getCourseInfo } from './course-database';
+import { getCourseInfo, normalizeTrackType } from './course-database';
+import { buildPhaseBoundaries } from './phase-boundaries';
 import { executeStartPhase } from './engines/start-phase';
 import { executeFormationPhase } from './engines/formation-phase';
 import { executeCornerPhase } from './engines/corner-phase';
@@ -80,16 +81,38 @@ export async function runRaceSimulation(
     不一致: distance !== currentDistance ? 'YES ❌' : 'NO ✓'
   });
   
-  // 明示的に入力されたdistanceを使用
-  const courseInfo = getCourseInfo(place, distance, trackType as 'turf' | 'dirt');
+  // trackType を 'turf' | 'dirt' に正規化（DBは '芝' / 'ダート' 表記のことがある）
+  // 正規化しないと getCourseInfo が誤って 'dirt' 扱いになり courseInfo=null になっていた
+  const normalizedTrackType = normalizeTrackType(trackType);
+  if (!normalizedTrackType) {
+    console.error(`[Simulator] ⚠️ 未対応の track_type: "${trackType}" → courseInfo は null 扱い`);
+  }
   
-  console.log(`[Simulator] コース: ${place} ${distance}m ${trackType}`);
+  // 明示的に入力されたdistanceを使用
+  const courseInfo = normalizedTrackType
+    ? getCourseInfo(place, distance, normalizedTrackType)
+    : null;
+  
+  console.log(`[Simulator] コース: ${place} ${distance}m ${trackType}(→${normalizedTrackType})`);
   if (courseInfo) {
     console.log(`  直線: ${courseInfo.straightLength}m`);
     console.log(`  坂: ${courseInfo.slopes.length}箇所`);
     console.log(`  傾向: ${courseInfo.paceTendency}`);
     console.log(`  CourseInfo.distance: ${courseInfo.distance}m`);
   }
+  
+  // ========================================
+  // 2b. フェーズ境界を一元生成
+  // ========================================
+  const boundaries = buildPhaseBoundaries(distance, courseInfo);
+  console.log('[Simulator] フェーズ境界:', {
+    start: `[${boundaries.start.start}, ${boundaries.start.end}]`,
+    formation: `[${boundaries.formation.start}, ${boundaries.formation.end}]`,
+    pace: `[${boundaries.pace.start}, ${boundaries.pace.end}]`,
+    corner: `[${boundaries.corner.start}, ${boundaries.corner.end}]`,
+    straight: `[${boundaries.straight.start}, ${boundaries.straight.end}]`,
+    goal: `[${boundaries.goal.start}, ${boundaries.goal.end}]`,
+  });
   
   // ========================================
   // 3. 各馬のデータを取得＆能力分析
@@ -176,6 +199,7 @@ export async function runRaceSimulation(
     horses: structuredClone(startPhaseResult.horses),
     courseInfo,
     totalHorses,
+    endDistance: boundaries.formation.end,
   }, startPhaseResult);
   
   // 【重要】即座にスナップショット作成
@@ -184,35 +208,32 @@ export async function runRaceSimulation(
     horses: structuredClone(formationPhaseResult.horses),
   };
   
-  // paceはformationより進める（簡易実装）
-  const paceHorses = structuredClone(formationPhaseResult.horses).map(horse => {
-    // formationからpaceまで距離を進める（例: 150m進める）
-    const paceProgress = 150;
-    return {
-      ...horse,
-      currentDistance: horse.currentDistance + paceProgress,
-    };
-  });
+  // Phase 2.5: ペース形成（formation→paceへ独立して前進）
+  const paceHorses = structuredClone(formationPhaseResult.horses);
+  const maxFormationDistance = Math.max(...paceHorses.map(h => h.currentDistance));
+  const paceRun = Math.max(0, boundaries.pace.end - maxFormationDistance);
+  
+  for (const horse of paceHorses) {
+    horse.currentDistance = Math.min(boundaries.pace.end, horse.currentDistance + paceRun);
+  }
   
   const paceSnapshot = {
     ...formationPhaseResult,
     phaseName: 'ペース形成',
     horses: paceHorses,
     distanceRange: {
-      start: formationPhaseResult.distanceRange.end,
-      end: formationPhaseResult.distanceRange.end + 150,
+      start: boundaries.pace.start,
+      end: boundaries.pace.end,
     },
   };
   
   // Phase 3-4: コーナーフェーズ
-  const straightStart = courseInfo ? distance - courseInfo.straightLength : distance * 0.8;
-  
   // 【重要】paceの後に実行するため、paceHorsesから開始
   const cornerPhaseResult = executeCornerPhase({
     horses: structuredClone(paceHorses),
     courseInfo,
     totalHorses,
-    straightStart,
+    endDistance: boundaries.corner.end,
   }, formationPhaseResult);
   
   // 【重要】即座にスナップショット作成
@@ -231,6 +252,7 @@ export async function runRaceSimulation(
     courseInfo,
     totalHorses,
     raceDistance: distance, // API入力のdistanceを明示的に渡す
+    endDistance: distance,  // 直線フェーズの終端＝ゴール地点（＝raceDistance）
   }, cornerPhaseResult);
   
   // 【重要】即座にスナップショット作成
@@ -243,10 +265,8 @@ export async function runRaceSimulation(
   const goalHorses = structuredClone(straightPhaseResult.horses).map(horse => {
     // 着順に応じてゴール距離を設定（horse.positionを使用）
     // 先頭馬はraceDistance、後続は着差0.5m
-    const finishPosition = horse.position;
-    const goalDistance = finishPosition === 1
-      ? distance
-      : distance - (finishPosition - 1) * 0.5;
+    // 【重要】straight終了値より後退させない & raceDistanceを超えない ように保証する
+    const goalDistance = computeGoalDistance(horse.position, horse.currentDistance, distance);
     return {
       ...horse,
       currentDistance: goalDistance,
@@ -360,6 +380,29 @@ export async function runRaceSimulation(
   }
   
   return result;
+}
+
+/**
+ * ゴール地点での currentDistance を計算する
+ *
+ * - 着順に応じた着差（1着=raceDistance、以降0.5mずつ後方）を基本とする
+ * - ただし straight フェーズ終了時点の距離（straightDistance）より後退させない
+ * - raceDistance を超えない
+ *
+ * @param finishPosition 着順（1=先頭）
+ * @param straightDistance straightフェーズ終了時点の currentDistance
+ * @param raceDistance レース距離（ゴール地点）
+ */
+export function computeGoalDistance(
+  finishPosition: number,
+  straightDistance: number,
+  raceDistance: number
+): number {
+  const nominal = finishPosition === 1
+    ? raceDistance
+    : raceDistance - (finishPosition - 1) * 0.5;
+  // straight終了値より後退させない（>= straightDistance）かつ raceDistance を超えない
+  return Math.min(raceDistance, Math.max(straightDistance, nominal));
 }
 
 /**

@@ -156,6 +156,35 @@ export interface SimulationEvent {
 }
 
 // ===================================
+// フェーズ境界（endDistance 駆動の基盤）
+// ===================================
+
+/** 1フェーズの距離区間（m）。start は始端、end は終端（＝そのフェーズの endDistance） */
+export interface PhaseBoundary {
+  start: number;
+  end: number;
+}
+
+/**
+ * レース全体のフェーズ境界
+ *
+ * raceDistance と CourseInfo（実コース幾何）から一元生成する。
+ * 各フェーズは連続（前.end === 次.start）かつ次の順序を満たす:
+ *   0 = start.start < formation.start < pace.start < corner.start <= straight.start < goal.start
+ *   goal.end === raceDistance
+ * corner は最終コーナーデータが無い場合ゼロ長になり得る（そのため corner.start <= straight.start）。
+ */
+export interface PhaseBoundaries {
+  raceDistance: number;
+  start: PhaseBoundary;
+  formation: PhaseBoundary;
+  pace: PhaseBoundary;
+  corner: PhaseBoundary;   // 3-4コーナー
+  straight: PhaseBoundary;
+  goal: PhaseBoundary;
+}
+
+// ===================================
 // シミュレーション入力
 // ===================================
 

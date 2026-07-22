@@ -20,6 +20,7 @@ export interface StraightPhaseInput {
   courseInfo: CourseInfo | null;
   totalHorses: number;
   raceDistance: number; // レース距離（必須）
+  endDistance: number;  // このフェーズの終端距離（＝ゴール地点、通常は raceDistance と一致）
 }
 
 /**
@@ -29,11 +30,16 @@ export function executeStraightPhase(
   input: StraightPhaseInput,
   prevPhase: PhaseResult
 ): PhaseResult {
-  const { horses, paceType, trackBias, courseInfo, totalHorses, raceDistance } = input;
+  const { horses, paceType, trackBias, courseInfo, totalHorses, raceDistance, endDistance } = input;
   
   // raceDistanceの妥当性チェック
   if (!Number.isFinite(raceDistance) || raceDistance <= 0) {
     throw new Error(`不正なraceDistance: ${raceDistance}`);
+  }
+  
+  // endDistanceの妥当性チェック
+  if (!Number.isFinite(endDistance) || endDistance <= 0) {
+    throw new Error(`不正なendDistance: ${endDistance}`);
   }
   
   console.log('[StraightPhase] === 直線フェーズ開始 ===');
@@ -177,10 +183,8 @@ export function executeStraightPhase(
   }
   
   // ========================================
-  // 2. 速度・距離を更新（追い込み力に基づく）
+  // 2. 速度を更新（追い込み力に基づく）
   // ========================================
-  const straightDistance = courseInfo?.straightLength || 400;
-  
   for (const horse of horses) {
     // finalChaseScoreを速度に変換
     const chaseScore = (horse as any).finalChaseScore || horse.capabilities.acceleration;
@@ -189,10 +193,23 @@ export function executeStraightPhase(
     // chaseScore 0-100 → velocity 14-20 m/s
     const straightVelocity = 14 + (chaseScore / 100) * 6;
     horse.currentVelocity = straightVelocity;
-    
-    // 直線での走行距離を加算
-    const straightTime = straightDistance / straightVelocity;
-    horse.currentDistance += straightDistance;
+  }
+  
+  // ========================================
+  // 2b. 距離を更新（endDistance 駆動）
+  //
+  // 旧実装は「固定距離を無条件加算」していたため、コーナー終了地点に
+  // straightLength（or 400 fallback）を足して endDistance を大きく超過していた。
+  // ここでは「先頭馬が endDistance にちょうど到達する」ように隊列全体を前進させ、
+  // 隊列の間隔（＝コーナー終了時点の順序）を維持したまま endDistance を上限にクランプする。
+  // ========================================
+  const maxCornerDistance = Math.max(...horses.map(h => h.currentDistance));
+  // 先頭馬が直線で走る距離（endDistance を超えないよう 0 以上にクランプ）
+  const straightRun = Math.max(0, endDistance - maxCornerDistance);
+  
+  for (const horse of horses) {
+    // 隊列間隔を維持したまま前進し、endDistance を上限にクランプ（＝後退させない・超過させない）
+    horse.currentDistance = Math.min(endDistance, horse.currentDistance + straightRun);
   }
   
   // ========================================
@@ -223,12 +240,24 @@ export function executeStraightPhase(
     horse.distanceFromLeader = leadHorse.currentDistance - horse.currentDistance;
   }
   
+  // ========================================
+  // 3b. 保証チェック：全馬 currentDistance <= endDistance かつ <= raceDistance
+  // （Math.min で担保済みだが、二重加算などの再発を検知するため明示的にクランプ＆警告）
+  // ========================================
+  const distanceCap = Math.min(endDistance, raceDistance);
+  for (const horse of sortedHorses) {
+    if (horse.currentDistance > distanceCap + 1e-6) {
+      console.error(`[StraightPhase] ❌ 距離超過を検知: ${horse.horseName} ${horse.currentDistance.toFixed(1)}m > 上限${distanceCap}m（クランプします）`);
+      horse.currentDistance = distanceCap;
+    }
+  }
+  
   const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
-  const straightTime = straightDistance / avgVelocity;
+  const straightTime = avgVelocity > 0 ? straightRun / avgVelocity : 0;
   const prevPhaseTime = prevPhase.timeRange.end;
   
   console.log('[StraightPhase] === 直線フェーズ完了 ===');
-  console.log(`  直線距離: ${straightDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${straightTime.toFixed(1)}秒`);
+  console.log(`  直線走行距離: ${straightRun.toFixed(1)}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${straightTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
     console.log(`  ${h.position}着: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, 速度=${h.currentVelocity.toFixed(1)}m/s)`);
   });
@@ -238,17 +267,16 @@ export function executeStraightPhase(
     .filter(h => h.position <= 3)
     .map(h => h.horseNumber);
   
-  // 直線長を取得（コース情報から、またはfallback）
-  const straightLength = courseInfo?.straightLength || 262;
-  const straightStart = raceDistance - straightLength;
-  const goalDistance = raceDistance;
+  // distanceRange: 直線入口（先頭馬の直線開始地点）〜 endDistance
+  const straightStart = endDistance - straightRun;
+  const goalDistance = endDistance;
   
   console.warn('[StraightPhase] 距離設定:', {
     raceDistance,
+    endDistance,
     goalDistance,
-    straightLength,
-    straightStart,
-    fallback使用: 'NO ✓'
+    straightRun: straightRun.toFixed(1),
+    straightStart: straightStart.toFixed(1),
   });
   
   return {

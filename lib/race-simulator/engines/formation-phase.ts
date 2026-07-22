@@ -17,6 +17,7 @@ export interface FormationPhaseInput {
   horses: HorseState[];
   courseInfo: CourseInfo | null;
   totalHorses: number;
+  endDistance: number; // このフェーズの終端距離（boundaries.formation.end）
 }
 
 /**
@@ -26,7 +27,12 @@ export function executeFormationPhase(
   input: FormationPhaseInput,
   prevPhase: PhaseResult
 ): PhaseResult {
-  const { horses, courseInfo, totalHorses } = input;
+  const { horses, courseInfo, totalHorses, endDistance } = input;
+  
+  // endDistanceの妥当性チェック
+  if (!Number.isFinite(endDistance) || endDistance <= 0) {
+    throw new Error(`[FormationPhase] 不正なendDistance: ${endDistance}`);
+  }
   
   console.log('[FormationPhase] === 隊列形成フェーズ開始 ===');
   
@@ -141,9 +147,8 @@ export function executeFormationPhase(
   }
   
   // ========================================
-  // 5. 速度・距離を更新
+  // 5. 速度を更新
   // ========================================
-  const phaseDistance = 400; // 200m-600m
   const baseVelocity = paceType === 'high' ? 17.0 : paceType === 'slow' ? 14.0 : 15.5;
   
   for (const horse of horses) {
@@ -155,11 +160,17 @@ export function executeFormationPhase(
     if (horse.staminaRemaining < 50) {
       horse.currentVelocity *= 0.9;
     }
-    
-    // このフェーズでの走行距離を加算
-    const avgVelocityInPhase = (horse.currentVelocity + baseVelocity) / 2;
-    const phaseTime = phaseDistance / avgVelocityInPhase;
-    horse.currentDistance += avgVelocityInPhase * phaseTime;
+  }
+  
+  // ========================================
+  // 5b. 距離を更新（endDistance 駆動）
+  // ========================================
+  const maxCurrentDistance = Math.max(...horses.map(h => h.currentDistance));
+  const formationRun = Math.max(0, endDistance - maxCurrentDistance);
+  
+  for (const horse of horses) {
+    // 隊列間隔を維持したまま前進し、endDistance を上限にクランプ
+    horse.currentDistance = Math.min(endDistance, horse.currentDistance + formationRun);
   }
   
   // ========================================
@@ -185,12 +196,12 @@ export function executeFormationPhase(
   }
   
   const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
-  const phaseTime = phaseDistance / avgVelocity;
+  const formationTime = avgVelocity > 0 ? formationRun / avgVelocity : 0;
   const prevPhaseTime = prevPhase.timeRange.end;
   
   console.log('[FormationPhase] === 隊列形成フェーズ完了 ===');
   console.log(`  ペース: ${paceType}, 速度: ${avgVelocity.toFixed(1)}m/s`);
-  console.log(`  先行${frontRunners}頭, 所要時間: ${phaseTime.toFixed(1)}秒`);
+  console.log(`  先行${frontRunners}頭, 走行距離: ${formationRun.toFixed(1)}m, 所要時間: ${formationTime.toFixed(1)}秒`);
   sortedHorses.slice(0, 5).forEach(h => {
     console.log(`  ${h.position}番手: ${h.horseName} (距離=${h.currentDistance.toFixed(1)}m, スタミナ残${h.staminaRemaining.toFixed(0)}%)`);
   });
@@ -200,10 +211,13 @@ export function executeFormationPhase(
     .filter(h => h.position <= 3)
     .map(h => h.horseNumber);
   
+  // distanceRange: 前フェーズ終了地点 〜 endDistance
+  const formationStart = prevPhase.distanceRange.end;
+  
   return {
     phaseName: '隊列確定〜ペース形成',
-    distanceRange: { start: 200, end: 600 },
-    timeRange: { start: prevPhaseTime, end: prevPhaseTime + phaseTime },
+    distanceRange: { start: formationStart, end: endDistance },
+    timeRange: { start: prevPhaseTime, end: prevPhaseTime + formationTime },
     horses: sortedHorses,
     paceInfo: {
       averageSpeed: avgVelocity,

@@ -9,6 +9,19 @@ import type { CourseInfo, Corner, Slope } from '@/types/race-simulator';
 import { getCourseCharacteristics } from '../course-characteristics';
 
 /**
+ * trackType を 'turf' | 'dirt' に正規化する
+ *
+ * DBの track_type は '芝' / 'ダート'（'ダ'）などの日本語表記のことがあるため、
+ * エンジン内部で使う 'turf' / 'dirt' へ統一する。
+ * 未対応の値の場合は null を返す。
+ */
+export function normalizeTrackType(raw: string): 'turf' | 'dirt' | null {
+  if (raw === '芝' || raw === 'turf') return 'turf';
+  if (raw === 'ダート' || raw === 'ダ' || raw === 'dirt') return 'dirt';
+  return null;
+}
+
+/**
  * コース情報を取得（シミュレーター用拡張版）
  */
 export function getCourseInfo(

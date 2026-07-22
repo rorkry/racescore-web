@@ -14,7 +14,7 @@ export interface CornerPhaseInput {
   horses: HorseState[];
   courseInfo: CourseInfo | null;
   totalHorses: number;
-  straightStart: number;
+  endDistance: number; // このフェーズの終端距離（boundaries.corner.end、通常は straightStart）
 }
 
 interface LaneOption {
@@ -41,14 +41,38 @@ export function executeCornerPhase(
   input: CornerPhaseInput,
   prevPhase: PhaseResult
 ): PhaseResult {
-  const { horses, courseInfo, totalHorses, straightStart } = input;
+  const { horses, courseInfo, totalHorses, endDistance } = input;
   
-  const phaseStart = 600;
-  const phaseEnd = straightStart;
+  // endDistanceの妥当性チェック
+  if (!Number.isFinite(endDistance) || endDistance < 0) {
+    throw new Error(`[CornerPhase] 不正なendDistance: ${endDistance}`);
+  }
+  
+  // 前フェーズの終了地点から開始
+  const phaseStart = prevPhase.distanceRange.end;
+  const phaseEnd = endDistance;
   const cornerDistance = phaseEnd - phaseStart;
   
   console.log('[CornerPhase] === 3-4コーナーフェーズ開始 ===');
   console.log(`  距離: ${phaseStart}m - ${phaseEnd}m (${cornerDistance}m)`);
+  
+  // ゼロ長フェーズ（コーナーデータ無し、スプリント等）の場合は即終了
+  if (cornerDistance < 1e-6) {
+    console.log('[CornerPhase] コーナーゼロ長のため即終了');
+    const leadingHorses = horses.filter(h => h.position <= 3).map(h => h.horseNumber);
+    return {
+      phaseName: '3-4コーナー',
+      distanceRange: { start: phaseStart, end: phaseEnd },
+      timeRange: { start: prevPhase.timeRange.end, end: prevPhase.timeRange.end },
+      horses,
+      paceInfo: {
+        averageSpeed: horses.reduce((sum, h) => sum + h.currentVelocity, 0) / horses.length,
+        leadingHorses,
+        paceType: prevPhase.paceInfo.paceType,
+      },
+      events: [],
+    };
+  }
   
   const events: SimulationEvent[] = [];
   const warnings: string[] = [];
@@ -117,7 +141,8 @@ export function executeCornerPhase(
   // タイムステップシミュレーション（1秒刻み）
   // ========================================
   const timeStep = 1.0;
-  const numSteps = Math.ceil(cornerDistance / 14);
+  // 区間長から必要ステップ数を算出（平均速度14m/s想定）
+  const numSteps = Math.max(1, Math.ceil(cornerDistance / 14));
   const startTime = prevPhase.timeRange.end;
   
   for (let step = 0; step < numSteps; step++) {
@@ -183,7 +208,7 @@ export function executeCornerPhase(
       // 4. レーン変更の意思決定（2秒ごと）
       // ========================================
       if (step % 2 === 0 && horse.laneChangeState === 'none') {
-        const distanceToStraight = straightStart - horse.currentDistance;
+        const distanceToStraight = endDistance - horse.currentDistance;
         
         const laneDecision = decideLaneChange(
           horse,
@@ -272,7 +297,7 @@ export function executeCornerPhase(
       // ========================================
       // 7. スパート開始判定（個別・状態依存）
       // ========================================
-      const distanceToStraight = straightStart - horse.currentDistance;
+      const distanceToStraight = endDistance - horse.currentDistance;
       
       if (!horse.accelerationStarted) {
         const shouldAccelerate = checkAccelerationTiming(
@@ -281,7 +306,7 @@ export function executeCornerPhase(
           totalHorses,
           blockInfo,
           horses,
-          straightStart
+          endDistance
         );
         
         if (shouldAccelerate && !horse.blocked && horse.staminaRemaining > 25) {
@@ -313,10 +338,11 @@ export function executeCornerPhase(
       horse.currentVelocity = Math.max(10, Math.min(20, horse.currentVelocity));
       
       // ========================================
-      // 9. 走行距離更新
+      // 9. 走行距離更新（endDistanceを超えないようクランプ）
       // ========================================
       const distanceThisStep = horse.currentVelocity * timeStep + extraDistanceThisStep;
-      horse.currentDistance += distanceThisStep;
+      const newDistance = horse.currentDistance + distanceThisStep;
+      horse.currentDistance = Math.min(endDistance, newDistance);
       
       // ========================================
       // 10. スタミナ消費（連続計算＋ログ）
@@ -511,7 +537,7 @@ function checkAccelerationTiming(
   totalHorses: number,
   blockInfo: any,
   allHorses: HorseState[],
-  straightStart: number
+  endDistance: number
 ): boolean {
   const positionRatio = horse.position / totalHorses;
   
