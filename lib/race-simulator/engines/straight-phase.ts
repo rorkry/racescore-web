@@ -19,6 +19,7 @@ export interface StraightPhaseInput {
   trackBias?: TrackBias;
   courseInfo: CourseInfo | null;
   totalHorses: number;
+  raceDistance: number; // レース距離（必須）
 }
 
 /**
@@ -28,7 +29,12 @@ export function executeStraightPhase(
   input: StraightPhaseInput,
   prevPhase: PhaseResult
 ): PhaseResult {
-  const { horses, paceType, trackBias, courseInfo, totalHorses } = input;
+  const { horses, paceType, trackBias, courseInfo, totalHorses, raceDistance } = input;
+  
+  // raceDistanceの妥当性チェック
+  if (!Number.isFinite(raceDistance) || raceDistance <= 0) {
+    throw new Error(`不正なraceDistance: ${raceDistance}`);
+  }
   
   console.log('[StraightPhase] === 直線フェーズ開始 ===');
   console.log(`  ペース: ${paceType}`);
@@ -232,14 +238,17 @@ export function executeStraightPhase(
     .filter(h => h.position <= 3)
     .map(h => h.horseNumber);
   
-  const straightStart = courseInfo?.distance ? courseInfo.distance - courseInfo.straightLength : 1400;
-  const goalDistance = courseInfo?.distance || 1600;
+  // 直線長を取得（コース情報から、またはfallback）
+  const straightLength = courseInfo?.straightLength || 262;
+  const straightStart = raceDistance - straightLength;
+  const goalDistance = raceDistance;
   
   console.warn('[StraightPhase] 距離設定:', {
-    courseInfoDistance: courseInfo?.distance,
-    goalDistance: goalDistance,
-    straightStart: straightStart,
-    fallback使用: goalDistance === 1600 ? 'YES ❌' : 'NO ✓'
+    raceDistance,
+    goalDistance,
+    straightLength,
+    straightStart,
+    fallback使用: 'NO ✓'
   });
   
   return {

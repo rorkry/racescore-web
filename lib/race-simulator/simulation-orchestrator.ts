@@ -188,6 +188,7 @@ export async function runRaceSimulation(
     trackBias,
     courseInfo,
     totalHorses,
+    raceDistance: distance, // API入力のdistanceを明示的に渡す
   }, cornerPhaseResult);
   
   // ========================================
