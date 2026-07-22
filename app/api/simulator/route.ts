@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
             horseName: h.horseName,
             currentDistance: parseFloat(h.currentDistance.toFixed(1)),
             currentVelocity: parseFloat(h.currentVelocity.toFixed(1)),
+            acceleration: parseFloat(h.acceleration.toFixed(2)),
             lateralPosition: parseFloat(h.lateralPosition.toFixed(2)),
             position: h.position,
             distanceFromLeader: parseFloat(h.distanceFromLeader.toFixed(1)),

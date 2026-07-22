@@ -18,17 +18,28 @@ interface SimulationResult {
     horseName: string;
     waku: number;
   }>;
-  timeline: Array<{
-    time: number;
-    distance: number;
-    horses: Array<{
-      n: number;
-      p: [number, number, number];
-      v: number;
-      pos: number;
-      stamina: number;
+  timeline: {
+    raceKey: string;
+    totalDuration: number;
+    courseDistance: number;
+    keyframes: Array<{
+      time: number;
+      phase: string;
+      horses: Array<{
+        horseNumber: number;
+        horseName: string;
+        currentDistance: number;
+        currentVelocity: number;
+        acceleration: number;
+        lateralPosition: number;
+        position: number;
+        distanceFromLeader: number;
+        staminaRemaining: number;
+        blocked: boolean;
+        outerPath: boolean;
+      }>;
     }>;
-  }>;
+  };
   simulation?: any;
   courseInfo?: any;
 }

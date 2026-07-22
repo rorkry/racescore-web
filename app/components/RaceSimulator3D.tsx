@@ -3,11 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import type { TimelineFrame } from '@/lib/race-simulator/timeline-generator';
+import type { RaceTimeline } from '@/lib/race-simulator/timeline-generator';
 
 interface RaceSimulator3DProps {
-  timeline: TimelineFrame[];
-  courseDistance: number;
+  timeline: RaceTimeline;
   courseName: string;
 }
 
@@ -18,7 +17,6 @@ interface RaceSimulator3DProps {
  */
 export default function RaceSimulator3D({
   timeline,
-  courseDistance,
   courseName,
 }: RaceSimulator3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,7 +25,7 @@ export default function RaceSimulator3D({
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   
   useEffect(() => {
-    if (!containerRef.current || timeline.length === 0) return;
+    if (!containerRef.current || timeline.keyframes.length === 0) return;
     
     // ========================================
     // Three.js初期化
@@ -78,7 +76,7 @@ export default function RaceSimulator3D({
     const horseMeshes: Map<number, THREE.Mesh> = new Map();
     const horseLabels: Map<number, THREE.Sprite> = new Map();
     
-    for (const horseFrame of timeline[0].horses) {
+    for (const horseFrame of timeline.keyframes[0].horses) {
       // 馬を球体で表現（後でモデルに置き換え可能）
       const geometry = new THREE.SphereGeometry(2, 16, 16);
       const material = new THREE.MeshStandardMaterial({
@@ -112,7 +110,7 @@ export default function RaceSimulator3D({
       
       controls.update();
       
-      if (isPlaying && timeline.length > 0) {
+      if (isPlaying && timeline.keyframes.length > 0) {
         const now = Date.now();
         const deltaTime = (now - lastTime) / 1000; // 秒
         lastTime = now;
@@ -121,7 +119,7 @@ export default function RaceSimulator3D({
         const frameStep = deltaTime * 10 * playbackSpeed; // 10fps想定
         frameIndex += frameStep;
         
-        if (frameIndex >= timeline.length) {
+        if (frameIndex >= timeline.keyframes.length) {
           frameIndex = 0; // ループ
         }
         
@@ -129,7 +127,7 @@ export default function RaceSimulator3D({
         setCurrentFrame(currentFrameIdx);
         
         // 馬の位置を更新
-        const frame = timeline[currentFrameIdx];
+        const frame = timeline.keyframes[currentFrameIdx];
         
         for (const horseFrame of frame.horses) {
           const mesh = horseMeshes.get(horseFrame.horseNumber);
@@ -227,15 +225,15 @@ export default function RaceSimulator3D({
         
         {/* 進捗表示 */}
         <div className="text-white text-sm">
-          {currentFrame} / {timeline.length} フレーム
-          {timeline[currentFrame] && ` (${timeline[currentFrame].distance.toFixed(0)}m)`}
+          {currentFrame} / {timeline.keyframes.length} フレーム
+          {timeline.keyframes[currentFrame] && ` (時刻: ${timeline.keyframes[currentFrame].time.toFixed(1)}秒)`}
         </div>
       </div>
       
       {/* コース情報 */}
       <div className="absolute top-4 left-4 bg-black/70 rounded-lg p-3 text-white">
         <div className="font-bold text-lg">{courseName}</div>
-        <div className="text-sm">{courseDistance}m</div>
+        <div className="text-sm">{timeline.courseDistance}m</div>
       </div>
     </div>
   );
