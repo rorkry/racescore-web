@@ -279,12 +279,22 @@ export class AutonomousResearchAgent {
     
     const promising = session.phase1_results.filter(r => r.is_promising);
     
-    // Phase 2: 掛け合わせ検証
+    console.log(`[Phase 1 Complete] Found ${promising.length} promising themes`);
+    if (promising.length > 0) {
+      console.log('[Phase 1 Complete] Promising themes:');
+      promising.forEach((r, i) => {
+        console.log(`  ${i + 1}. ${r.candidate.name} (Score: ${r.promising_score}, EV: ${r.statistics.expected_value_diff.toFixed(0)}円)`);
+      });
+    }
+    
+    // Phase 2: 有望テーマの深掘り
     session.phase = 2;
     session.progress = 50;
-    session.phase2_results = await this.phase2_combineConditions(promising);
+    console.log(`\n[Phase 2 Start] Deep diving ${promising.length} promising themes...`);
+    session.phase2_results = await this.phase2_deepDivePromising(promising);
     
     const synergies = session.phase2_results.filter(r => r.is_promising);
+    console.log(`[Phase 2 Complete] Found ${synergies.length} promising deep dive results`);
     
     // Phase 3: 派生検証
     session.phase = 3;
@@ -376,21 +386,130 @@ export class AutonomousResearchAgent {
   }
   
   /**
-   * Phase 2: 掛け合わせ検証
+   * Phase 2: 有望テーマの深掘り（自律的探索）
+   * Phase 1で有望だったテーマを深く掘り下げる
    */
-  private async phase2_combineConditions(
+  private async phase2_deepDivePromising(
     promising: ConditionResult[]
   ): Promise<ConditionResult[]> {
-    // 有望条件の2つ組、3つ組を生成
-    const combinations = this.generateCombinations(promising, 2, 3);
+    if (promising.length === 0) {
+      console.log('[Phase 2] No promising conditions to deep dive');
+      return [];
+    }
+
+    console.log(`[Phase 2] Deep diving ${promising.length} promising themes...`);
     
-    // 検証
-    const results = await Promise.all(
-      combinations.map(c => this.evaluateCondition(c))
-    );
+    // 有望な条件から深掘り候補を生成
+    const deepDiveCandidates: ConditionCandidate[] = [];
     
-    // 相乗効果があるものだけ抽出
-    return results.filter(r => this.hasSynergy(r));
+    for (const result of promising) {
+      // 各有望条件から派生条件を生成
+      const variations = await this.generateDeepDiveVariations(result);
+      deepDiveCandidates.push(...variations);
+    }
+    
+    console.log(`[Phase 2] Generated ${deepDiveCandidates.length} deep dive candidates`);
+    
+    // バッチ処理で評価
+    const batchSize = 5;
+    const results: ConditionResult[] = [];
+    
+    for (let i = 0; i < deepDiveCandidates.length; i += batchSize) {
+      const batch = deepDiveCandidates.slice(i, i + batchSize);
+      const batchNum = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(deepDiveCandidates.length / batchSize);
+      
+      console.log(`[Phase 2] Batch ${batchNum}/${totalBatches}`);
+      
+      const batchResults = await Promise.all(
+        batch.map(c => this.evaluateCondition(c))
+      );
+      
+      results.push(...batchResults);
+    }
+    
+    // 有望な結果のみ返す
+    return results.filter(r => r.is_promising);
+  }
+
+  /**
+   * 深掘り用の派生条件を生成
+   */
+  private async generateDeepDiveVariations(
+    result: ConditionResult
+  ): Promise<ConditionCandidate[]> {
+    const variations: ConditionCandidate[] = [];
+    const baseCondition = result.candidate.conditions[0];
+    
+    if (!baseCondition) return variations;
+    
+    // パターン1: 閾値を調整（指数系のみ）
+    if (baseCondition.operator === 'gte' && typeof baseCondition.value === 'number') {
+      const baseValue = baseCondition.value;
+      
+      // 少し緩める
+      variations.push({
+        name: `${result.candidate.name.replace(/\d+\.?\d*/g, (baseValue - 0.5).toString())}`,
+        conditions: [
+          { ...baseCondition, value: baseValue - 0.5 }
+        ],
+        hypothesis: `閾値を緩めて範囲を拡大: ${result.candidate.hypothesis}`,
+        expected_outcome: result.candidate.expected_outcome,
+        reason: '有望な条件の閾値を調整して最適化'
+      });
+      
+      // 少し厳しくする
+      variations.push({
+        name: `${result.candidate.name.replace(/\d+\.?\d*/g, (baseValue + 0.5).toString())}`,
+        conditions: [
+          { ...baseCondition, value: baseValue + 0.5 }
+        ],
+        hypothesis: `閾値を厳しくして精度向上: ${result.candidate.hypothesis}`,
+        expected_outcome: result.candidate.expected_outcome,
+        reason: '有望な条件の閾値を調整して最適化'
+      });
+    }
+    
+    // パターン2: コース条件を追加
+    if (!result.candidate.conditions.some(c => c.field === 'distance')) {
+      variations.push({
+        name: `${result.candidate.name}×今走ダート`,
+        conditions: [
+          ...result.candidate.conditions,
+          { field: 'distance', operator: 'contains', value: 'ダ' }
+        ],
+        hypothesis: `${result.candidate.hypothesis}（ダート限定）`,
+        expected_outcome: result.candidate.expected_outcome,
+        reason: '有望条件にダート条件を追加'
+      });
+      
+      variations.push({
+        name: `${result.candidate.name}×今走芝`,
+        conditions: [
+          ...result.candidate.conditions,
+          { field: 'distance', operator: 'contains', value: '芝' }
+        ],
+        hypothesis: `${result.candidate.hypothesis}（芝限定）`,
+        expected_outcome: result.candidate.expected_outcome,
+        reason: '有望条件に芝条件を追加'
+      });
+    }
+    
+    // パターン3: 枠番条件を追加
+    if (!result.candidate.conditions.some(c => c.field === 'waku')) {
+      variations.push({
+        name: `${result.candidate.name}×今走3枠以内`,
+        conditions: [
+          ...result.candidate.conditions,
+          { field: 'waku', operator: 'lte', value: 3 }
+        ],
+        hypothesis: `${result.candidate.hypothesis}（内枠限定）`,
+        expected_outcome: result.candidate.expected_outcome,
+        reason: '有望条件に内枠条件を追加'
+      });
+    }
+    
+    return variations.slice(0, 3); // 最大3つの派生条件
   }
   
   /**
