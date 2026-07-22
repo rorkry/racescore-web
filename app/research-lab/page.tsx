@@ -42,10 +42,13 @@ export default function ResearchLabPage() {
   const [loadingCandidates, setLoadingCandidates] = useState(true);
   const [progress, setProgress] = useState(0);
   const [currentPhase, setCurrentPhase] = useState<string>('');
+  const [researchHistory, setResearchHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
-  // ルール候補を読み込み
+  // ルール候補と研究履歴を読み込み
   useEffect(() => {
     loadRuleCandidates();
+    loadResearchHistory();
   }, []);
 
   const loadRuleCandidates = async () => {
@@ -60,6 +63,39 @@ export default function ResearchLabPage() {
       console.error('Failed to load rule candidates:', err);
     } finally {
       setLoadingCandidates(false);
+    }
+  };
+
+  const loadResearchHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const response = await fetch('/api/research-lab/sessions');
+      if (response.ok) {
+        const data = await response.json();
+        setResearchHistory(data.sessions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load research history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const loadSessionDetail = async (sessionId: string) => {
+    try {
+      const response = await fetch('/api/research-lab/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setResearchResult(data);
+      }
+    } catch (err) {
+      console.error('Failed to load session detail:', err);
+      alert('研究結果の読み込みに失敗しました');
     }
   };
 
@@ -95,6 +131,37 @@ export default function ResearchLabPage() {
       }
     } catch (err) {
       console.error('Failed to reject:', err);
+      alert('エラーが発生しました');
+    }
+  };
+
+  const handleSaveRule = async (result: any) => {
+    try {
+      const response = await fetch('/api/research-lab/save-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: result.candidate.name,
+          conditions: result.candidate.conditions,
+          hypothesis: result.candidate.hypothesis,
+          expected_outcome: result.candidate.expected_outcome,
+          reasoning: result.candidate.reasoning,
+          statistics: result.statistics,
+          expected_value_diff: result.statistics.expected_value_diff,
+          confidence_level: result.confidence?.confidence_level || 0,
+          promising_score: result.promising_score
+        })
+      });
+      
+      if (response.ok) {
+        alert(`✅ ルール「${result.candidate.name}」を保存しました`);
+        loadRuleCandidates();
+      } else {
+        const error = await response.text();
+        alert(`保存に失敗しました: ${error}`);
+      }
+    } catch (err) {
+      console.error('Failed to save rule:', err);
       alert('エラーが発生しました');
     }
   };
@@ -167,6 +234,7 @@ export default function ResearchLabPage() {
         setResearchResult(data);
         console.log('研究完了:', data);
         loadRuleCandidates();
+        loadResearchHistory(); // 研究履歴を更新
       }, 500);
       
     } catch (err) {
@@ -194,6 +262,62 @@ export default function ResearchLabPage() {
             レースに紐づかない自由な研究。条件を発見し、保存して、レースで活用しましょう。
           </p>
         </div>
+
+        {/* 研究履歴セクション */}
+        {!loadingHistory && researchHistory.length > 0 && (
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4">📚 最近の研究</h2>
+            
+            <div className="space-y-2">
+              {researchHistory.slice(0, 5).map((session) => (
+                <div
+                  key={session.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => loadSessionDetail(session.id)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          session.status === 'completed' 
+                            ? 'bg-green-100 text-green-800'
+                            : session.status === 'running'
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {session.status === 'completed' ? '✓ 完了' : session.status === 'running' ? '⏳ 実行中' : session.status}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(session.created_at).toLocaleString('ja-JP')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-900 font-medium line-clamp-1">
+                        {session.theme}
+                      </p>
+                      {session.status === 'completed' && (
+                        <div className="flex gap-4 mt-2 text-xs text-gray-600">
+                          <span>有望条件: {session.promising_count}件</span>
+                          <span>Phase 1: {session.phase1_tested}件</span>
+                          {session.phase2_tested > 0 && <span>Phase 2: {session.phase2_tested}件</span>}
+                          {session.phase3_tested > 0 && <span>Phase 3: {session.phase3_tested}件</span>}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium ml-4"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadSessionDetail(session.id);
+                      }}
+                    >
+                      詳細 →
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 新規研究セクション */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -314,7 +438,7 @@ export default function ResearchLabPage() {
                 </div>
                 <div className="space-y-3">
                   {researchResult.phase1_results.map((result: any, idx: number) => (
-                    <ConditionDebugView key={idx} result={result} index={idx} />
+                    <ConditionDebugView key={idx} result={result} index={idx} onSave={handleSaveRule} />
                   ))}
                 </div>
               </div>
@@ -332,7 +456,7 @@ export default function ResearchLabPage() {
                 </div>
                 <div className="space-y-3">
                   {researchResult.phase2_results.map((result: any, idx: number) => (
-                    <ConditionDebugView key={idx} result={result} index={idx} />
+                    <ConditionDebugView key={idx} result={result} index={idx} onSave={handleSaveRule} />
                   ))}
                 </div>
               </div>
@@ -350,7 +474,7 @@ export default function ResearchLabPage() {
                 </div>
                 <div className="space-y-3">
                   {researchResult.phase3_results.map((result: any, idx: number) => (
-                    <ConditionDebugView key={idx} result={result} index={idx} />
+                    <ConditionDebugView key={idx} result={result} index={idx} onSave={handleSaveRule} />
                   ))}
                 </div>
               </div>

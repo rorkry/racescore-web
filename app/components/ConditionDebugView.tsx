@@ -8,9 +8,10 @@
 interface ConditionDebugViewProps {
   result: any;
   index: number;
+  onSave?: (result: any) => void;
 }
 
-export default function ConditionDebugView({ result, index }: ConditionDebugViewProps) {
+export default function ConditionDebugView({ result, index, onSave }: ConditionDebugViewProps) {
   const stats = result.statistics;
   const baseline = result.baseline_comparison;
   
@@ -31,19 +32,29 @@ export default function ConditionDebugView({ result, index }: ConditionDebugView
             💡 {result.candidate.hypothesis}
           </p>
         </div>
-        <div className="ml-4 flex flex-col items-end gap-1">
-          {result.is_promising ? (
-            <span className="bg-green-600 text-white text-xs px-2 py-1 rounded font-medium">
-              ✓ 有望
+        <div className="ml-4 flex flex-col items-end gap-2">
+          <div className="flex flex-col items-end gap-1">
+            {result.is_promising ? (
+              <span className="bg-green-600 text-white text-xs px-2 py-1 rounded font-medium">
+                ✓ 有望
+              </span>
+            ) : (
+              <span className="bg-gray-400 text-white text-xs px-2 py-1 rounded font-medium">
+                ✗ 棄却
+              </span>
+            )}
+            <span className="text-xs text-gray-600">
+              スコア: {result.promising_score}/100
             </span>
-          ) : (
-            <span className="bg-gray-400 text-white text-xs px-2 py-1 rounded font-medium">
-              ✗ 棄却
-            </span>
+          </div>
+          {result.is_promising && onSave && (
+            <button
+              onClick={() => onSave(result)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded font-medium transition-colors"
+            >
+              💾 ルールとして保存
+            </button>
           )}
-          <span className="text-xs text-gray-600">
-            スコア: {result.promising_score}/100
-          </span>
         </div>
       </div>
 

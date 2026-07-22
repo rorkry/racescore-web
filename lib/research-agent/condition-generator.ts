@@ -175,7 +175,10 @@ export async function generateConditions(
         throw new Error('No conditions generated');
       }
       
-      return conditions;
+      // 重複排除: 同じフィールドを使った条件を除外
+      const diverseConditions = ensureDiversity(conditions);
+      
+      return diverseConditions;
     } catch (error) {
       lastError = error as Error;
       console.error(`Attempt ${attempt}/${maxRetries} failed:`, error);
@@ -210,6 +213,13 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 3. サンプル数が十分（50件以上）で、三着内率30%以上の条件を探す
 4. 回収率だけでなく、再現性と信頼度を重視
 
+🚨 **重要: 多様性を確保すること**
+- ❌ 同じ軸で閾値だけ変えた条件を複数生成しない
+  例: 「巻き返し3.0以上」「巻き返し4.0以上」「巻き返し5.0以上」 → これは避ける
+- ✅ 各条件は異なる軸を使用する
+  例: 「巻き返し4.0以上」「ポテンシャル5.0以上」「斤量54kg以下」「3枠以内」 → これが正しい
+- ✅ ${count}個の条件は、できるだけ異なる要素（指数、血統、コース、斤量、騎手、枠番、馬体重、人気など）をテストする
+
 【重点的に検証すべき条件】
 1. **前走指数 × 今走条件**（最優先・最も効果的）
    - 例: 前走makikaeshi >= 4.0 かつ 今走distance LIKE "ダ%" 
@@ -239,6 +249,25 @@ function buildPrompt(theme: ResearchTheme, count: number): string {
 - ✅ 「weight_carried <= 54」（54kg以下）
 
 このテーマに関連する検証すべき条件を${count}個生成してください。
+
+【条件生成の内訳（多様性を確保）】
+${count}個の条件は、以下のように多様な軸を組み合わせてください：
+- 前走指数系: 4-5個（makikaeshi, potential, L4F, T2Fなど、それぞれ1回のみ）
+- 血統系: 3-4個（異なる種牡馬）
+- コース系: 2-3個（異なる競馬場、距離帯）
+- 枠番系: 2個（内枠、外枠など異なる範囲）
+- 斤量系: 1-2個
+- 騎手系: 1-2個
+- 人気系: 2個（上位人気、人気薄など異なる範囲）
+- その他: 馬体重、性別、年齢など
+
+❌ 避けるべき例:
+- 「前走巻き返し指数3.0以上」「前走巻き返し指数4.0以上」「前走巻き返し指数5.0以上」
+- 「今走3番人気以下」「今走5番人気以下」「今走7番人気以下」
+
+✅ 正しい例:
+- 「前走巻き返し指数4.0以上」「前走ポテンシャル5.0以上」「前走L4F 5.0以上」
+- 「今走3番人気以下」「今走斤量54kg以下」「今走3枠以内」
 
 【条件の形式】
 各条件には以下を含めてください:
@@ -375,6 +404,38 @@ function parseConditions(conditions: any[]): RuleCondition[] {
     value: c.value,
     target: c.target
   }));
+}
+
+/**
+ * 条件の多様性を確保（重複排除）
+ * 同じフィールドを使った条件が複数ある場合、最初の1つだけを残す
+ */
+function ensureDiversity(conditions: ConditionCandidate[]): ConditionCandidate[] {
+  const seenFields = new Set<string>();
+  const diverseConditions: ConditionCandidate[] = [];
+  
+  for (const condition of conditions) {
+    // この条件で使われているフィールドを抽出
+    const fields = condition.conditions.map(c => c.field);
+    
+    // 単独条件（1フィールド）の場合のみ重複チェック
+    if (fields.length === 1) {
+      const field = fields[0];
+      
+      // 既に同じフィールドを使った条件がある場合はスキップ
+      if (seenFields.has(field)) {
+        console.log(`[多様性確保] スキップ: ${condition.name} (フィールド "${field}" は既に使用済み)`);
+        continue;
+      }
+      
+      seenFields.add(field);
+    }
+    
+    diverseConditions.push(condition);
+  }
+  
+  console.log(`[多様性確保] ${conditions.length}個 → ${diverseConditions.length}個 (${conditions.length - diverseConditions.length}個削除)`);
+  return diverseConditions;
 }
 
 /**

@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { AutonomousResearchAgent } from '@/lib/research-agent/autonomous-engine';
 import { saveRuleCandidate } from '@/lib/services/rule-candidate-service';
+import { getDbAsync } from '@/lib/db';
+import { nanoid } from 'nanoid';
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,6 +28,23 @@ export async function POST(req: NextRequest) {
         { error: 'Theme is required' },
         { status: 400 }
       );
+    }
+    
+    const db = await getDbAsync();
+    const sessionId = nanoid();
+    
+    // 研究セッションをDBに保存（開始時）
+    try {
+      await db.query(`
+        INSERT INTO research_lab_sessions (
+          id, user_id, theme, mode, status, progress, phase, started_at
+        ) VALUES ($1, $2, $3, $4, 'running', 0, 1, NOW())
+      `, [sessionId, session.user.id, theme, mode]);
+      
+      console.log(`[Research Agent] Session created: ${sessionId}`);
+    } catch (dbError) {
+      console.warn('[Research Agent] Failed to save session to DB (table may not exist yet):', dbError);
+      // DBエラーでも研究は続行
     }
     
     // 自律研究エージェントを起動
@@ -80,10 +99,50 @@ export async function POST(req: NextRequest) {
     // 有望条件の数をカウント
     const promisingCount = researchSession.phase1_results.filter(r => r.is_promising).length;
     
+    // 研究完了後、結果をDBに保存
+    try {
+      await db.query(`
+        UPDATE research_lab_sessions
+        SET 
+          status = 'completed',
+          progress = 100,
+          phase = $2,
+          phase1_results = $3,
+          phase2_results = $4,
+          phase3_results = $5,
+          rule_candidates = $6,
+          phase1_tested = $7,
+          phase1_promising = $8,
+          phase2_tested = $9,
+          phase3_tested = $10,
+          promising_count = $11,
+          completed_at = NOW(),
+          updated_at = NOW()
+        WHERE id = $1
+      `, [
+        sessionId,
+        researchSession.phase,
+        JSON.stringify(researchSession.phase1_results),
+        JSON.stringify(researchSession.phase2_results),
+        JSON.stringify(researchSession.phase3_results),
+        JSON.stringify(savedCandidates),
+        researchSession.phase1_results.length,
+        promisingCount,
+        researchSession.phase2_results.length,
+        researchSession.phase3_results.length,
+        promisingCount
+      ]);
+      
+      console.log(`[Research Agent] Session saved to DB: ${sessionId}`);
+    } catch (dbError) {
+      console.warn('[Research Agent] Failed to save results to DB:', dbError);
+      // DBエラーでも結果は返す
+    }
+    
     return NextResponse.json({
       success: true,
       session: {
-        id: researchSession.id,
+        id: sessionId, // DB保存されたセッションIDを返す
         theme: researchSession.theme.theme,
         phase: researchSession.phase,
         status: researchSession.status,
