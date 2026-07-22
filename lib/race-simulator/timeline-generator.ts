@@ -98,14 +98,26 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
     ? uniqueKeyframes[uniqueKeyframes.length - 1].time
     : 0;
   
-  const courseDistance = result.phases.goal?.distanceRange.end || 1600;
+  // レース距離は result.raceDistance から取得（fallbackなし）
+  const courseDistance = result.raceDistance;
+  
+  // 整合性確認：ゴールフェーズの距離と一致するか
+  if (
+    result.phases.goal?.distanceRange.end != null &&
+    result.phases.goal.distanceRange.end !== courseDistance
+  ) {
+    console.warn('[TimelineGenerator] ⚠️ ゴール距離不一致', {
+      raceDistance: courseDistance,
+      goalDistanceEnd: result.phases.goal.distanceRange.end,
+      差: Math.abs(courseDistance - result.phases.goal.distanceRange.end)
+    });
+  }
   
   console.warn('[TimelineGenerator] ========== タイムライン生成完了 ==========');
   console.warn('[TimelineGenerator] 距離情報:', {
-    goalDistanceRangeStart: result.phases.goal?.distanceRange.start,
+    raceDistance: result.raceDistance,
     goalDistanceRangeEnd: result.phases.goal?.distanceRange.end,
-    courseDistance: courseDistance,
-    入力距離との不一致: courseDistance !== 1200 ? 'YES ❌' : 'NO ✓'
+    courseDistance: courseDistance
   });
   console.warn('[TimelineGenerator] フェーズ別件数:', {
     start: result.phases.start?.horses?.length || 0,

@@ -120,6 +120,7 @@ export interface HorseCapabilities {
 
 export interface SimulationResult {
   raceKey: string;
+  raceDistance: number; // レース距離（m）- 必須フィールド
   phases: {
     start: PhaseResult;
     formation: PhaseResult;
@@ -164,7 +165,8 @@ export interface SimulationInput {
   date: string;
   place: string;
   raceNumber: string;
-  
+  distance: number; // レース距離（m）
+
   // オプション
   trackBias?: TrackBias;      // ユーザー入力の馬場バイアス
   enableDetailedLog?: boolean; // 詳細ログ出力

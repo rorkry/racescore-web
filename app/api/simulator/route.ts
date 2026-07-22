@@ -31,21 +31,7 @@ export async function POST(request: NextRequest) {
     const db = await getDbAsync();
 
     // ========================================
-    // 1. シミュレーション実行
-    // ========================================
-    console.log(`[API] シミュレーション開始: ${year}${date} ${place} ${raceNumber}R`);
-
-    const result = await runRaceSimulation(db, {
-      year,
-      date,
-      place,
-      raceNumber,
-      trackBias: trackBias as TrackBias | undefined,
-      enableDetailedLog: true,
-    });
-
-    // ========================================
-    // 2. コース情報取得
+    // 1. レース情報取得
     // ========================================
     const wakujunQuery = `
       SELECT distance, track_type
@@ -64,8 +50,34 @@ export async function POST(request: NextRequest) {
     }
 
     const distanceMatch = raceInfo.distance.match(/(\d+)/);
-    const distance = distanceMatch ? parseInt(distanceMatch[1], 10) : 1600;
+    if (!distanceMatch) {
+      console.error('[API] レース距離の解析失敗:', raceInfo.distance);
+      return NextResponse.json(
+        { error: `Invalid distance format: ${raceInfo.distance}` },
+        { status: 400 }
+      );
+    }
+    const distance = parseInt(distanceMatch[1], 10);
     const rawTrackType = raceInfo.track_type;
+
+    // ========================================
+    // 2. シミュレーション実行
+    // ========================================
+    console.log(`[API] シミュレーション開始: ${year}${date} ${place} ${raceNumber}R ${distance}m`);
+
+    const result = await runRaceSimulation(db, {
+      year,
+      date,
+      place,
+      raceNumber,
+      distance, // レース距離を明示的に渡す
+      trackBias: trackBias as TrackBias | undefined,
+      enableDetailedLog: true,
+    });
+
+    // ========================================
+    // 3. コース情報取得
+    // ========================================
 
     // trackType を正規化（'芝' → 'turf', 'ダート' → 'dirt'）
     const normalizedTrackType = 
@@ -94,7 +106,7 @@ export async function POST(request: NextRequest) {
     });
 
     // ========================================
-    // 3. タイムライン生成
+    // 4. タイムライン生成
     // ========================================
     console.warn('[API] ========== タイムライン生成開始 ==========');
     console.warn('[API] シミュレーション結果:', {
@@ -113,7 +125,7 @@ export async function POST(request: NextRequest) {
     });
 
     // ========================================
-    // 4. レスポンス
+    // 5. レスポンス
     // ========================================
     return NextResponse.json({
       success: true,

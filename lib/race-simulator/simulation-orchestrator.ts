@@ -27,11 +27,11 @@ export async function runRaceSimulation(
   db: any,
   input: SimulationInput
 ): Promise<SimulationResult> {
-  const { year, date, place, raceNumber, trackBias, enableDetailedLog } = input;
+  const { year, date, place, raceNumber, distance, trackBias, enableDetailedLog } = input;
   
   console.log('========================================');
   console.log(`[Simulator] レースシミュレーション開始`);
-  console.log(`  ${year}年${date} ${place} ${raceNumber}R`);
+  console.log(`  ${year}年${date} ${place} ${raceNumber}R (${distance}m)`);
   console.log('========================================');
   
   // ========================================
@@ -189,6 +189,7 @@ export async function runRaceSimulation(
   
   const result: SimulationResult = {
     raceKey,
+    raceDistance: distance, // レース距離を明示的に保持
     phases: {
       start: startPhaseResult,
       formation: formationPhaseResult,
