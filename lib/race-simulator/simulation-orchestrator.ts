@@ -216,29 +216,16 @@ export async function runRaceSimulation(
   }, formationPhaseResult);
   
   // 【重要】即座にスナップショット作成
-  // corner3_4はpaceより進める（簡易実装）
-  const cornerHorses = structuredClone(cornerPhaseResult.horses).map(horse => {
-    // paceからcorner3_4まで距離を進める（例: 150m進める）
-    const cornerProgress = 150;
-    return {
-      ...horse,
-      currentDistance: horse.currentDistance + cornerProgress,
-    };
-  });
-  
+  // executeCornerPhase が既に currentDistance を更新しているため、
+  // 二重加算を防ぐために追加の +150m は行わない
   const cornerSnapshot = {
     ...cornerPhaseResult,
-    phaseName: 'コーナー',
-    horses: cornerHorses,
-    distanceRange: {
-      start: paceSnapshot.distanceRange.end,
-      end: Math.min(paceSnapshot.distanceRange.end + 150, straightStart),
-    },
+    horses: structuredClone(cornerPhaseResult.horses),
   };
   
   // Phase 5: 直線〜ゴール
   const straightPhaseResult = executeStraightPhase({
-    horses: structuredClone(cornerHorses),
+    horses: structuredClone(cornerPhaseResult.horses),
     paceType: cornerPhaseResult.paceInfo.paceType,
     trackBias,
     courseInfo,
