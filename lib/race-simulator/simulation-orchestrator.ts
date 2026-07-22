@@ -16,6 +16,7 @@ import { analyzeCapabilities, logCapabilities } from './capability-analyzer';
 import { getCourseInfo } from './course-database';
 import { executeStartPhase } from './engines/start-phase';
 import { executeFormationPhase } from './engines/formation-phase';
+import { executeCornerPhase } from './engines/corner-phase';
 import { executeStraightPhase } from './engines/straight-phase';
 import { validateSimulation } from './validation';
 
@@ -163,17 +164,23 @@ export async function runRaceSimulation(
     totalHorses,
   }, startPhaseResult);
   
-  // Phase 3-4: コーナーフェーズ（今回は簡略化してスキップ）
-  // TODO: 実装
+  // Phase 3-4: コーナーフェーズ
+  const straightStart = courseInfo ? currentDistance - courseInfo.straightLength : currentDistance * 0.8;
+  const cornerPhaseResult = executeCornerPhase({
+    horses: formationPhaseResult.horses,
+    courseInfo,
+    totalHorses,
+    straightStart,
+  }, formationPhaseResult);
   
   // Phase 5: 直線〜ゴール
   const straightPhaseResult = executeStraightPhase({
-    horses: formationPhaseResult.horses,
-    paceType: formationPhaseResult.paceInfo.paceType,
+    horses: cornerPhaseResult.horses,
+    paceType: cornerPhaseResult.paceInfo.paceType,
     trackBias,
     courseInfo,
     totalHorses,
-  }, formationPhaseResult);
+  }, cornerPhaseResult);
   
   // ========================================
   // 5. 結果をまとめる
@@ -186,7 +193,7 @@ export async function runRaceSimulation(
       start: startPhaseResult,
       formation: formationPhaseResult,
       pace: formationPhaseResult, // 同じ
-      corner3_4: formationPhaseResult, // 簡略化
+      corner3_4: cornerPhaseResult,
       straight: straightPhaseResult,
       goal: straightPhaseResult, // 同じ
     },
