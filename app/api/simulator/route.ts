@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       raceKey: result.raceKey,
-      courseName: `${place} ${distance}m ${trackType}`,
+      courseName: `${place} ${distance}m ${rawTrackType}`,
       distance,
       finalStandings: result.finalStandings.slice(0, 10).map(h => ({
         position: h.position,
