@@ -100,12 +100,15 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
   
   const courseDistance = result.phases.goal?.distanceRange.end || 1600;
   
-  console.log(`[TimelineGenerator] キーフレーム生成完了: ${uniqueKeyframes.length}件`);
-  console.log(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
-  console.log(`[TimelineGenerator] コース距離: ${courseDistance}m`);
+  console.warn('[TimelineGenerator] ========== タイムライン生成完了 ==========');
+  console.warn(`[TimelineGenerator] キーフレーム数: ${uniqueKeyframes.length}件`);
+  console.warn(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
+  console.warn(`[TimelineGenerator] コース距離: ${courseDistance}m`);
   
-  // キーフレーム診断ログ
-  if (uniqueKeyframes.length > 0) {
+  // キーフレーム診断ログ（必ず実行）
+  if (uniqueKeyframes.length === 0) {
+    console.error('[TimelineGenerator] ❌ キーフレームが0件です！');
+  } else {
     const firstFrame = uniqueKeyframes[0];
     const midFrame = uniqueKeyframes[Math.floor(uniqueKeyframes.length / 2)];
     const lastFrame = uniqueKeyframes[uniqueKeyframes.length - 1];

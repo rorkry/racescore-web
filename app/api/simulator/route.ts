@@ -96,11 +96,21 @@ export async function POST(request: NextRequest) {
     // ========================================
     // 3. タイムライン生成
     // ========================================
-    console.log('[API] タイムライン生成中...');
+    console.warn('[API] ========== タイムライン生成開始 ==========');
+    console.warn('[API] シミュレーション結果:', {
+      raceKey: result.raceKey,
+      totalHorses: result.finalStandings.length,
+      totalPhases: Object.keys(result.phases).length
+    });
 
     const timeline = generateTimeline(result);
 
-    console.log(`[API] タイムライン生成完了: ${timeline.keyframes.length}フレーム`);
+    console.warn('[API] ========== タイムライン生成完了 ==========');
+    console.warn('[API] タイムライン情報:', {
+      keyframes: timeline.keyframes.length,
+      totalDuration: timeline.totalDuration,
+      courseDistance: timeline.courseDistance
+    });
 
     // ========================================
     // 4. レスポンス
