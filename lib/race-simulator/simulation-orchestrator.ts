@@ -196,6 +196,27 @@ export async function runRaceSimulation(
   // ========================================
   const raceKey = `${year}${date}_${place}_${raceNumber}`;
   
+  // 【診断】各フェーズの馬1番のcurrentDistanceをチェック
+  const horse1Start = startPhaseResult.horses.find(h => h.horseNumber === 1);
+  const horse1Formation = formationPhaseResult.horses.find(h => h.horseNumber === 1);
+  const horse1Corner = cornerPhaseResult.horses.find(h => h.horseNumber === 1);
+  const horse1Straight = straightPhaseResult.horses.find(h => h.horseNumber === 1);
+  
+  console.warn('[Simulator] 各フェーズの馬1番 currentDistance:', {
+    start: horse1Start?.currentDistance.toFixed(1) + 'm',
+    formation: horse1Formation?.currentDistance.toFixed(1) + 'm',
+    corner: horse1Corner?.currentDistance.toFixed(1) + 'm',
+    straight: horse1Straight?.currentDistance.toFixed(1) + 'm',
+  });
+  
+  // 【診断】オブジェクト参照チェック
+  console.warn('[Simulator] オブジェクト参照チェック:', {
+    'start.horses === formation.horses': startPhaseResult.horses === formationPhaseResult.horses,
+    'formation.horses === corner.horses': formationPhaseResult.horses === cornerPhaseResult.horses,
+    'corner.horses === straight.horses': cornerPhaseResult.horses === straightPhaseResult.horses,
+    '馬1番オブジェクト同一': horse1Start === horse1Formation && horse1Formation === horse1Corner,
+  });
+  
   const result: SimulationResult = {
     raceKey,
     raceDistance: distance, // レース距離を明示的に保持
