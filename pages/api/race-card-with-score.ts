@@ -7,6 +7,7 @@ import {
   revisionFromWakujunRows,
   revisionFromUmadataFallbackRows,
 } from '../../lib/race-card-cache-revision';
+import { INDICES_SELECT_SQL, mapIndicesRow } from '../../lib/indices-columns';
 
 // ========================================
 // サーバーサイドメモリキャッシュ（高速化）
@@ -469,20 +470,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (allIndexIds.length > 0) {
       const indexPlaceholders = allIndexIds.map((_, i) => `$${i + 1}`).join(',');
       const allIndices = await db.prepare(`
-        SELECT race_id, "L4F", "T2F", potential, revouma, makikaeshi, cushion
+        SELECT race_id, ${INDICES_SELECT_SQL}
         FROM indices
         WHERE race_id IN (${indexPlaceholders})
       `).all(...allIndexIds) as any[];
       
       for (const idx of allIndices) {
-        indicesMap.set(idx.race_id, {
-          L4F: idx.L4F,
-          T2F: idx.T2F,
-          potential: idx.potential,
-          revouma: idx.revouma,
-          makikaeshi: idx.makikaeshi,
-          cushion: idx.cushion
-        });
+        indicesMap.set(idx.race_id, mapIndicesRow(idx));
       }
     }
 

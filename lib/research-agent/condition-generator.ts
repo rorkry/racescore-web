@@ -35,6 +35,9 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
   - T2F: 前走Time 2F（0.0〜10.0、タイム評価）
   - revouma: 前走レボウマ（0.0〜10.0）
   - cushion: 前走クッション値（0.0〜10.0）
+  - pfs_past: 前走PFS過去（過去の先行力。高いほど先行力高）
+  - corner_lane: 前走4角位置（0=最内〜4=大外）
+  - revouma2: 前走レボウマ2（revouma とは別）
   
   ⚠️ 注意: これらは「前走の結果に基づく指数」です
   - 今走を予測する時点で、前走はすでに終わっているため使用可能
@@ -60,7 +63,7 @@ const RESEARCH_AGENT_SYSTEM_PROMPT = `
 ✅ 前走情報（前走が終わっているので使用可能）:
   - makikaeshi: 前走巻き返し指数
   - potential: 前走ポテンシャル指数
-  - L4F, T2F, revouma, cushion: 前走パフォーマンス指数
+  - L4F, T2F, revouma, cushion, pfs_past, corner_lane, revouma2: 前走パフォーマンス指数
 
 ❌ 今走の結果（レース後にのみ判明・予測には使用不可）:
   - finish_position: 今走着順

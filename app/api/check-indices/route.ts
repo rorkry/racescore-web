@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { INDICES_SELECT_SQL } from '@/lib/indices-columns';
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
     
     // サンプルデータ（最新10件）
     const sampleData = await db.prepare(`
-      SELECT race_id, "L4F", "T2F", potential, makikaeshi, revouma, cushion
+      SELECT race_id, ${INDICES_SELECT_SQL}
       FROM indices
       ORDER BY race_id DESC
       LIMIT 10
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     let specificData = null;
     if (raceId) {
       specificData = await db.prepare(`
-        SELECT race_id, "L4F", "T2F", potential, makikaeshi, revouma, cushion
+        SELECT race_id, ${INDICES_SELECT_SQL}
         FROM indices
         WHERE race_id = $1
       `).get(raceId);

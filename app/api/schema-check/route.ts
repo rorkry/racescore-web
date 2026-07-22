@@ -116,6 +116,9 @@ export async function GET(req: NextRequest) {
         '巻き返し': 'makikaeshi',
         'レボウマ': 'revouma',
         'クッション': 'cushion',
+        'PFS過去': 'pfs_past（過去の先行力。高いほど先行力高）',
+        '4角位置': 'corner_lane（0=最内〜4=大外）',
+        'レボウマ2': 'revouma2（revouma とは別）',
       },
     };
 

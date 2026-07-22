@@ -95,6 +95,9 @@ function findSimilarColumn(target: string, candidates: string[]): string | null 
     'potential': ['ポテンシャル', 'ポテンシャル指数'],
     'revouma': ['レボウマ'],
     'cushion': ['クッション', 'クッション値'],
+    'pfs_past': ['PFS過去', 'PFS', '先行力'],
+    'corner_lane': ['4角位置', '四角位置'],
+    'revouma2': ['レボウマ2'],
   };
 
   // マッピングから候補を探す

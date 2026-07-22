@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDbAsync } from '@/lib/db';
+import { INDICES_SELECT_SQL } from '@/lib/indices-columns';
 
 export async function GET(request: NextRequest) {
   const db = await getDbAsync();
@@ -7,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     // indicesテーブルのサンプルデータ
     const indicesResult = await db.query(`
-      SELECT race_id, makikaeshi, potential, "L4F", "T2F", revouma, cushion
+      SELECT race_id, ${INDICES_SELECT_SQL}
       FROM indices
       LIMIT 10
     `);

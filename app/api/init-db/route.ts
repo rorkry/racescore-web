@@ -163,7 +163,7 @@ export async function GET(request: Request) {
         lap_time TEXT
       );
 
-      -- 指数テーブル
+      -- 指数テーブル（カラム定義の正本: lib/indices-columns.ts）
       CREATE TABLE IF NOT EXISTS indices (
         race_id TEXT PRIMARY KEY,
         L4F REAL,
@@ -172,6 +172,9 @@ export async function GET(request: Request) {
         revouma REAL,
         makikaeshi REAL,
         cushion REAL,
+        pfs_past REAL,
+        corner_lane REAL,
+        revouma2 REAL,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );

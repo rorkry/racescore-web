@@ -7,19 +7,13 @@ import RaceTimeAnalysisModal from '@/app/components/RaceTimeAnalysisModal';
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 import { pastDateToMMDD, buildPastRaceKey } from '@/utils/race-key';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
+import type { IndicesValues } from '@/lib/indices-columns';
 
 // ========================================
 // 型定義
 // ========================================
 
-interface PastRaceIndices {
-  L4F: number | null;
-  T2F: number | null;
-  potential: number | null;
-  revouma: number | null;
-  makikaeshi: number | null;
-  cushion: number | null;
-}
+interface PastRaceIndices extends IndicesValues {}
 
 interface RaceLevelInfo {
   level: string;

@@ -30,15 +30,9 @@ import {
 } from '@/lib/indexeddb-cache';
 import { normalizeHorseName } from '@/utils/normalize-horse-name';
 import { buildPastRaceKey } from '@/utils/race-key';
+import type { IndicesValues } from '@/lib/indices-columns';
 
-interface PastRaceIndices {
-  L4F: number | null;
-  T2F: number | null;
-  potential: number | null;
-  revouma: number | null;
-  makikaeshi: number | null;
-  cushion: number | null;
-}
+interface PastRaceIndices extends IndicesValues {}
 
 interface RaceLevelInfo {
   level: string;
@@ -96,14 +90,7 @@ interface Venue {
   races: Race[];
 }
 
-interface Indices {
-  L4F: number | null;
-  T2F: number | null;
-  potential: number | null;
-  revouma: number | null;
-  makikaeshi: number | null;
-  cushion: number | null;
-}
+interface Indices extends IndicesValues {}
 
 interface Horse {
   umaban: string;

@@ -156,8 +156,11 @@ export class AnalysisConnector {
     try {
       const db = getDb();
       
-      // indicesテーブルのフィールド（前走指数として使用）
-      const indicesFields = ['makikaeshi', 'potential', 'L4F', 'T2F', 'revouma', 'cushion'];
+      // indicesテーブルのフィールド（前走指数として使用 / 正本: lib/indices-columns.ts）
+      const indicesFields = [
+        'makikaeshi', 'potential', 'L4F', 'T2F', 'revouma', 'cushion',
+        'pfs_past', 'corner_lane', 'revouma2',
+      ];
       const hasIndicesCondition = conditions.some(c => indicesFields.includes(c.field));
       
       // 条件からWHERE句を構築

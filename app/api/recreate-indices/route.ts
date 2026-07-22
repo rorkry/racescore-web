@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       await client.query('DROP TABLE IF EXISTS indices');
       console.log('[recreate-indices] Dropped indices table');
 
-      // 正しいスキーマで再作成（L4F, T2F は引用符付きで大文字）
+      // 正しいスキーマで再作成（カラム定義の正本: lib/indices-columns.ts）
       await client.query(`
         CREATE TABLE indices (
           race_id TEXT PRIMARY KEY,
@@ -37,6 +37,9 @@ export async function GET(request: NextRequest) {
           revouma REAL,
           makikaeshi REAL,
           cushion REAL,
+          pfs_past REAL,
+          corner_lane REAL,
+          revouma2 REAL,
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW()
         )

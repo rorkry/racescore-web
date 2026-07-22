@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { Pool } from 'pg';
+import type { IndicesValueColumn } from '@/lib/indices-columns';
 
 interface IndexData {
   race_id: string;
@@ -9,7 +10,20 @@ interface IndexData {
   revouma?: number;
   makikaeshi?: number;
   cushion?: number;
+  /** PFS過去: 過去の先行力（高いほど先行力高） */
+  pfs_past?: number;
+  /** 4角位置: 0=最内〜4=大外 */
+  corner_lane?: number;
+  /** レボウマ2（revouma とは別） */
+  revouma2?: number;
 }
+
+/** 既存DBへ列を足す対象（lib/indices-columns.ts と同期） */
+const ENSURE_COLUMNS: IndicesValueColumn[] = [
+  'pfs_past',
+  'corner_lane',
+  'revouma2',
+];
 
 export const config = {
   api: {
@@ -42,6 +56,13 @@ export default async function handler(
     const client = await pool.connect();
 
     try {
+      // 新規カラムが無い環境向けに追加（既存データは保持）
+      for (const col of ENSURE_COLUMNS) {
+        await client.query(
+          `ALTER TABLE indices ADD COLUMN IF NOT EXISTS ${col} REAL`
+        );
+      }
+
       // トランザクション開始
       await client.query('BEGIN');
 
@@ -54,8 +75,11 @@ export default async function handler(
         
         for (const item of batch) {
           await client.query(`
-            INSERT INTO indices (race_id, "L4F", "T2F", potential, revouma, makikaeshi, cushion, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            INSERT INTO indices (
+              race_id, "L4F", "T2F", potential, revouma, makikaeshi, cushion,
+              pfs_past, corner_lane, revouma2, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
             ON CONFLICT(race_id) DO UPDATE SET
               "L4F" = COALESCE($2, indices."L4F"),
               "T2F" = COALESCE($3, indices."T2F"),
@@ -63,6 +87,9 @@ export default async function handler(
               revouma = COALESCE($5, indices.revouma),
               makikaeshi = COALESCE($6, indices.makikaeshi),
               cushion = COALESCE($7, indices.cushion),
+              pfs_past = COALESCE($8, indices.pfs_past),
+              corner_lane = COALESCE($9, indices.corner_lane),
+              revouma2 = COALESCE($10, indices.revouma2),
               updated_at = NOW()
           `, [
             item.race_id,
@@ -71,7 +98,10 @@ export default async function handler(
             item.potential ?? null,
             item.revouma ?? null,
             item.makikaeshi ?? null,
-            item.cushion ?? null
+            item.cushion ?? null,
+            item.pfs_past ?? null,
+            item.corner_lane ?? null,
+            item.revouma2 ?? null,
           ]);
         }
         

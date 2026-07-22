@@ -1318,7 +1318,10 @@ ${is_promising ? '有望' : '不十分'}
       L4F: '前走L4F',
       T2F: '前走T2F',
       revouma: '前走レボウマ',
-      cushion: '前走クッション値'
+      cushion: '前走クッション値',
+      pfs_past: '前走PFS過去',
+      corner_lane: '前走4角位置',
+      revouma2: '前走レボウマ2',
     };
     
     // 今走情報（umadataテーブル由来）

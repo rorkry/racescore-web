@@ -12,6 +12,7 @@ import * as path from 'path';
 import Papa from 'papaparse';
 
 // Index folder configuration (base paths - year folders will be auto-detected)
+// カラム名は lib/indices-columns.ts と揃えること
 const INDEX_BASE_FOLDERS = [
   { name: 'L4F', basePath: 'C:\\keiba_data\\L4F' },
   { name: 'T2F', basePath: 'C:\\keiba_data\\T2F' },
@@ -19,6 +20,9 @@ const INDEX_BASE_FOLDERS = [
   { name: 'revouma', basePath: 'C:\\keiba_data\\レボウマ' },
   { name: 'makikaeshi', basePath: 'C:\\keiba_data\\巻き返し指数' },
   { name: 'cushion', basePath: 'C:\\keiba_data\\クッション値' },
+  { name: 'pfs_past', basePath: 'C:\\keiba_data\\PFS過去' }, // 過去の先行力（高いほど先行力高）
+  { name: 'corner_lane', basePath: 'C:\\keiba_data\\4角位置' }, // 0=最内〜4=大外
+  { name: 'revouma2', basePath: 'C:\\keiba_data\\レボウマ2' }, // レボウマとは別カラム
 ];
 
 /**
@@ -184,7 +188,18 @@ function saveToCsv(data: IndexRecord[], outputPath: string): void {
   console.log(`  Output: ${outputPath}`);
 
   // Create header
-  const headers = ['race_id', 'L4F', 'T2F', 'potential', 'revouma', 'makikaeshi', 'cushion'];
+  const headers = [
+    'race_id',
+    'L4F',
+    'T2F',
+    'potential',
+    'revouma',
+    'makikaeshi',
+    'cushion',
+    'pfs_past',
+    'corner_lane',
+    'revouma2',
+  ];
   
   // Create CSV content
   const rows = data.map(record => {
