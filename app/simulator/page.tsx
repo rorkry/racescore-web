@@ -258,7 +258,17 @@ export default function SimulatorPage() {
         {result && (
           <>
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-              <h2 className="text-xl font-bold mb-4">🎬 3Dシミュレーション</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">🎬 3Dシミュレーション</h2>
+                <a
+                  href={`/3d-simulator?raceKey=${year}${date}_${place}_${raceNumber.padStart(2, '0')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                >
+                  🎮 Phase 4.2プロトタイプで見る
+                </a>
+              </div>
               <RaceSimulator3D
                 timeline={timeline}
                 courseDistance={result.distance}
