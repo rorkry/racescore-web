@@ -54,7 +54,33 @@ export default function RaceSimulator3DProto({
     console.log('[3DSimulator] タイムライン生成中...');
     const tl = generateTimeline(simulationResult);
     setTimeline(tl);
-    console.log('[3DSimulator] タイムライン生成完了');
+    
+    // デバッグ: keyframes データの確認
+    console.log('[DEBUG] タイムライン生成完了');
+    console.log('[DEBUG] keyframes数:', tl.keyframes.length);
+    console.log('[DEBUG] 総再生時間:', tl.totalDuration);
+    console.log('[DEBUG] コース距離:', tl.courseDistance);
+    
+    if (tl.keyframes.length > 0) {
+      const firstFrame = tl.keyframes[0];
+      const midFrame = tl.keyframes[Math.floor(tl.keyframes.length / 2)];
+      const lastFrame = tl.keyframes[tl.keyframes.length - 1];
+      
+      console.log('[DEBUG] 先頭フレーム (t=0):', {
+        time: firstFrame.time,
+        horse1: firstFrame.horses.find(h => h.horseNumber === 1)
+      });
+      
+      console.log('[DEBUG] 中間フレーム:', {
+        time: midFrame.time,
+        horse1: midFrame.horses.find(h => h.horseNumber === 1)
+      });
+      
+      console.log('[DEBUG] 最終フレーム:', {
+        time: lastFrame.time,
+        horse1: lastFrame.horses.find(h => h.horseNumber === 1)
+      });
+    }
   }, [simulationResult]);
   
   // Three.js初期化
@@ -319,13 +345,24 @@ export default function RaceSimulator3DProto({
   
   // 馬の位置更新
   const updateHorses = (currentState: RaceTimelineKeyframe) => {
+    // デバッグ: 最初の数秒だけログ出力
+    if (currentTimeRef.current < 3 && Math.random() < 0.1) {
+      const horse1 = currentState.horses.find(h => h.horseNumber === 1);
+      console.log('[DEBUG] updateHorses:', {
+        time: currentState.time,
+        horse1Distance: horse1?.currentDistance,
+        horse1Position: horse1?.position,
+        meshCount: horseMeshesRef.current.size
+      });
+    }
+    
     for (const horse of currentState.horses) {
       const mesh = horseMeshesRef.current.get(horse.horseNumber);
       if (!mesh) continue;
-      
+
       // 3D座標を取得
       const trackPos = getTrackPosition(horse.currentDistance, horse.lateralPosition, courseInfo);
-      
+
       mesh.position.set(trackPos.x, trackPos.y + 1, trackPos.z);
       
       // 進行方向を向く
@@ -394,7 +431,11 @@ export default function RaceSimulator3DProto({
         {/* 再生ボタン */}
         <div className="flex gap-2 items-center flex-wrap">
           <button
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={() => {
+              const newState = !isPlaying;
+              console.log('[DEBUG] 再生状態変更:', newState);
+              setIsPlaying(newState);
+            }}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
             {isPlaying ? '⏸ 一時停止' : '▶ 再生'}
