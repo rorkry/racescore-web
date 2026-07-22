@@ -8,8 +8,8 @@
     "npm": "10.9.4"
   },
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "generate-courses": "node scripts/generate-course-db.js",
@@ -30,7 +30,7 @@
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.503.0",
-    "next": "16.1.2",
+    "next": "15.5.21",
     "next-auth": "5.0.0-beta.32",
     "openai": "^6.15.0",
     "papaparse": "^5.5.3",

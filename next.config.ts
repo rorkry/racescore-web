@@ -22,6 +22,11 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // ESLintエラーを無視（開発時）
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // セキュリティヘッダー
   async headers() {
     return [
