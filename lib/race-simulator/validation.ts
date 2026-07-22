@@ -165,6 +165,53 @@ export function validateSimulation(result: SimulationResult, expectedDistance: n
     warnings.forEach((warn, idx) => console.log(`  ${idx + 1}. ${warn}`));
   }
   
+  // ========================================
+  // Phase 4.1 追加検証
+  // ========================================
+  
+  // Corner3_4 → Straight の連続性
+  const cornerPhase = result.phases.corner3_4;
+  const straightPhase = result.phases.straight;
+  
+  const additionalStats: any = {};
+  
+  if (cornerPhase && straightPhase) {
+    for (const cornerHorse of cornerPhase.horses) {
+      const straightHorse = straightPhase.horses.find(h => h.horseNumber === cornerHorse.horseNumber);
+      if (!straightHorse) continue;
+      
+      // 距離が連続しているか
+      const distanceJump = straightHorse.currentDistance - cornerHorse.currentDistance;
+      if (distanceJump < 0 || distanceJump > 50) {
+        warnings.push(`${cornerHorse.horseName}: corner→straightで距離が不連続 (${distanceJump.toFixed(1)}m)`);
+      }
+      
+      // 速度が大きく飛んでいないか
+      const velocityJump = Math.abs(straightHorse.currentVelocity - cornerHorse.currentVelocity);
+      if (velocityJump > 5) {
+        warnings.push(`${cornerHorse.horseName}: corner→straightで速度が急変 (${velocityJump.toFixed(1)}m/s)`);
+      }
+    }
+  }
+  
+  // 全馬が同じ地点で一斉にスパートしていないか
+  const accelerationEvents = result.phases.corner3_4?.events?.filter(e => e.event === 'accelerate') || [];
+  if (accelerationEvents.length > 0) {
+    const accelerationDistances = accelerationEvents.map(e => {
+      const horse = result.phases.corner3_4.horses.find(h => h.horseNumber === e.horseNumber);
+      return horse ? horse.currentDistance : 0;
+    });
+    
+    const minDist = Math.min(...accelerationDistances);
+    const maxDist = Math.max(...accelerationDistances);
+    
+    if (maxDist - minDist < 10 && accelerationEvents.length >= 3) {
+      warnings.push(`複数馬が狭い範囲（${(maxDist - minDist).toFixed(1)}m）で一斉に加速している`);
+    } else {
+      additionalStats.accelerationSpread = `${minDist.toFixed(0)}m - ${maxDist.toFixed(0)}m (差${(maxDist - minDist).toFixed(0)}m)`;
+    }
+  }
+  
   console.log('\n========================================\n');
   
   return {
@@ -175,6 +222,7 @@ export function validateSimulation(result: SimulationResult, expectedDistance: n
       totalDistance,
       totalTime,
       avgVelocity,
+      ...additionalStats,
     },
   };
 }

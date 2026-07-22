@@ -104,17 +104,20 @@ function extractPhaseDetails(phase: any) {
     timeRange: phase.timeRange,
     paceInfo: phase.paceInfo,
     events: phase.events,
-    topHorses: phase.horses.slice(0, 10).map((h: any) => ({
+    allHorses: phase.horses.map((h: any) => ({
       position: h.position,
       horseName: h.horseName,
       horseNumber: h.horseNumber,
+      waku: h.waku,
       currentDistance: Math.round(h.currentDistance * 10) / 10,
       currentVelocity: Math.round(h.currentVelocity * 10) / 10,
+      acceleration: h.acceleration || 0,
       distanceFromLeader: Math.round(h.distanceFromLeader * 10) / 10,
       staminaRemaining: Math.round(h.staminaRemaining),
       blocked: h.blocked,
       outerPath: h.outerPath,
       lateralPosition: Math.round(h.lateralPosition * 10) / 10,
+      internalLane: h.internalLane,
     })),
   };
 }
