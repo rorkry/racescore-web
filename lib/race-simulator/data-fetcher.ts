@@ -96,7 +96,7 @@ export async function fetchHorseIndices(
   const lastRaceId = lastRace.race_id + lastRace.umaban.padStart(2, '0');
   
   const lastIndexQuery = `
-    SELECT "T2F", "L4F", potential, makikaeshi, pfs, revouma, cushion
+    SELECT "T2F", "L4F", potential, makikaeshi, pfs_past as pfs, revouma, cushion
     FROM indices
     WHERE race_id = $1
   `;
@@ -138,7 +138,7 @@ export async function fetchHorseIndices(
   for (const race of relevantRaces) {
     const raceId = race.race_id + race.umaban.padStart(2, '0');
     const indexQuery = `
-      SELECT "T2F", "L4F", potential, makikaeshi, pfs, revouma, cushion
+      SELECT "T2F", "L4F", potential, makikaeshi, pfs_past as pfs, revouma, cushion
       FROM indices
       WHERE race_id = $1
     `;
