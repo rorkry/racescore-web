@@ -7,13 +7,13 @@
 export interface HorseIndices {
   horseNumber: number;
   horseName: string;
-  
+
   // 基本指数（indicesテーブルから）
   T2F: number | null;          // 前半2Fラップ（秒）
   L4F: number | null;          // 後半4F指数
   potential: number | null;    // ポテンシャル指数
   makikaeshi: number | null;   // 巻き返し指数
-  PFS: number | null;          // 先行期待度（過去）※indicesから取得
+  pfs: number | null;          // 先行期待度（過去）※indicesから取得
   revouma: number | null;      // レボウマ指数
   cushion: number | null;      // クッション値
   
@@ -40,7 +40,7 @@ export interface HorseIndices {
     L4F: number | null;
     potential: number | null;
     makikaeshi: number | null;
-    PFS: number | null;
+    pfs: number | null;
     raceCount: number;
   };
 }
@@ -96,7 +96,7 @@ export async function fetchHorseIndices(
   const lastRaceId = lastRace.race_id + lastRace.umaban.padStart(2, '0');
   
   const lastIndexQuery = `
-    SELECT "T2F", "L4F", potential, makikaeshi, "PFS", revouma, cushion
+    SELECT "T2F", "L4F", potential, makikaeshi, pfs, revouma, cushion
     FROM indices
     WHERE race_id = $1
   `;
@@ -106,7 +106,7 @@ export async function fetchHorseIndices(
     L4F: number;
     potential: number;
     makikaeshi: number;
-    PFS: number;
+    pfs: number;
     revouma: number;
     cushion: number;
   } | undefined;
@@ -130,7 +130,7 @@ export async function fetchHorseIndices(
     L4F: number;
     potential: number;
     makikaeshi: number;
-    PFS: number;
+    pfs: number;
     revouma: number;
     cushion: number;
   }> = [];
@@ -138,7 +138,7 @@ export async function fetchHorseIndices(
   for (const race of relevantRaces) {
     const raceId = race.race_id + race.umaban.padStart(2, '0');
     const indexQuery = `
-      SELECT "T2F", "L4F", potential, makikaeshi, "PFS", revouma, cushion
+      SELECT "T2F", "L4F", potential, makikaeshi, pfs, revouma, cushion
       FROM indices
       WHERE race_id = $1
     `;
@@ -156,7 +156,7 @@ export async function fetchHorseIndices(
     L4F: average(indicesData.map(d => d.L4F).filter(v => v !== null && v > 0)),
     potential: average(indicesData.map(d => d.potential).filter(v => v !== null)),
     makikaeshi: average(indicesData.map(d => d.makikaeshi).filter(v => v !== null)),
-    PFS: average(indicesData.map(d => d.PFS).filter(v => v !== null)),
+    pfs: average(indicesData.map(d => d.pfs).filter(v => v !== null)),
     raceCount: indicesData.length,
   };
   
@@ -167,7 +167,7 @@ export async function fetchHorseIndices(
     L4F: lastIndexData?.L4F || null,
     potential: lastIndexData?.potential || null,
     makikaeshi: lastIndexData?.makikaeshi || null,
-    PFS: lastIndexData?.PFS || null,
+    pfs: lastIndexData?.pfs || null,
     revouma: lastIndexData?.revouma || null,
     cushion: lastIndexData?.cushion || null,
     pastPositions,
@@ -214,7 +214,7 @@ function createEmptyIndices(horseNumber: number, horseName: string): HorseIndice
       L4F: null,
       potential: null,
       makikaeshi: null,
-      PFS: null,
+      pfs: null,
       raceCount: 0,
     },
   };
@@ -267,8 +267,8 @@ export function calculateLeadingIntention(indices: HorseIndices): number {
   let score = 50; // デフォルト
   
   // PFS指数がある場合、それを基準に（0-100スケール）
-  if (indices.PFS !== null) {
-    score = indices.PFS;
+  if (indices.pfs !== null) {
+    score = indices.pfs;
   }
   
   // 過去1C通過順位で補正

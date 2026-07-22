@@ -113,9 +113,9 @@ export async function runRaceSimulation(
     
     // 過去通過順パターン
     const pastPositionPattern = getPastPositionPattern(indices.pastPositions);
-    
+
     // PFS
-    const pfs = indices.avgData.PFS || 50;
+    const pfs = indices.avgData.pfs || 50;
     
     if (enableDetailedLog) {
       logCapabilities(horseName, capabilities, indices);

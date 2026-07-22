@@ -70,9 +70,9 @@ function calculateStartSpeed(indices: HorseIndices): number {
   // ========================================
   // 2. PFS（先行期待度）: 20%
   // ========================================
-  if (indices.avgData.PFS !== null) {
+  if (indices.avgData.pfs !== null) {
     // PFSは既に0-100スケールと仮定
-    score += indices.avgData.PFS * 0.2;
+    score += indices.avgData.pfs * 0.2;
     weight += 0.2;
   }
   
@@ -390,7 +390,7 @@ export function logCapabilities(
   indices: HorseIndices
 ): void {
   console.log(`[Capabilities] ${horseName}:`);
-  console.log(`  スタート: ${capabilities.startSpeed.toFixed(0)} (T2F=${indices.avgData.T2F?.toFixed(1)}, PFS=${indices.avgData.PFS?.toFixed(1)}, 前走1C=${indices.lastRace.corner1})`);
+  console.log(`  スタート: ${capabilities.startSpeed.toFixed(0)} (T2F=${indices.avgData.T2F?.toFixed(1)}, pfs=${indices.avgData.pfs?.toFixed(1)}, 前走1C=${indices.lastRace.corner1})`);
   console.log(`  巡航速度: ${capabilities.cruiseSpeed.toFixed(0)} (potential=${indices.avgData.potential?.toFixed(1)})`);
   console.log(`  加速力  : ${capabilities.acceleration.toFixed(0)} (L4F=${indices.avgData.L4F?.toFixed(1)}, makikaeshi=${indices.avgData.makikaeshi?.toFixed(1)})`);
   console.log(`  スタミナ: ${capabilities.stamina.toFixed(0)} (potential=${indices.avgData.potential?.toFixed(1)}, 実績=${indices.avgData.raceCount}走)`);
