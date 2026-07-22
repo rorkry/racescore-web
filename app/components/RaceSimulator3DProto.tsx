@@ -345,14 +345,21 @@ export default function RaceSimulator3DProto({
   
   // 馬の位置更新
   const updateHorses = (currentState: RaceTimelineKeyframe) => {
-    // デバッグ: 最初の数秒だけログ出力
-    if (currentTimeRef.current < 3 && Math.random() < 0.1) {
+    // デバッグ: 1秒ごとにログ出力
+    const currentSecond = Math.floor(currentTimeRef.current);
+    const lastLoggedSecond = (window as any).__lastLoggedSecond || -1;
+    
+    if (currentSecond !== lastLoggedSecond && currentSecond % 5 === 0) {
+      (window as any).__lastLoggedSecond = currentSecond;
       const horse1 = currentState.horses.find(h => h.horseNumber === 1);
-      console.log('[DEBUG] updateHorses:', {
+      console.log('[DEBUG] updateHorses (時刻=' + currentSecond + '秒):', {
         time: currentState.time,
+        phase: currentState.phase,
         horse1Distance: horse1?.currentDistance,
+        horse1Velocity: horse1?.currentVelocity,
         horse1Position: horse1?.position,
-        meshCount: horseMeshesRef.current.size
+        meshCount: horseMeshesRef.current.size,
+        horsesCount: currentState.horses.length
       });
     }
     
