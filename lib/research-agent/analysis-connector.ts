@@ -388,14 +388,18 @@ export class AnalysisConnector {
       console.log(`  三着内率: ${(show_rate * 100).toFixed(2)}%`);
       console.log('');
 
-      // 回収率計算（オッズ × 的中率 × 100 = %）
-      const win_return_rate = avg_win_odds > 0 ? (win_rate * avg_win_odds * 100) : 0;
+      // 回収率計算（正しい計算: 勝った馬のオッズを使用）
+      const avg_winning_odds = parseFloat(debugResult.avg_winning_odds) || 0;
+      const avg_losing_odds = parseFloat(debugResult.avg_losing_odds) || 0;
+      
+      const win_return_rate = avg_winning_odds > 0 ? (win_rate * avg_winning_odds * 100) : 0;
       const place_return_rate = avg_place_odds > 0 ? (show_rate * avg_place_odds * 100) : 0;
       
       console.log('【回収率計算】');
-      console.log(`  計算式: 勝率 × 平均オッズ × 100`);
-      console.log(`  単勝回収率: ${win_rate.toFixed(4)} × ${avg_win_odds.toFixed(2)} × 100 = ${win_return_rate.toFixed(1)}%`);
+      console.log(`  計算式: 勝率 × 勝った馬の平均オッズ × 100`);
+      console.log(`  単勝回収率: ${win_rate.toFixed(4)} × ${avg_winning_odds.toFixed(2)} × 100 = ${win_return_rate.toFixed(1)}%`);
       console.log(`  複勝回収率: ${show_rate.toFixed(4)} × ${avg_place_odds.toFixed(2)} × 100 = ${place_return_rate.toFixed(1)}%`);
+      console.log(`  参考: 全体平均オッズ ${avg_win_odds.toFixed(2)}倍（勝ち馬 ${avg_winning_odds.toFixed(2)}倍、負け馬 ${avg_losing_odds.toFixed(2)}倍）`);
       
       // 期待値計算
       const expected_profit_per_100yen = (win_return_rate - 100);
@@ -411,9 +415,9 @@ export class AnalysisConnector {
         total_horses: parseInt(debugResult.total_horses, 10) || 0,
         horses_with_odds: parseInt(debugResult.horses_with_odds, 10) || 0,
         winning_horses: parseInt(debugResult.winning_horses, 10) || 0,
-        avg_all_odds: avg_win_odds,
-        avg_winning_odds: parseFloat(debugResult.avg_winning_odds) || 0,
-        avg_losing_odds: parseFloat(debugResult.avg_losing_odds) || 0
+        avg_all_odds: avg_win_odds,  // 参考値（使用しない）
+        avg_winning_odds: avg_winning_odds,  // 回収率計算に使用
+        avg_losing_odds: avg_losing_odds
       };
 
       // 投資パフォーマンス

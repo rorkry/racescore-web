@@ -246,12 +246,15 @@ export default function ConditionDebugView({ result, index }: ConditionDebugView
                   <div className="border-t border-gray-200 pt-2">
                     <div className="text-xs">
                       <span className="font-bold">回収率計算式:</span>{' '}
-                      勝率({(stats.win_rate * 100).toFixed(2)}%) × 全体平均オッズ({result.debug_info.odds_breakdown.avg_all_odds.toFixed(2)}倍) = {stats.win_return_rate.toFixed(1)}%
+                      勝率({(stats.win_rate * 100).toFixed(2)}%) × 勝った馬の平均オッズ({result.debug_info.odds_breakdown.avg_winning_odds.toFixed(2)}倍) = {stats.win_return_rate.toFixed(1)}%
                     </div>
-                    {result.debug_info.odds_breakdown.avg_winning_odds > result.debug_info.odds_breakdown.avg_all_odds * 3 && (
+                    <div className="text-xs text-gray-600 mt-1">
+                      参考: 全体平均 {result.debug_info.odds_breakdown.avg_all_odds.toFixed(2)}倍 (勝ち馬 {result.debug_info.odds_breakdown.avg_winning_odds.toFixed(2)}倍 / 負け馬 {result.debug_info.odds_breakdown.avg_losing_odds.toFixed(2)}倍)
+                    </div>
+                    {result.debug_info.odds_breakdown.avg_winning_odds > result.debug_info.odds_breakdown.avg_all_odds * 1.5 && (
                       <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
                         <div className="text-yellow-800 text-xs">
-                          ⚠️ 勝った馬のオッズが全体平均の3倍以上です。高配当馬に偏っている可能性があります。
+                          ⚠️ 勝った馬のオッズ({result.debug_info.odds_breakdown.avg_winning_odds.toFixed(2)}倍)が全体平均({result.debug_info.odds_breakdown.avg_all_odds.toFixed(2)}倍)より高めです。高配当馬に偏っている可能性があります。
                         </div>
                       </div>
                     )}
