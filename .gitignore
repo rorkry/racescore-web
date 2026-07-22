@@ -30,6 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# temp files
+temp_*.tsx
+temp_*.ts
+*.log
+!quick-push.bat
+
 # env files (can opt-in for committing if needed)
 .env*
 
