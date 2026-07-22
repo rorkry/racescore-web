@@ -235,6 +235,13 @@ export function executeStraightPhase(
   const straightStart = courseInfo?.distance ? courseInfo.distance - courseInfo.straightLength : 1400;
   const goalDistance = courseInfo?.distance || 1600;
   
+  console.warn('[StraightPhase] 距離設定:', {
+    courseInfoDistance: courseInfo?.distance,
+    goalDistance: goalDistance,
+    straightStart: straightStart,
+    fallback使用: goalDistance === 1600 ? 'YES ❌' : 'NO ✓'
+  });
+  
   return {
     phaseName: '直線〜ゴール',
     distanceRange: { start: straightStart, end: goalDistance },

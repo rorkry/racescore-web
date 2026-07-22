@@ -74,13 +74,21 @@ export async function runRaceSimulation(
   // ========================================
   // 2. コース情報を取得
   // ========================================
-  const courseInfo = getCourseInfo(place, currentDistance, trackType as 'turf' | 'dirt');
+  console.warn('[Simulator] 距離情報:', {
+    入力distance: distance,
+    DB_currentDistance: currentDistance,
+    不一致: distance !== currentDistance ? 'YES ❌' : 'NO ✓'
+  });
   
-  console.log(`[Simulator] コース: ${place} ${currentDistance}m ${trackType}`);
+  // 明示的に入力されたdistanceを使用
+  const courseInfo = getCourseInfo(place, distance, trackType as 'turf' | 'dirt');
+  
+  console.log(`[Simulator] コース: ${place} ${distance}m ${trackType}`);
   if (courseInfo) {
     console.log(`  直線: ${courseInfo.straightLength}m`);
     console.log(`  坂: ${courseInfo.slopes.length}箇所`);
     console.log(`  傾向: ${courseInfo.paceTendency}`);
+    console.log(`  CourseInfo.distance: ${courseInfo.distance}m`);
   }
   
   // ========================================
@@ -98,7 +106,7 @@ export async function runRaceSimulation(
     const indices = await fetchHorseIndices(
       db,
       horseName,
-      currentDistance,
+      distance,
       targetSurface,
       currentRaceDateNum
     );
@@ -165,7 +173,7 @@ export async function runRaceSimulation(
   }, startPhaseResult);
   
   // Phase 3-4: コーナーフェーズ
-  const straightStart = courseInfo ? currentDistance - courseInfo.straightLength : currentDistance * 0.8;
+  const straightStart = courseInfo ? distance - courseInfo.straightLength : distance * 0.8;
   const cornerPhaseResult = executeCornerPhase({
     horses: formationPhaseResult.horses,
     courseInfo,
@@ -213,7 +221,7 @@ export async function runRaceSimulation(
   // ========================================
   // 【Phase 4.1】整合性検証
   // ========================================
-  const validation = validateSimulation(result, currentDistance);
+  const validation = validateSimulation(result, distance);
   
   if (!validation.valid) {
     console.error('[Simulator] 整合性エラーが検出されました！');
