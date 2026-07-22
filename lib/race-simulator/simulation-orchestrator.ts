@@ -196,49 +196,91 @@ export async function runRaceSimulation(
   // ========================================
   const raceKey = `${year}${date}_${place}_${raceNumber}`;
   
-  // 【診断】pace と goal を含む全6フェーズの馬1番をチェック
+  // 【診断】ディープコピー前の元データをチェック（修正前の確認用）
   const horse1Start = startPhaseResult.horses.find(h => h.horseNumber === 1);
   const horse1Formation = formationPhaseResult.horses.find(h => h.horseNumber === 1);
-  const horse1Pace = formationPhaseResult.horses.find(h => h.horseNumber === 1); // 現在は formation と同じ
   const horse1Corner = cornerPhaseResult.horses.find(h => h.horseNumber === 1);
   const horse1Straight = straightPhaseResult.horses.find(h => h.horseNumber === 1);
-  const horse1Goal = straightPhaseResult.horses.find(h => h.horseNumber === 1); // 現在は straight と同じ
   
-  console.warn('[Simulator] 各フェーズの馬1番 currentDistance:', {
+  console.warn('[Simulator] 各フェーズの馬1番 currentDistance（元データ）:', {
     start: horse1Start?.currentDistance.toFixed(1) + 'm',
     formation: horse1Formation?.currentDistance.toFixed(1) + 'm',
-    pace: horse1Pace?.currentDistance.toFixed(1) + 'm',
-    corner3_4: horse1Corner?.currentDistance.toFixed(1) + 'm',
+    corner: horse1Corner?.currentDistance.toFixed(1) + 'm',
     straight: horse1Straight?.currentDistance.toFixed(1) + 'm',
-    goal: horse1Goal?.currentDistance.toFixed(1) + 'm',
   });
   
-  console.warn('[Simulator] 決定的チェック:', {
-    'formation === pace': horse1Formation?.currentDistance === horse1Pace?.currentDistance,
-    'straight === goal': horse1Straight?.currentDistance === horse1Goal?.currentDistance,
-  });
-  
-  // 【診断】オブジェクト参照チェック
-  console.warn('[Simulator] オブジェクト参照チェック:', {
-    'start.horses === formation.horses': startPhaseResult.horses === formationPhaseResult.horses,
-    'formation.horses === corner.horses': formationPhaseResult.horses === cornerPhaseResult.horses,
-    'corner.horses === straight.horses': cornerPhaseResult.horses === straightPhaseResult.horses,
+  console.warn('[Simulator] オブジェクト参照チェック（修正前）:', {
     '馬1番オブジェクト同一': horse1Start === horse1Formation && horse1Formation === horse1Corner,
   });
+  
+  // 【修正】各フェーズの馬状態をディープコピーして保存
+  const startSnapshot = {
+    ...startPhaseResult,
+    horses: structuredClone(startPhaseResult.horses),
+  };
+  
+  const formationSnapshot = {
+    ...formationPhaseResult,
+    horses: structuredClone(formationPhaseResult.horses),
+  };
+  
+  // paceはformationとは独立したスナップショット
+  const paceSnapshot = {
+    ...formationPhaseResult,
+    horses: structuredClone(formationPhaseResult.horses),
+  };
+  
+  const cornerSnapshot = {
+    ...cornerPhaseResult,
+    horses: structuredClone(cornerPhaseResult.horses),
+  };
+  
+  const straightSnapshot = {
+    ...straightPhaseResult,
+    horses: structuredClone(straightPhaseResult.horses),
+  };
+  
+  // goalはstraightとは独立したスナップショット
+  const goalSnapshot = {
+    ...straightPhaseResult,
+    horses: structuredClone(straightPhaseResult.horses),
+  };
   
   const result: SimulationResult = {
     raceKey,
     raceDistance: distance, // レース距離を明示的に保持
     phases: {
-      start: startPhaseResult,
-      formation: formationPhaseResult,
-      pace: formationPhaseResult, // 同じ
-      corner3_4: cornerPhaseResult,
-      straight: straightPhaseResult,
-      goal: straightPhaseResult, // 同じ
+      start: startSnapshot,
+      formation: formationSnapshot,
+      pace: paceSnapshot,
+      corner3_4: cornerSnapshot,
+      straight: straightSnapshot,
+      goal: goalSnapshot,
     },
-    finalStandings: straightPhaseResult.horses,
+    finalStandings: structuredClone(straightPhaseResult.horses),
   };
+  
+  // 【診断】修正後の確認
+  const horse1_start = result.phases.start.horses.find(h => h.horseNumber === 1);
+  const horse1_formation = result.phases.formation.horses.find(h => h.horseNumber === 1);
+  const horse1_pace = result.phases.pace.horses.find(h => h.horseNumber === 1);
+  const horse1_corner = result.phases.corner3_4.horses.find(h => h.horseNumber === 1);
+  const horse1_straight = result.phases.straight.horses.find(h => h.horseNumber === 1);
+  const horse1_goal = result.phases.goal.horses.find(h => h.horseNumber === 1);
+  
+  console.warn('[Simulator] 各フェーズの馬1番 currentDistance（修正後）:', {
+    start: horse1_start?.currentDistance.toFixed(1) + 'm',
+    formation: horse1_formation?.currentDistance.toFixed(1) + 'm',
+    pace: horse1_pace?.currentDistance.toFixed(1) + 'm',
+    corner3_4: horse1_corner?.currentDistance.toFixed(1) + 'm',
+    straight: horse1_straight?.currentDistance.toFixed(1) + 'm',
+    goal: horse1_goal?.currentDistance.toFixed(1) + 'm',
+  });
+  
+  console.warn('[Simulator] オブジェクト参照チェック（修正後）:', {
+    '馬1番オブジェクト同一': horse1_start === horse1_formation,
+    '期待値': 'false',
+  });
   
   console.log('========================================');
   console.log('[Simulator] シミュレーション完了');
