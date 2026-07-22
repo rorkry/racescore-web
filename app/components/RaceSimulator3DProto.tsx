@@ -17,10 +17,16 @@ interface RaceSimulator3DProtoProps {
  * 目標: 実在する1レースを、現在のシミュレーション結果に沿って、
  *       スタートからゴールまで3Dで再生できること
  */
+// コンポーネント外でログ（確実に実行される）
+console.log('[SimulatorDebug] ===  RaceSimulator3DProto.tsx が読み込まれました ===');
+
 export default function RaceSimulator3DProto({
   simulationResult,
   courseInfo,
 }: RaceSimulator3DProtoProps) {
+  // コンポーネントマウント時に即座にログ
+  console.log('[SimulatorDebug] RaceSimulator3DProto マウント開始', { simulationResult: !!simulationResult, courseInfo: !!courseInfo });
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
