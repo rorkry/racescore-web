@@ -14,6 +14,9 @@ export interface TrackPosition {
   elevation: number;
 }
 
+// fallback警告を初回のみ出力するためのフラグ
+let fallbackWarningShown = false;
+
 /**
  * コース上の距離とlateralPositionから3D座標を計算
  */
@@ -24,7 +27,11 @@ export function getTrackPosition(
 ): TrackPosition {
   // fallback: 直線コースとして扱う
   if (!courseInfo) {
-    console.warn('[CourseGeometry] CourseInfo未設定: fallback使用');
+    if (!fallbackWarningShown) {
+      console.warn('[CourseGeometry] CourseInfo未設定: fallback使用 (この警告は初回のみ表示)');
+      console.warn('[CourseGeometry] fallback理由: courseInfo が null または undefined');
+      fallbackWarningShown = true;
+    }
     return getLinearTrackPosition(distance, lateralPosition, 1600);
   }
   

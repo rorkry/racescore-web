@@ -46,6 +46,9 @@ export default function RaceSimulator3DProto({
   const lastTimeRef = useRef<number>(0);
   const currentTimeRef = useRef<number>(0); // 内部再生時刻（毎フレーム更新）
   const lastUIUpdateRef = useRef<number>(0); // 最後にUI更新した時刻
+  const lastDebugAtRef = useRef<number>(0); // デバッグログ出力時刻
+  const previousDistanceRef = useRef<number | null>(null); // 前回の距離
+  const debugInitializedRef = useRef<boolean>(false); // 初回ログ出力済み
   
   // タイムライン生成
   useEffect(() => {
@@ -55,33 +58,62 @@ export default function RaceSimulator3DProto({
     const tl = generateTimeline(simulationResult);
     setTimeline(tl);
     
-    // デバッグ: keyframes データの確認
-    console.log('[DEBUG] タイムライン生成完了');
-    console.log('[DEBUG] keyframes数:', tl.keyframes.length);
-    console.log('[DEBUG] 総再生時間:', tl.totalDuration);
-    console.log('[DEBUG] コース距離:', tl.courseDistance);
+    // 初回デバッグ: keyframes データの確認
+    console.log('[SimulatorDebug] === タイムライン生成完了 ===');
+    console.log('[SimulatorDebug] keyframes数:', tl.keyframes.length);
+    console.log('[SimulatorDebug] 総再生時間:', tl.totalDuration, '秒');
+    console.log('[SimulatorDebug] コース距離:', tl.courseDistance, 'm');
     
     if (tl.keyframes.length > 0) {
       const firstFrame = tl.keyframes[0];
       const midFrame = tl.keyframes[Math.floor(tl.keyframes.length / 2)];
       const lastFrame = tl.keyframes[tl.keyframes.length - 1];
       
-      console.log('[DEBUG] 先頭フレーム (t=0):', {
+      const horse1First = firstFrame.horses.find(h => h.horseNumber === 1);
+      const horse1Mid = midFrame.horses.find(h => h.horseNumber === 1);
+      const horse1Last = lastFrame.horses.find(h => h.horseNumber === 1);
+      
+      console.log('[SimulatorDebug] 先頭フレーム (t=0):', {
         time: firstFrame.time,
-        horse1: firstFrame.horses.find(h => h.horseNumber === 1)
+        phase: firstFrame.phase,
+        horsesCount: firstFrame.horses.length,
+        horse1: horse1First ? {
+          horseNumber: horse1First.horseNumber,
+          horseName: horse1First.horseName,
+          currentDistance: horse1First.currentDistance,
+          currentVelocity: horse1First.currentVelocity,
+          lateralPosition: horse1First.lateralPosition,
+          position: horse1First.position
+        } : 'not found'
       });
       
-      console.log('[DEBUG] 中間フレーム:', {
+      console.log('[SimulatorDebug] 中間フレーム (t=' + midFrame.time.toFixed(1) + '):', {
         time: midFrame.time,
-        horse1: midFrame.horses.find(h => h.horseNumber === 1)
+        phase: midFrame.phase,
+        horse1: horse1Mid ? {
+          currentDistance: horse1Mid.currentDistance,
+          currentVelocity: horse1Mid.currentVelocity,
+          position: horse1Mid.position
+        } : 'not found'
       });
       
-      console.log('[DEBUG] 最終フレーム:', {
+      console.log('[SimulatorDebug] 最終フレーム (t=' + lastFrame.time.toFixed(1) + '):', {
         time: lastFrame.time,
-        horse1: lastFrame.horses.find(h => h.horseNumber === 1)
+        phase: lastFrame.phase,
+        horse1: horse1Last ? {
+          currentDistance: horse1Last.currentDistance,
+          currentVelocity: horse1Last.currentVelocity,
+          position: horse1Last.position
+        } : 'not found'
       });
+      
+      console.log('[SimulatorDebug] 利用可能なフィールド (horse1):', horse1First ? Object.keys(horse1First) : []);
     }
-  }, [simulationResult]);
+    
+    console.log('[SimulatorDebug] CourseInfo:', courseInfo);
+    
+    debugInitializedRef.current = true;
+  }, [simulationResult, courseInfo]);
   
   // Three.js初期化
   useEffect(() => {
@@ -345,22 +377,56 @@ export default function RaceSimulator3DProto({
   
   // 馬の位置更新
   const updateHorses = (currentState: RaceTimelineKeyframe) => {
-    // デバッグ: 1秒ごとにログ出力
-    const currentSecond = Math.floor(currentTimeRef.current);
-    const lastLoggedSecond = (window as any).__lastLoggedSecond || -1;
-    
-    if (currentSecond !== lastLoggedSecond && currentSecond % 5 === 0) {
-      (window as any).__lastLoggedSecond = currentSecond;
+    // デバッグ: 1秒に1回だけログ出力
+    const now = performance.now();
+    if (now - lastDebugAtRef.current >= 1000) {
+      lastDebugAtRef.current = now;
+      
       const horse1 = currentState.horses.find(h => h.horseNumber === 1);
-      console.log('[DEBUG] updateHorses (時刻=' + currentSecond + '秒):', {
-        time: currentState.time,
-        phase: currentState.phase,
-        horse1Distance: horse1?.currentDistance,
-        horse1Velocity: horse1?.currentVelocity,
-        horse1Position: horse1?.position,
-        meshCount: horseMeshesRef.current.size,
-        horsesCount: currentState.horses.length
-      });
+      const mesh1 = horse1 ? horseMeshesRef.current.get(horse1.horseNumber) : null;
+      
+      if (horse1) {
+        const trackPos = getTrackPosition(horse1.currentDistance, horse1.lateralPosition, courseInfo);
+        const distanceDelta = previousDistanceRef.current !== null 
+          ? horse1.currentDistance - previousDistanceRef.current 
+          : null;
+        
+        console.log('[SimulatorDebug] 1秒間隔診断:', {
+          currentTime: currentTimeRef.current.toFixed(2) + '秒',
+          frameTime: currentState.time.toFixed(2) + '秒',
+          phase: currentState.phase,
+          horse1: {
+            horseNumber: horse1.horseNumber,
+            horseName: horse1.horseName,
+            currentDistance: horse1.currentDistance.toFixed(1) + 'm',
+            distanceDelta: distanceDelta !== null ? distanceDelta.toFixed(1) + 'm' : 'N/A',
+            currentVelocity: horse1.currentVelocity.toFixed(1) + 'm/s',
+            lateralPosition: horse1.lateralPosition.toFixed(2),
+            position: horse1.position
+          },
+          timeline座標: {
+            x: trackPos.x.toFixed(1),
+            y: trackPos.y.toFixed(1),
+            z: trackPos.z.toFixed(1)
+          },
+          mesh座標: mesh1 ? {
+            x: mesh1.position.x.toFixed(1),
+            y: mesh1.position.y.toFixed(1),
+            z: mesh1.position.z.toFixed(1)
+          } : 'mesh not found',
+          座標差: mesh1 ? {
+            dx: (trackPos.x - mesh1.position.x).toFixed(1),
+            dy: (trackPos.y - (mesh1.position.y - 1)).toFixed(1),
+            dz: (trackPos.z - mesh1.position.z).toFixed(1)
+          } : null,
+          meshCount: horseMeshesRef.current.size,
+          horsesCount: currentState.horses.length
+        });
+        
+        previousDistanceRef.current = horse1.currentDistance;
+      } else {
+        console.warn('[SimulatorDebug] horse1 が見つかりません');
+      }
     }
     
     for (const horse of currentState.horses) {
