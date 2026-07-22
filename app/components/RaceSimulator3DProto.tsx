@@ -498,7 +498,7 @@ export default function RaceSimulator3DProto({
       >
         {/* コンポーネント情報（左上） */}
         <div className="absolute left-2 top-2 z-50 bg-red-600 px-2 py-1 text-xs text-white font-mono rounded">
-          DEBUG: RaceSimulator3DProto e23c15f
+          DEBUG: RaceSimulator3DProto ff6b515
         </div>
         
         {/* CourseInfo 追跡（右上） */}

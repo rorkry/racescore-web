@@ -104,6 +104,46 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
   console.log(`[TimelineGenerator] 総再生時間: ${totalDuration.toFixed(1)}秒`);
   console.log(`[TimelineGenerator] コース距離: ${courseDistance}m`);
   
+  // キーフレーム診断ログ（馬1番について）
+  if (uniqueKeyframes.length > 0) {
+    const firstFrame = uniqueKeyframes[0];
+    const midFrame = uniqueKeyframes[Math.floor(uniqueKeyframes.length / 2)];
+    const lastFrame = uniqueKeyframes[uniqueKeyframes.length - 1];
+    
+    const horse1First = firstFrame.horses.find(h => h.horseNumber === 1);
+    const horse1Mid = midFrame.horses.find(h => h.horseNumber === 1);
+    const horse1Last = lastFrame.horses.find(h => h.horseNumber === 1);
+    
+    console.log('[TimelineGenerator] === キーフレーム診断（馬1番） ===');
+    console.log('[TimelineGenerator] 先頭フレーム:', {
+      time: firstFrame.time,
+      horse1: horse1First ? {
+        currentDistance: horse1First.currentDistance,
+        currentVelocity: horse1First.currentVelocity,
+        position: horse1First.position,
+        distanceFromLeader: horse1First.distanceFromLeader
+      } : 'NOT FOUND'
+    });
+    console.log('[TimelineGenerator] 中間フレーム:', {
+      time: midFrame.time,
+      horse1: horse1Mid ? {
+        currentDistance: horse1Mid.currentDistance,
+        currentVelocity: horse1Mid.currentVelocity,
+        position: horse1Mid.position,
+        distanceFromLeader: horse1Mid.distanceFromLeader
+      } : 'NOT FOUND'
+    });
+    console.log('[TimelineGenerator] 最終フレーム:', {
+      time: lastFrame.time,
+      horse1: horse1Last ? {
+        currentDistance: horse1Last.currentDistance,
+        currentVelocity: horse1Last.currentVelocity,
+        position: horse1Last.position,
+        distanceFromLeader: horse1Last.distanceFromLeader
+      } : 'NOT FOUND'
+    });
+  }
+  
   return {
     raceKey: result.raceKey,
     totalDuration,
