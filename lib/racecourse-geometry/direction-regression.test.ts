@@ -5,14 +5,22 @@
  * 目的: directionSign を誤って反転できないよう、全10競馬場の
  *       「馬の進行方向に対する旋回向き」を数値で固定する。
  *
- * 判定規約（Three.js: Y=up, 地面=XZ。sampleRaceProgressPose の tangent は
- *          レース進行方向。連続 tangent の外積 Y成分 = a.z*b.x - a.x*b.z を周回で積算）:
- *   - 右回り(clockwise)      : sumCross ≈ +2π (> 0)
- *   - 左回り(counterclockwise): sumCross ≈ -2π (< 0)
+ * 判定規約（Three.js は右手系。地面=XZ、上=+Y。上空(+Y)から見下ろすと
+ *          +X が右・+Z が「下」に見える＝俯瞰が正本）:
+ *   sumCross = Σ (a×b).y = Σ (a.z*b.x - a.x*b.z)  … 俯瞰(from +Y)での回転量
+ *   右手則により俯瞰では:
+ *     - sumCross < 0 = 時計回り(CW) = JRA 右回り(clockwise)   → ≈ -2π
+ *     - sumCross > 0 = 反時計回り(CCW) = JRA 左回り(ccw)      → ≈ +2π
  *   - 直線(straight/open-path): sumCross ≈ 0
  *   - tangent は実移動方向と一致: 各ステップ dot(tangent, Δposition) > 0.99
  *
- * これは方向ロジックの検証専用であり、方向ロジック自体は一切変更しない。
+ * 【修正履歴】以前は「+Z が画面上(北)」という誤前提で
+ *   右回り→sumCross>0, 左回り→sumCross<0 を期待しており、テストは PASS していたが
+ *   実際の Three.js 俯瞰では +Z が下向きのため回転が反転し、全 closed-loop が
+ *   公式と逆に描画されていた（本番目視で函館/福島/小倉=左, 東京=右）。
+ *   右手則に従い期待符号を反転して現実(描画)に一致させる。
+ *
+ * これは方向ロジックの検証専用であり、判定規約を現実へ合わせる修正である。
  */
 
 import { ALL_GEOMETRIES, GEOMETRIES_BY_VENUE, VENUE_IDS } from './registries';
@@ -70,13 +78,13 @@ for (const geom of ALL_GEOMETRIES) {
   check(`${id}: tangentが移動方向と一致(dot>0.99)`, minDot > 0.99, `minDot=${minDot.toFixed(4)}`);
 
   if (geom.direction === 'clockwise') {
-    // 右回り: 進行方向に対し右へ曲がる → sumCross > 0（≈ +2π）
-    check(`${id}: 右回りは sumCross>0`, sumCross > 1, `sumCross=${sumCross.toFixed(3)}`);
-    check(`${id}: 右回り 総旋回≈+2π`, Math.abs(sumCross - TWO_PI) < 0.2, `sumCross=${sumCross.toFixed(3)}`);
+    // 右回り: 俯瞰で時計回り(CW) → sumCross < 0（≈ -2π）
+    check(`${id}: 右回りは俯瞰CW(sumCross<0)`, sumCross < -1, `sumCross=${sumCross.toFixed(3)}`);
+    check(`${id}: 右回り 総旋回≈-2π`, Math.abs(sumCross + TWO_PI) < 0.2, `sumCross=${sumCross.toFixed(3)}`);
   } else if (geom.direction === 'counterclockwise') {
-    // 左回り: 進行方向に対し左へ曲がる → sumCross < 0（≈ -2π）
-    check(`${id}: 左回りは sumCross<0`, sumCross < -1, `sumCross=${sumCross.toFixed(3)}`);
-    check(`${id}: 左回り 総旋回≈-2π`, Math.abs(sumCross + TWO_PI) < 0.2, `sumCross=${sumCross.toFixed(3)}`);
+    // 左回り: 俯瞰で反時計回り(CCW) → sumCross > 0（≈ +2π）
+    check(`${id}: 左回りは俯瞰CCW(sumCross>0)`, sumCross > 1, `sumCross=${sumCross.toFixed(3)}`);
+    check(`${id}: 左回り 総旋回≈+2π`, Math.abs(sumCross - TWO_PI) < 0.2, `sumCross=${sumCross.toFixed(3)}`);
   } else {
     // 直線: 実質旋回しない
     check(`${id}: 直線は sumCross≈0`, Math.abs(sumCross) < 0.05, `sumCross=${sumCross.toFixed(4)}`);
