@@ -89,9 +89,24 @@ export default function RaceSimulator3DProto({
   const dynamicsRef = useRef<RaceDynamicsResult | null>(null);
   const trackGroupsRef = useRef<TrackRenderResult[]>([]);
   const groundRef = useRef<THREE.Mesh | null>(null);
+  // レース切替の安全化: シーン世代。init のたびに +1 し、
+  // 古い requestAnimationFrame ループ（旧世代）は自分の世代不一致で即停止する。
+  const sceneGenerationRef = useRef<number>(0);
   
   // 画面内デバッグHUD用の状態
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  
+  // レース識別シグネチャ（これが変わったときだけ 3D シーンを作り直す）。
+  // simulationResult / courseInfo はfetchのたびに新規オブジェクトになるため、
+  // オブジェクト参照ではなく安定した文字列で init をキーする（多重initによる不整合を防ぐ）。
+  const raceSignature = [
+    simulationResult?.raceKey ?? '',
+    simulationResult?.raceDistance ?? '',
+    courseInfo?.id ?? '',
+    courseInfo?.place ?? '',
+    courseInfo?.distance ?? '',
+    courseInfo?.trackType ?? '',
+  ].join('::');
   
   // CourseInfo追跡（初回のみ）
   useEffect(() => {
@@ -202,11 +217,20 @@ export default function RaceSimulator3DProto({
     }
   }, [courseInfo]);
   
-  // Three.js初期化
+  // Three.js初期化（raceSignature が変わったときだけ再構築）
   useEffect(() => {
-    if (!containerRef.current || !timeline) return;
+    if (!containerRef.current || !simulationResult) return;
     
     console.log('[3DSimulator] Three.js初期化中...');
+    
+    // このレース用の timeline をローカル生成（stateのlagで layout と食い違わないようにする）
+    const tl = generateTimeline(simulationResult);
+    setTimeline(tl);
+    
+    // シーン世代を更新（旧世代の animate ループを無効化）
+    sceneGenerationRef.current++;
+    // 念のため trackGroups を初期化（cleanup 済みのはずだが多重防御）
+    trackGroupsRef.current = [];
     
     // シーン
     const scene = new THREE.Scene();
@@ -289,15 +313,15 @@ export default function RaceSimulator3DProto({
         trackGroupsRef.current.push(sf);
       } catch (e) {
         console.error('[3DSimulator] 新走路描画エラー（旧描画へfallback）:', e);
-        createCourse(scene, timeline.courseDistance, courseInfo);
+        createCourse(scene, tl.courseDistance, courseInfo);
       }
     } else {
       // layout 解決不可 → 旧 VisualCourseCurve 描画へ fallback
-      createCourse(scene, timeline.courseDistance, courseInfo);
+      createCourse(scene, tl.courseDistance, courseInfo);
     }
     
     // 馬作成
-    createHorses(scene, timeline.keyframes[0]);
+    createHorses(scene, tl.keyframes[0]);
     
     console.log('[3DSimulator] Three.js初期化完了');
     
@@ -305,8 +329,12 @@ export default function RaceSimulator3DProto({
     return () => {
       console.log('[3DSimulator] リソースクリーンアップ中...');
       
+      // このシーンを無効化（旧世代の animate ループが触れないように）
+      sceneGenerationRef.current++;
+      
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
       
       if (controlsRef.current) {
@@ -314,6 +342,10 @@ export default function RaceSimulator3DProto({
       }
       
       if (rendererRef.current) {
+        // WebGL コンテキストを明示解放（切替ごとの context リーク/枯渇を防ぐ）
+        try {
+          rendererRef.current.forceContextLoss();
+        } catch { /* 一部環境で未対応でも致命ではない */ }
         rendererRef.current.dispose();
       }
       
@@ -351,23 +383,39 @@ export default function RaceSimulator3DProto({
         }
       }
       
-      // Phase B: 新走路グループの dispose
+      // Phase B: 新走路グループの dispose（scene から remove 後に破棄）
       for (const tr of trackGroupsRef.current) {
         if (sceneRef.current) sceneRef.current.remove(tr.group);
         tr.dispose();
       }
       trackGroupsRef.current = [];
       if (groundRef.current) {
+        if (sceneRef.current) sceneRef.current.remove(groundRef.current);
         groundRef.current.geometry.dispose();
         if (groundRef.current.material instanceof THREE.Material) groundRef.current.material.dispose();
         groundRef.current = null;
       }
       
+      // DOM から canvas を除去（既に外れている場合は contains でガード）
       if (containerRef.current && rendererRef.current) {
-        containerRef.current.removeChild(rendererRef.current.domElement);
+        const dom = rendererRef.current.domElement;
+        if (dom && containerRef.current.contains(dom)) {
+          containerRef.current.removeChild(dom);
+        }
       }
+      
+      // 参照を明示クリア（dispose 済みオブジェクトへの後続アクセスを防ぐ）
+      layoutRef.current = null;
+      dynamicsRef.current = null;
+      rendererRef.current = null;
+      controlsRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+      broadcastInitRef.current = false;
     };
-  }, [timeline, courseInfo]);
+    // raceSignature が変わったときだけ作り直す（simulationResult/courseInfo の参照churn無視）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [raceSignature]);
   
   // アニメーションループ
   useEffect(() => {
@@ -388,7 +436,14 @@ export default function RaceSimulator3DProto({
       broadcastInitRef.current = false; // broadcast へ戻ったとき最初のフレームで即セット
     }
     
+    // このループが属するシーン世代。init が作り直すと世代が変わり、旧ループは停止する。
+    const myGeneration = sceneGenerationRef.current;
+    
     const animate = () => {
+      // 旧世代（レース切替でシーン再構築済み）のループは即停止し再スケジュールしない
+      if (sceneGenerationRef.current !== myGeneration) return;
+      if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+      
       const now = performance.now();
       const deltaTime = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
