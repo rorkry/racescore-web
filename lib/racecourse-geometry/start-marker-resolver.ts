@@ -12,9 +12,26 @@
 import type { RacecourseGeometry, StartMarker, PathPose } from './types';
 import { samplePathPose, normalizePathDistance, buildArcLut } from './sampler';
 
-/** レース進行方向の符号（closed-loop clockwise=-1, ccw=+1, open/straight=+1） */
+/**
+ * レース進行方向の符号（centerline は builder が「math+Z上=CCW」で構築する）。
+ *
+ * 【重要（方向契約）】Three.js は右手系で、地面(XZ)を上空(+Y)から見下ろすと
+ * +X が右・+Z が「下」に見える。したがって "math+Z上でCCW" の巻きは
+ * 俯瞰画面では時計回り(CW)に見える。回転向きの正本は「俯瞰＝上空から見た向き」。
+ *
+ * 俯瞰(from +Y)での回転は sumCross=Σ(a×b).y で測れ、右手則により
+ *   sumCross<0 = CW(=JRA 右回り),  sumCross>0 = CCW(=JRA 左回り)。
+ *
+ * centerline を +pathDistance 方向へ辿ると sumCross<0(俯瞰CW=右回り)になるため:
+ *   - clockwise(右回り) は +pathDistance 方向へ進む → sign=+1
+ *   - counterclockwise(左回り) は -pathDistance 方向へ進む → sign=-1
+ * （open/straight は +1）
+ *
+ * 旧実装は「+Z=画面上(北)」という誤前提で符号を逆に定義しており、
+ * 全 closed-loop の進行方向が公式と逆に描画されていた（本番目視で確認）。
+ */
 export function directionSign(geometry: RacecourseGeometry): 1 | -1 {
-  return geometry.direction === 'clockwise' ? -1 : 1;
+  return geometry.direction === 'counterclockwise' ? -1 : 1;
 }
 
 /**
