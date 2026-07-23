@@ -189,7 +189,10 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
     // スタートダッシュの速度（m/s）
     // 基本速度 15m/s + スコアによる補正
     const baseVelocity = 15.0;
-    const velocityBonus = (startDashScore - 50) / 50 * 3; // ±3m/s
+    const rawBonus = (startDashScore - 50) / 50 * 3; // ±3m/s
+    // startDashScore が NaN（指数データ欠損等）でも velocity を非有限にしない
+    // Math.max/min は片方が NaN だと NaN を返すため、ボーナスを先に無害化する
+    const velocityBonus = Number.isFinite(rawBonus) ? rawBonus : 0;
     const velocity = Math.max(10, Math.min(20, baseVelocity + velocityBonus));
     
     // HorseState を更新（currentDistanceは後で一括設定）
@@ -253,7 +256,10 @@ export function executeStartPhase(input: StartPhaseInput): PhaseResult {
   
   // 所要時間を計算
   const avgVelocity = sortedHorses.reduce((sum, h) => sum + h.currentVelocity, 0) / sortedHorses.length;
-  const phaseTime = endDistance / (avgVelocity * 0.9); // 加速中なので平均速度は低め
+  // avgVelocity が 0 / 非有限だと phaseTime が Infinity/NaN になり timeRange が壊れる（全phaseへ伝播）。
+  // 速度は [10,20] に丸めているので通常は正だが、多重防御として下限を設ける。
+  const safeAvgVelocity = Number.isFinite(avgVelocity) && avgVelocity > 0 ? avgVelocity : 13.5;
+  const phaseTime = endDistance / (safeAvgVelocity * 0.9); // 加速中なので平均速度は低め
   
   console.log('[StartPhase] === スタートフェーズ完了 ===');
   console.log(`  距離: ${endDistance}m, 平均速度: ${avgVelocity.toFixed(1)}m/s, 所要時間: ${phaseTime.toFixed(1)}秒`);

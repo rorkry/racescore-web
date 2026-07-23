@@ -83,20 +83,32 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
     ));
   }
   
+  // 非有限 time のキーフレームを除外（NaN/Infinity）。
+  // これを残すと dedup の Map キー(Math.round(NaN*10)/10=NaN)が衝突して全フレームが1件に潰れ、
+  // totalDuration が NaN、補間0件になり 3D がクラッシュする（本番の 1000m 症状の直接原因）。
+  const finiteKeyframes = keyframes.filter((k) => Number.isFinite(k.time));
+  if (finiteKeyframes.length < keyframes.length) {
+    console.error(
+      `[TimelineGenerator] ❌ 非有限timeのキーフレームを${keyframes.length - finiteKeyframes.length}件除外（phase timeRangeにNaN/Infinityが混入）`
+    );
+  }
+  
   // 時系列でソート
-  keyframes.sort((a, b) => a.time - b.time);
+  finiteKeyframes.sort((a, b) => a.time - b.time);
   
   // 重複除去（同じ時刻のキーフレームは最新のものを優先）
-  const uniqueKeyframes = deduplicateKeyframes(keyframes);
+  const uniqueKeyframes = deduplicateKeyframes(finiteKeyframes);
   
   // 順位変動キーフレームを追加
   const positionChangeKeyframes = detectPositionChanges(uniqueKeyframes);
   uniqueKeyframes.push(...positionChangeKeyframes);
   uniqueKeyframes.sort((a, b) => a.time - b.time);
   
-  const totalDuration = uniqueKeyframes.length > 0
+  const lastTime = uniqueKeyframes.length > 0
     ? uniqueKeyframes[uniqueKeyframes.length - 1].time
     : 0;
+  // 多重防御: 最終 time が非有限なら 0 とみなす（下流の frameCount 計算を壊さない）
+  const totalDuration = Number.isFinite(lastTime) ? lastTime : 0;
   
   // レース距離は result.raceDistance から取得（fallbackなし）
   const courseDistance = result.raceDistance;
@@ -520,7 +532,17 @@ function interpolateKeyframes(
   }
   
   const fps = 10;
+  // duration が非有限/非正だと frameCount が NaN/0 になり補間結果が0件 → 3Dが空配列を受け取り落ちる。
+  // その場合は「動かないが有効な」ソースキーフレーム自体を返し（>=2件）、初期位置は表示できるようにする。
+  if (!Number.isFinite(totalDuration) || totalDuration <= 0) {
+    console.error(`[TimelineGenerator] ❌ totalDuration が不正(${totalDuration}) → 補間せずソースキーフレームを返す`);
+    return sourceKeyframes;
+  }
   const frameCount = Math.ceil(totalDuration * fps);
+  if (!Number.isFinite(frameCount) || frameCount <= 0) {
+    console.error(`[TimelineGenerator] ❌ frameCount が不正(${frameCount}) → ソースキーフレームを返す`);
+    return sourceKeyframes;
+  }
   const interpolatedFrames: TimelineFrame[] = [];
   
   for (let i = 0; i < frameCount; i++) {
