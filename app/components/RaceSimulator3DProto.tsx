@@ -108,6 +108,17 @@ export default function RaceSimulator3DProto({
     courseInfo?.trackType ?? '',
   ].join('::');
   
+  // 再生関連stateはアニメーションループから ref 経由で読む
+  // （scene初期化effectやループを currentTime/isPlaying/playbackSpeed に依存させないため）
+  const isPlayingRef = useRef(isPlaying);
+  const playbackSpeedRef = useRef(playbackSpeed);
+  const cameraModeRef = useRef(cameraMode);
+  const selectedHorseRef = useRef(selectedHorse);
+  isPlayingRef.current = isPlaying;
+  playbackSpeedRef.current = playbackSpeed;
+  cameraModeRef.current = cameraMode;
+  selectedHorseRef.current = selectedHorse;
+  
   // CourseInfo追跡（初回のみ）
   useEffect(() => {
     console.warn('[COURSEINFO] RaceSimulator3DProto:', {
@@ -224,8 +235,8 @@ export default function RaceSimulator3DProto({
     console.log('[3DSimulator] Three.js初期化中...');
     
     // このレース用の timeline をローカル生成（stateのlagで layout と食い違わないようにする）
+    // 注: state の timeline はタイムライン生成effect が別途 setTimeline する（二重setを避けここでは呼ばない）
     const tl = generateTimeline(simulationResult);
-    setTimeline(tl);
     
     // シーン世代を更新（旧世代の animate ループを無効化）
     sceneGenerationRef.current++;
@@ -417,11 +428,8 @@ export default function RaceSimulator3DProto({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceSignature]);
   
-  // アニメーションループ
+  // カメラモード切替時の初期化（アニメーションループとは分離）
   useEffect(() => {
-    if (!timeline || !sceneRef.current || !cameraRef.current || !rendererRef.current) return;
-    
-    // モード切替時の初期化（overview に入ったら俯瞰視点へ戻す / broadcast は補間を初期化）
     if (cameraMode === 'overview' && cameraRef.current) {
       cameraRef.current.position.copy(OVERVIEW_POSITION);
       cameraRef.current.fov = OVERVIEW_FOV;
@@ -435,6 +443,11 @@ export default function RaceSimulator3DProto({
     if (cameraMode !== 'broadcast') {
       broadcastInitRef.current = false; // broadcast へ戻ったとき最初のフレームで即セット
     }
+  }, [cameraMode]);
+  
+  // アニメーションループ（raceSignature/timeline 単位で1本のみ。再生stateは ref 経由で読む）
+  useEffect(() => {
+    if (!timeline || !sceneRef.current || !cameraRef.current || !rendererRef.current) return;
     
     // このループが属するシーン世代。init が作り直すと世代が変わり、旧ループは停止する。
     const myGeneration = sceneGenerationRef.current;
@@ -449,8 +462,8 @@ export default function RaceSimulator3DProto({
       lastTimeRef.current = now;
       
       // 再生中の時間更新（ref使用、毎フレーム）
-      if (isPlaying) {
-        const next = currentTimeRef.current + deltaTime * playbackSpeed;
+      if (isPlayingRef.current) {
+        const next = currentTimeRef.current + deltaTime * playbackSpeedRef.current;
         if (next >= timeline.totalDuration) {
           currentTimeRef.current = timeline.totalDuration;
           setIsPlaying(false);
@@ -502,18 +515,19 @@ export default function RaceSimulator3DProto({
           updateHorses(currentState);
         }
         
-        // カメラ更新
-        if (cameraMode === 'broadcast') {
+        // カメラ更新（モードは ref 経由）
+        const mode = cameraModeRef.current;
+        if (mode === 'broadcast') {
           updateBroadcastCamera(currentState);
-        } else if (cameraMode === 'follow' && selectedHorse !== null) {
+        } else if (mode === 'follow' && selectedHorseRef.current !== null) {
           updateFollowCamera(currentState);
         }
       }
       
       // コントロール更新（overview のみユーザー操作を許可）
       if (controlsRef.current) {
-        controlsRef.current.enabled = cameraMode === 'overview';
-        if (cameraMode === 'overview') {
+        controlsRef.current.enabled = cameraModeRef.current === 'overview';
+        if (cameraModeRef.current === 'overview') {
           controlsRef.current.update();
         }
       }
@@ -532,9 +546,12 @@ export default function RaceSimulator3DProto({
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
     };
-  }, [timeline, currentTime, isPlaying, playbackSpeed, cameraMode, selectedHorse]);
+    // 再生state(currentTime/isPlaying/playbackSpeed/cameraMode/selectedHorse)は ref 経由で読むため依存に含めない
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeline]);
   
   // コース作成（Visual Step 1C-1: 曲線走路）
   const createCourse = (scene: THREE.Scene, courseDistance: number, courseInfo: any) => {
@@ -978,7 +995,7 @@ export default function RaceSimulator3DProto({
 
   // 追従カメラ更新
   const updateFollowCamera = (currentState: RaceTimelineKeyframe) => {
-    const horse = currentState.horses.find(h => h.horseNumber === selectedHorse);
+    const horse = currentState.horses.find(h => h.horseNumber === selectedHorseRef.current);
     if (!horse || !cameraRef.current || !visualCurveRef.current) return;
     
     // Visual Step 1B: sampleRacePose で座標取得
