@@ -336,6 +336,53 @@ export default function RaceSimulator3DProto({
     
     console.log('[3DSimulator] Three.js初期化完了');
     
+    // ── 描画パイプライン診断（debug=1 のときだけ・1回） ──
+    const debugEnabled = shouldShowDebugHud({
+      nodeEnv: process.env.NODE_ENV,
+      search: typeof window !== 'undefined' ? window.location.search : '',
+    });
+    if (debugEnabled) {
+      try {
+        const gl = renderer.getContext();
+        const size = new THREE.Vector2();
+        renderer.getSize(size);
+        let meshCount = 0, lineCount = 0, lightCount = 0;
+        scene.traverse((o: THREE.Object3D) => {
+          const any = o as unknown as { isMesh?: boolean; isLine?: boolean; isLight?: boolean };
+          if (any.isMesh) meshCount++;
+          else if (any.isLine) lineCount++;
+          else if (any.isLight) lightCount++;
+        });
+        camera.updateMatrixWorld(true);
+        const trackCenter = new THREE.Vector3();
+        if (layout) {
+          const mid = sampleRaceProgressPose(layout.geometry, layout.startMarker.pathDistance, layout.raceDistance / 2, 0);
+          trackCenter.set(mid.position.x, mid.position.y, mid.position.z);
+        }
+        const ndc = trackCenter.clone().project(camera);
+        console.log('[BlackScreenDiag] A/B/C/E 診断', {
+          canvas: { w: renderer.domElement.width, h: renderer.domElement.height, clientW: renderer.domElement.clientWidth, clientH: renderer.domElement.clientHeight, connected: renderer.domElement.isConnected },
+          rendererSize: { x: size.x, y: size.y }, pixelRatio: renderer.getPixelRatio(), contextLost: gl.isContextLost(),
+          sceneChildren: scene.children.length, mesh: meshCount, line: lineCount, light: lightCount, horses: horseMeshesRef.current.size, trackGroups: trackGroupsRef.current.length,
+          camera: { pos: camera.position.toArray().map((n) => +n.toFixed(1)), fov: camera.fov, near: camera.near, far: camera.far, aspect: +camera.aspect.toFixed(3) },
+          trackCenter: trackCenter.toArray().map((n) => +n.toFixed(1)),
+          trackCenterNDC: { x: +ndc.x.toFixed(3), y: +ndc.y.toFixed(3), z: +ndc.z.toFixed(3), visible: Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1 && ndc.z >= -1 && ndc.z <= 1 },
+          generation: sceneGenerationRef.current, renderFrame: renderer.info.render.frame,
+        });
+        const startFrame = renderer.info.render.frame;
+        window.setTimeout(() => {
+          try {
+            console.log('[BlackScreenDiag] D 1s後', { renderFrame: renderer.info.render.frame, 増加: renderer.info.render.frame > startFrame, contextLost: renderer.getContext().isContextLost() });
+          } catch { /* renderer 破棄後は無視 */ }
+        }, 1000);
+        const dom = renderer.domElement;
+        dom.addEventListener('webglcontextlost', () => console.warn('[BlackScreenDiag] webglcontextlost 発火'));
+        dom.addEventListener('webglcontextrestored', () => console.warn('[BlackScreenDiag] webglcontextrestored 発火'));
+      } catch (e) {
+        console.warn('[BlackScreenDiag] 診断中に例外:', e);
+      }
+    }
+    
     // クリーンアップ
     return () => {
       console.log('[3DSimulator] リソースクリーンアップ中...');
@@ -445,9 +492,10 @@ export default function RaceSimulator3DProto({
     }
   }, [cameraMode]);
   
-  // アニメーションループ（raceSignature/timeline 単位で1本のみ。再生stateは ref 経由で読む）
+  // アニメーションループ（scene生成後に1本のみ。再生stateは ref 経由で読む）
+  // timeline が未設定でも scene/コースは render する（黒画面防止）。
   useEffect(() => {
-    if (!timeline || !sceneRef.current || !cameraRef.current || !rendererRef.current) return;
+    if (!sceneRef.current || !cameraRef.current || !rendererRef.current) return;
     
     // このループが属するシーン世代。init が作り直すと世代が変わり、旧ループは停止する。
     const myGeneration = sceneGenerationRef.current;
@@ -461,66 +509,69 @@ export default function RaceSimulator3DProto({
       const deltaTime = (now - lastTimeRef.current) / 1000;
       lastTimeRef.current = now;
       
-      // 再生中の時間更新（ref使用、毎フレーム）
-      if (isPlayingRef.current) {
-        const next = currentTimeRef.current + deltaTime * playbackSpeedRef.current;
-        if (next >= timeline.totalDuration) {
-          currentTimeRef.current = timeline.totalDuration;
-          setIsPlaying(false);
-          setCurrentTime(timeline.totalDuration); // 最終フレームでUI更新
-        } else {
-          currentTimeRef.current = next;
-          
-          // UI更新は100msごと（60fps → 10fps）
-          if (now - lastUIUpdateRef.current >= 100) {
-            setCurrentTime(currentTimeRef.current);
-            lastUIUpdateRef.current = now;
-          }
-        }
-      }
-      
-      // 現在状態を補間（refから取得）
-      const currentState = interpolateTimeline(timeline, currentTimeRef.current);
-      
-      if (currentState) {
-        const layout = layoutRef.current;
-        const dynamics = dynamicsRef.current;
-        // 馬の位置更新（優先: 新geometry+dynamics / 次: 新geometry+既存distance / 最後: 旧描画）
-        if (layout) {
-          const dur = timeline.totalDuration > 0 ? timeline.totalDuration : 1;
-          if (dynamics) {
-            const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
-            const frame = interpolateDynamics(dynamics, dynTime);
-            positionHorsesOnGeometry(
-              layout,
-              frame.map((h) => ({
-                horseNumber: h.horseNumber,
-                progress: h.raceProgress,
-                lateral: h.lateralPosition,
-                blocked: h.blocked,
-                finished: h.finished,
-              }))
-            );
+      // timeline があるフレームのみ、時間更新・馬位置・中継カメラを進める
+      if (timeline) {
+        // 再生中の時間更新（ref使用、毎フレーム）
+        if (isPlayingRef.current) {
+          const next = currentTimeRef.current + deltaTime * playbackSpeedRef.current;
+          if (next >= timeline.totalDuration) {
+            currentTimeRef.current = timeline.totalDuration;
+            setIsPlaying(false);
+            setCurrentTime(timeline.totalDuration); // 最終フレームでUI更新
           } else {
-            positionHorsesOnGeometry(
-              layout,
-              currentState.horses.map((h) => ({
-                horseNumber: h.horseNumber,
-                progress: h.currentDistance,
-                lateral: h.lateralPosition,
-              }))
-            );
+            currentTimeRef.current = next;
+            
+            // UI更新は100msごと（60fps → 10fps）
+            if (now - lastUIUpdateRef.current >= 100) {
+              setCurrentTime(currentTimeRef.current);
+              lastUIUpdateRef.current = now;
+            }
           }
-        } else {
-          updateHorses(currentState);
         }
         
-        // カメラ更新（モードは ref 経由）
-        const mode = cameraModeRef.current;
-        if (mode === 'broadcast') {
-          updateBroadcastCamera(currentState);
-        } else if (mode === 'follow' && selectedHorseRef.current !== null) {
-          updateFollowCamera(currentState);
+        // 現在状態を補間（refから取得）
+        const currentState = interpolateTimeline(timeline, currentTimeRef.current);
+        
+        if (currentState) {
+          const layout = layoutRef.current;
+          const dynamics = dynamicsRef.current;
+          // 馬の位置更新（優先: 新geometry+dynamics / 次: 新geometry+既存distance / 最後: 旧描画）
+          if (layout) {
+            const dur = timeline.totalDuration > 0 ? timeline.totalDuration : 1;
+            if (dynamics) {
+              const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
+              const frame = interpolateDynamics(dynamics, dynTime);
+              positionHorsesOnGeometry(
+                layout,
+                frame.map((h) => ({
+                  horseNumber: h.horseNumber,
+                  progress: h.raceProgress,
+                  lateral: h.lateralPosition,
+                  blocked: h.blocked,
+                  finished: h.finished,
+                }))
+              );
+            } else {
+              positionHorsesOnGeometry(
+                layout,
+                currentState.horses.map((h) => ({
+                  horseNumber: h.horseNumber,
+                  progress: h.currentDistance,
+                  lateral: h.lateralPosition,
+                }))
+              );
+            }
+          } else {
+            updateHorses(currentState);
+          }
+          
+          // カメラ更新（モードは ref 経由）
+          const mode = cameraModeRef.current;
+          if (mode === 'broadcast') {
+            updateBroadcastCamera(currentState);
+          } else if (mode === 'follow' && selectedHorseRef.current !== null) {
+            updateFollowCamera(currentState);
+          }
         }
       }
       
@@ -532,7 +583,7 @@ export default function RaceSimulator3DProto({
         }
       }
       
-      // レンダリング
+      // レンダリング（timeline の有無に関わらず毎フレーム実行）
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         rendererRef.current.render(sceneRef.current, cameraRef.current);
       }
@@ -1026,11 +1077,8 @@ export default function RaceSimulator3DProto({
     }
   };
   
-  if (!timeline) {
-    return <div>タイムライン生成中...</div>;
-  }
-  
-  const currentState = interpolateTimeline(timeline, currentTime);
+  // timeline 未設定でも 3D コンテナは常時マウントする（黒画面防止: init effect が container を掴めるように）
+  const currentState = timeline ? interpolateTimeline(timeline, currentTime) : null;
   const selectedHorseState = currentState?.horses.find(h => h.horseNumber === selectedHorse);
   
   // Fallback使用チェック
@@ -1045,12 +1093,19 @@ export default function RaceSimulator3DProto({
         </div>
       )}
       
-      {/* 3Dビュー */}
+      {/* 3Dビュー: timeline の有無に関わらず常時マウント（container 未マウントで init が bail するのを防ぐ） */}
       <div 
         ref={containerRef}
         className="w-full h-[600px] border border-gray-300 rounded-lg overflow-hidden bg-black relative"
         style={{ touchAction: 'none' }}
       >
+        {/* タイムライン生成待ちの読み込み表示（canvas は既にマウント済み） */}
+        {!timeline && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center text-white/80 text-sm">
+            タイムライン生成中...
+          </div>
+        )}
+        
         {/* コンポーネント情報（左上）: 本番通常URLでは非表示 */}
         {showDebugHud && (
           <div className="absolute left-2 top-2 z-50 bg-red-600 px-2 py-1 text-xs text-white font-mono rounded">
@@ -1084,6 +1139,8 @@ export default function RaceSimulator3DProto({
         )}
       </div>
       
+      {timeline && (
+      <>
       {/* コントロールパネル */}
       <div className="bg-white border border-gray-300 rounded-lg p-4 space-y-4">
         {/* 再生ボタン */}
@@ -1235,6 +1292,8 @@ export default function RaceSimulator3DProto({
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );
