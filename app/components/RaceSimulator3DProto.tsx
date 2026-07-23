@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateTimeline, interpolateTimeline, type RaceTimeline, type RaceTimelineKeyframe } from '@/lib/race-simulator/timeline-generator';
+import { validateInterpolatedTimeline } from '@/lib/race-simulator/timeline-validation';
 import { buildVisualCourseCurve, sampleLoopPose, sampleRacePose, type VisualCourseCurve } from '@/lib/race-simulator/course-curve';
 import { selectCameraMode, computeCameraPose, DEFAULT_GOAL_STAND_CONFIG, type CameraMode } from '@/lib/race-simulator/camera-director';
 import { shouldShowDebugHud } from '@/lib/race-simulator/hud-visibility';
@@ -60,6 +61,10 @@ export default function RaceSimulator3DProto({
   }>({});
   
   const [timeline, setTimeline] = useState<RaceTimeline | null>(null);
+  // timeline が再生契約を満たすか（frames>=2 / duration有限正 / time単調 等）。
+  // 不正な場合でも scene と初期馬位置は表示するが、再生はさせない（3Dクラッシュ防止）。
+  const [timelineValid, setTimelineValid] = useState(false);
+  const [timelineErrors, setTimelineErrors] = useState<string[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
@@ -114,10 +119,12 @@ export default function RaceSimulator3DProto({
   const playbackSpeedRef = useRef(playbackSpeed);
   const cameraModeRef = useRef(cameraMode);
   const selectedHorseRef = useRef(selectedHorse);
+  const timelineValidRef = useRef(timelineValid);
   isPlayingRef.current = isPlaying;
   playbackSpeedRef.current = playbackSpeed;
   cameraModeRef.current = cameraMode;
   selectedHorseRef.current = selectedHorse;
+  timelineValidRef.current = timelineValid;
   
   // CourseInfo追跡（初回のみ）
   useEffect(() => {
@@ -144,7 +151,26 @@ export default function RaceSimulator3DProto({
     
     console.log('[3DSimulator] タイムライン生成中...');
     const tl = generateTimeline(simulationResult);
+
+    // timeline 契約を検証（空/NaN/Infinity/非単調/duration不正を検出）。
+    // 不正でも tl 自体はセットして初期位置を描画する（黒画面回避）が、再生は無効化する。
+    const validation = validateInterpolatedTimeline(tl);
     setTimeline(tl);
+    setTimelineValid(validation.valid);
+    setTimelineErrors(validation.errors);
+
+    // 不正時は currentTime/再生をリセットし NaN を持ち込まない
+    if (!validation.valid) {
+      currentTimeRef.current = 0;
+      setCurrentTime(0);
+      setIsPlaying(false);
+      // production console へ原因を1回だけ出す（fallbackでバグを隠さない）
+      console.error(
+        '[3DSimulator] ❌ タイムラインが再生契約を満たしません。再生を無効化します:',
+        validation.errors,
+        { totalDuration: tl.totalDuration, keyframes: tl.keyframes.length }
+      );
+    }
     
     // 初回デバッグ: keyframes データの確認
     console.log('[SimulatorDebug] === タイムライン生成完了 ===');
@@ -511,13 +537,15 @@ export default function RaceSimulator3DProto({
       
       // timeline があるフレームのみ、時間更新・馬位置・中継カメラを進める
       if (timeline) {
+        const duration = Number.isFinite(timeline.totalDuration) ? timeline.totalDuration : 0;
         // 再生中の時間更新（ref使用、毎フレーム）
-        if (isPlayingRef.current) {
+        // ※ timeline が不正（validate失敗）な場合は再生を進めない＝初期位置のみ表示
+        if (isPlayingRef.current && timelineValidRef.current && duration > 0) {
           const next = currentTimeRef.current + deltaTime * playbackSpeedRef.current;
-          if (next >= timeline.totalDuration) {
-            currentTimeRef.current = timeline.totalDuration;
+          if (next >= duration) {
+            currentTimeRef.current = duration;
             setIsPlaying(false);
-            setCurrentTime(timeline.totalDuration); // 最終フレームでUI更新
+            setCurrentTime(duration); // 最終フレームでUI更新
           } else {
             currentTimeRef.current = next;
             
@@ -1105,6 +1133,23 @@ export default function RaceSimulator3DProto({
             タイムライン生成中...
           </div>
         )}
+
+        {/* タイムライン生成失敗（不正timeline）: scene と初期馬位置は表示しつつ再生を止める */}
+        {timeline && !timelineValid && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center p-3">
+            <div className="pointer-events-auto rounded-md bg-red-600/90 px-4 py-2 text-center text-sm text-white shadow">
+              <div className="font-bold">タイムライン生成に失敗しました</div>
+              <div className="text-xs opacity-90">初期位置のみ表示しています（再生は無効）</div>
+              {showDebugHud && timelineErrors.length > 0 && (
+                <div className="mt-1 text-left text-[10px] font-mono opacity-80">
+                  {timelineErrors.map((err, i) => (
+                    <div key={i}>・{err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         
         {/* コンポーネント情報（左上）: 本番通常URLでは非表示 */}
         {showDebugHud && (
@@ -1147,11 +1192,13 @@ export default function RaceSimulator3DProto({
         <div className="flex gap-2 items-center flex-wrap">
           <button
             onClick={() => {
+              if (!timelineValid) return; // 不正timelineでは再生させない
               const newState = !isPlaying;
               console.log('[DEBUG] 再生状態変更:', newState);
               setIsPlaying(newState);
             }}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            disabled={!timelineValid}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isPlaying ? '⏸ 一時停止' : '▶ 再生'}
           </button>
@@ -1239,11 +1286,13 @@ export default function RaceSimulator3DProto({
           <input
             type="range"
             min={0}
-            max={timeline.totalDuration}
+            max={timelineValid && Number.isFinite(timeline.totalDuration) ? timeline.totalDuration : 0}
             step={0.1}
             value={currentTime}
+            disabled={!timelineValid}
             onChange={(e) => {
-              const newTime = parseFloat(e.target.value);
+              const parsed = parseFloat(e.target.value);
+              const newTime = Number.isFinite(parsed) ? parsed : 0;
               currentTimeRef.current = newTime;
               setCurrentTime(newTime);
             }}
