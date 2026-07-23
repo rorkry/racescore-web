@@ -44,6 +44,7 @@ export default function RaceSimulator3DProto({
   const [cameraMode, setCameraMode] = useState<'overview' | 'follow'>('overview');
   const [selectedHorse, setSelectedHorse] = useState<number | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(true);
+  const [showDebugHud, setShowDebugHud] = useState(false); // デバッグHUD表示制御（production + ?debug=1 または development）
   const lastTimeRef = useRef<number>(0);
   const currentTimeRef = useRef<number>(0); // 内部再生時刻（毎フレーム更新）
   const lastUIUpdateRef = useRef<number>(0); // 最後にUI更新した時刻
@@ -65,6 +66,19 @@ export default function RaceSimulator3DProto({
       courseInfoValue: courseInfo
     });
   }, [courseInfo]);
+  
+  // デバッグHUD表示制御（SSR安全）
+  useEffect(() => {
+    // development環境では常に表示
+    if (process.env.NODE_ENV !== 'production') {
+      setShowDebugHud(true);
+      return;
+    }
+    
+    // production環境では ?debug=1 がある場合のみ表示
+    const searchParams = new URLSearchParams(window.location.search);
+    setShowDebugHud(searchParams.get('debug') === '1');
+  }, []);
   
   // タイムライン生成
   useEffect(() => {
@@ -593,7 +607,7 @@ export default function RaceSimulator3DProto({
         </div>
         
         {/* デバッグHUD（左下） */}
-        {debugInfo && (
+        {showDebugHud && debugInfo && (
           <div className="absolute bottom-2 left-2 z-50 bg-black/90 p-3 rounded text-xs text-green-400 font-mono whitespace-pre-wrap max-w-md">
             <div className="text-yellow-400 font-bold mb-1">DEBUG HUD (1s更新)</div>
             {Object.entries(debugInfo).map(([key, value]) => (
