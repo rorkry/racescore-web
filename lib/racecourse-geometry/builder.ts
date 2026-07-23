@@ -133,10 +133,11 @@ export function buildStadiumGeometry(cfg: StadiumConfig): RacecourseGeometry {
     }
   }
 
-  // ゴール位置: home 直線の「進行方向の終端」
-  //  - CCW: bottom 直線を +X（pathDistance 増加）で走り、終端 pathDistance = Hs
-  //  - CW : bottom 直線を pathDistance 減少方向で走り、終端 pathDistance = 0
-  const finishPathDistance = cfg.direction === 'clockwise' ? 0 : Hs;
+  // ゴール位置: home 直線（bottom 直線 [0,Hs]）の「進行方向の終端」。
+  // directionSign（俯瞰CW=右回り=+pathDistance方向）に整合させる:
+  //  - clockwise(右回り, sign=+1): home 直線を +X（pathDistance 増加）で走る → 終端 = Hs
+  //  - counterclockwise(左回り, sign=-1): home 直線を pathDistance 減少方向で走る → 終端 = 0
+  const finishPathDistance = cfg.direction === 'clockwise' ? Hs : 0;
 
   return {
     id: cfg.id,
