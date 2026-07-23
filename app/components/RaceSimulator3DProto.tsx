@@ -251,26 +251,6 @@ export default function RaceSimulator3DProto({
       });
       horseMeshesRef.current.clear();
       
-      // コースジオメトリの dispose（Visual Step 1C-1）
-      if (courseGeometryRef.current.track) {
-        courseGeometryRef.current.track.geometry.dispose();
-        if (courseGeometryRef.current.track.material instanceof THREE.Material) {
-          courseGeometryRef.current.track.material.dispose();
-        }
-      }
-      if (courseGeometryRef.current.innerRail) {
-        courseGeometryRef.current.innerRail.geometry.dispose();
-        if (courseGeometryRef.current.innerRail.material instanceof THREE.Material) {
-          courseGeometryRef.current.innerRail.material.dispose();
-        }
-      }
-      if (courseGeometryRef.current.outerRail) {
-        courseGeometryRef.current.outerRail.geometry.dispose();
-        if (courseGeometryRef.current.outerRail.material instanceof THREE.Material) {
-          courseGeometryRef.current.outerRail.material.dispose();
-        }
-      }
-      
       if (containerRef.current && rendererRef.current) {
         containerRef.current.removeChild(rendererRef.current.domElement);
       }
@@ -343,97 +323,60 @@ export default function RaceSimulator3DProto({
     };
   }, [timeline, currentTime, isPlaying, playbackSpeed, cameraMode, selectedHorse]);
   
-  // コース作成（Visual Step 1C-1: 曲線走路）
+  // コース作成
   const createCourse = (scene: THREE.Scene, courseDistance: number, courseInfo: any) => {
-    // visualCurve が構築されていない場合は何も描画しない
-    if (!visualCurveRef.current) {
-      console.warn('[createCourse] visualCurve 未構築のためコース描画をスキップ');
-      return;
-    }
+    const bounds = getCourseBounds(courseInfo);
     
-    const curve = visualCurveRef.current;
-    const halfWidth = curve.trackWidth / 2;
-    
-    // ループを等間隔でサンプリング（200分割 ≈ 8m間隔で約1600m loop）
-    const segments = 200;
-    const innerPoints: THREE.Vector3[] = [];
-    const outerPoints: THREE.Vector3[] = [];
-    const centerPoints: THREE.Vector3[] = [];
-    
-    for (let i = 0; i <= segments; i++) {
-      const loopDist = (i / segments) * curve.loopLength;
-      const pose = sampleLoopPose(curve, loopDist);
-      
-      // 中心線
-      centerPoints.push(pose.position.clone());
-      
-      // 内外端: normal 方向へ ±halfWidth
-      const inner = pose.position.clone().addScaledVector(pose.normal, -halfWidth);
-      const outer = pose.position.clone().addScaledVector(pose.normal, halfWidth);
-      innerPoints.push(inner);
-      outerPoints.push(outer);
-    }
-    
-    // 走路 ribbon mesh（内外端を結ぶ閉じた帯）
-    const positions: number[] = [];
-    const indices: number[] = [];
-    
-    for (let i = 0; i < segments; i++) {
-      // 各セグメント: 内外2頂点 × 2断面 = 4頂点で2三角形
-      const i0Inner = i;
-      const i0Outer = i;
-      const i1Inner = i + 1;
-      const i1Outer = i + 1;
-      
-      // 頂点追加（既に配列にあるので index だけ計算）
-      // positions 配列構築: inner/outer を交互に並べる
-    }
-    
-    // 頂点配列構築: [inner0, outer0, inner1, outer1, ...]
-    for (let i = 0; i <= segments; i++) {
-      positions.push(innerPoints[i].x, innerPoints[i].y, innerPoints[i].z);
-      positions.push(outerPoints[i].x, outerPoints[i].y, outerPoints[i].z);
-    }
-    
-    // index 構築: quad を2三角形に分割（CCW頂点順で法線を上向きに）
-    for (let i = 0; i < segments; i++) {
-      const base = i * 2;
-      // tri1: inner[i], inner[i+1], outer[i] (CCW)
-      indices.push(base, base + 2, base + 1);
-      // tri2: outer[i], inner[i+1], outer[i+1] (CCW)
-      indices.push(base + 1, base + 2, base + 3);
-    }
-    
-    const trackGeometry = new THREE.BufferGeometry();
-    trackGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    trackGeometry.setIndex(indices);
-    trackGeometry.computeVertexNormals(); // 滑らかな法線
-    
+    // 走路
+    const trackGeometry = new THREE.PlaneGeometry(bounds.courseWidth, courseDistance);
     const trackMaterial = new THREE.MeshStandardMaterial({
       color: 0x228B22, // 緑（芝）
-      side: THREE.FrontSide, // 法線が上向きなので FrontSide で十分
+      side: THREE.DoubleSide,
     });
     const track = new THREE.Mesh(trackGeometry, trackMaterial);
-    track.position.y = -0.1; // 地面よりわずかに下
+    track.rotation.x = -Math.PI / 2;
+    track.position.set(0, -0.1, courseDistance / 2);
     scene.add(track);
     courseGeometryRef.current.track = track;
     
-    // 内柵（閉じた線）
-    const railMaterial = new THREE.LineBasicMaterial({ color: 0x8B4513, linewidth: 2 });
-    const innerRailGeometry = new THREE.BufferGeometry().setFromPoints(innerPoints);
+    // 内柵
+    const innerRailGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(bounds.innerBound, 0, 0),
+      new THREE.Vector3(bounds.innerBound, 0, courseDistance),
+    ]);
+    const railMaterial = new THREE.LineBasicMaterial({ color: 0x8B4513, linewidth: 3 });
     const innerRail = new THREE.Line(innerRailGeometry, railMaterial);
     scene.add(innerRail);
     courseGeometryRef.current.innerRail = innerRail;
     
-    // 外柵（閉じた線）
-    const outerRailGeometry = new THREE.BufferGeometry().setFromPoints(outerPoints);
+    // 外柵
+    const outerRailGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(bounds.outerBound, 0, 0),
+      new THREE.Vector3(bounds.outerBound, 0, courseDistance),
+    ]);
     const outerRail = new THREE.Line(outerRailGeometry, railMaterial);
     scene.add(outerRail);
     courseGeometryRef.current.outerRail = outerRail;
     
-    // スタートライン・ゴールラインは今回省略（Visual Step 1C-3 でレース区間マーカーとして追加）
-    courseGeometryRef.current.startLine = undefined;
-    courseGeometryRef.current.goalLine = undefined;
+    // スタートライン
+    const startLineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(bounds.innerBound, 0, 0),
+      new THREE.Vector3(bounds.outerBound, 0, 0),
+    ]);
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xFFFFFF, linewidth: 2 });
+    const startLine = new THREE.Line(startLineGeometry, lineMaterial);
+    scene.add(startLine);
+    courseGeometryRef.current.startLine = startLine;
+    
+    // ゴールライン
+    const goalLineGeometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(bounds.innerBound, 0, courseDistance),
+      new THREE.Vector3(bounds.outerBound, 0, courseDistance),
+    ]);
+    const goalMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 4 });
+    const goalLine = new THREE.Line(goalLineGeometry, goalMaterial);
+    scene.add(goalLine);
+    courseGeometryRef.current.goalLine = goalLine;
   };
   
   // 馬作成
