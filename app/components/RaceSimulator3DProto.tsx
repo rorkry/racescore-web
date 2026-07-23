@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateTimeline, interpolateTimeline, type RaceTimeline, type RaceTimelineKeyframe } from '@/lib/race-simulator/timeline-generator';
 import { buildVisualCourseCurve, sampleLoopPose, sampleRacePose, type VisualCourseCurve } from '@/lib/race-simulator/course-curve';
-import { selectCameraMode, computeCameraPose, computeGoalStandPose, DEFAULT_GOAL_STAND_CONFIG, type CameraMode } from '@/lib/race-simulator/camera-director';
+import { selectCameraMode, computeCameraPose, DEFAULT_GOAL_STAND_CONFIG, type CameraMode } from '@/lib/race-simulator/camera-director';
 import { shouldShowDebugHud } from '@/lib/race-simulator/hud-visibility';
 import {
   resolveRacecourseLayout,
@@ -954,33 +954,38 @@ export default function RaceSimulator3DProto({
         const geometry = layout.geometry;
         const startPathDistance = layout.startMarker.pathDistance;
 
-        if (frac >= 0.68) {
-          // 最終盤: ゴール前スタンド視点を通常基準にする
-          const gp = sampleRaceProgressPose(geometry, startPathDistance, raceDistance, 0);
-          const goalPos = new THREE.Vector3(gp.position.x, gp.position.y, gp.position.z);
-          const goalTan = new THREE.Vector3(gp.tangent.x, 0, gp.tangent.z).normalize();
-          const standNormal = new THREE.Vector3(gp.normal.x, 0, gp.normal.z).normalize();
-          const cfg = {
-            ...DEFAULT_GOAL_STAND_CONFIG,
-            standDistance: Math.min(130, Math.max(45, spread * 0.8 + 45)),
-          };
-          const pose = computeGoalStandPose(goalPos, goalTan, standNormal, cfg);
-          applyBroadcastPose(camera, pose, 'FINISH');
-          return;
-        }
+        // ── ゴール前スタンド側を「基準カメラ」にする ──
+        // カメラはゴール板前のスタンド側(外向き法線=観客席側)に固定し、
+        // 注視点だけを馬群中心へ向ける（＝馬がコースを回って戻ってくるのを追う）。
+        // これにより初期構図がコーナー横見にならず、最終直線は自然な横〜正面視になる。
+        // course direction/tangent は一切反転しない（右回り/左回りロジックはそのまま）。
+        const gp = sampleRaceProgressPose(geometry, startPathDistance, raceDistance, 0);
+        const goalPos = new THREE.Vector3(gp.position.x, gp.position.y, gp.position.z);
+        const goalTan = new THREE.Vector3(gp.tangent.x, 0, gp.tangent.z).normalize(); // ゴールへ向かう進行方向
+        const standNormal = new THREE.Vector3(gp.normal.x, 0, gp.normal.z).normalize(); // 観客席側(外向き)
 
-        // 序盤〜コーナー: broadcast director（横追走）
-        const cp = sampleRaceProgressPose(geometry, startPathDistance, avg, avgL);
-        const framing = {
-          center: new THREE.Vector3(cp.position.x, cp.position.y, cp.position.z),
-          tangent: new THREE.Vector3(cp.tangent.x, 0, cp.tangent.z).normalize(),
-          normal: new THREE.Vector3(cp.normal.x, 0, cp.normal.z).normalize(),
-          spread,
-          laneSpread,
-        };
-        const mode = selectCameraMode(undefined, frac);
-        const pose = computeCameraPose(mode, framing, aspect);
-        applyBroadcastPose(camera, pose, mode);
+        const standDistance = Math.min(80, Math.max(46, 46 + laneSpread * 0.6));
+        const standHeight = DEFAULT_GOAL_STAND_CONFIG.standHeight + (frac < 0.5 ? 14 : 0);
+        const camPos = goalPos.clone()
+          .addScaledVector(standNormal, standDistance)
+          .addScaledVector(new THREE.Vector3(0, 1, 0), standHeight)
+          .addScaledVector(goalTan, -DEFAULT_GOAL_STAND_CONFIG.straightOffset);
+
+        // 注視点: 馬群中心（周回中は馬群を、最終盤はゴール板前を自然に見る）
+        const cp = sampleRaceProgressPose(geometry, startPathDistance, Math.min(raceDistance, Math.max(0, avg)), avgL);
+        const lookAt = new THREE.Vector3(cp.position.x, cp.position.y + DEFAULT_GOAL_STAND_CONFIG.targetHeight, cp.position.z);
+
+        // FOV: 馬群が数ピクセルにならないよう、距離と広がりから可視角を決める
+        const distToPack = Math.max(1, camPos.distanceTo(lookAt));
+        const wantVisible = Math.max(28, spread * 0.5 + laneSpread + 26);
+        let fov = (2 * Math.atan(wantVisible / 2 / distToPack) * 180) / Math.PI;
+        fov = Math.min(62, Math.max(26, fov));
+
+        applyBroadcastPose(
+          camera,
+          { position: camPos, lookAt, fov },
+          frac >= 0.72 ? 'FINISH' : 'FINAL_STRAIGHT_SIDE'
+        );
         return;
       }
     }
