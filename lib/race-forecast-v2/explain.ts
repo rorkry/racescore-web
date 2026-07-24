@@ -35,6 +35,8 @@ export interface ForecastExplanationV2 {
   randomContribution: number;
   expectedFormationRank: number;
   predictedFinishRank: number;
+  /** 予想される前半の frontRatio [0,1]（1 = 最前）。前半位置の再現誤差検証に使う */
+  expectedFrontRatio: number;
   expectedBand: RunningStyleBand;
   historicalBand: RunningStyleBand | null;
   fadeRisk: number;
@@ -186,6 +188,7 @@ export function computeForecastV2(
       randomContribution: r.random,
       expectedFormationRank: formationRanks.get(r.horseNumber) ?? 0,
       predictedFinishRank: finishRanks.get(r.horseNumber) ?? 0,
+      expectedFrontRatio: r.e.expectedFrontRatio,
       expectedBand: r.e.expectedBand,
       historicalBand: r.e.historicalBand,
       fadeRisk: r.mi.fadeRisk,
