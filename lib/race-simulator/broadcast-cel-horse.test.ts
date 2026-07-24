@@ -116,6 +116,54 @@ v0.root.traverse((o) => {
 });
 check('停止時は脚 rotation=0', legRotSum < 1e-6, `sum=${legRotSum}`);
 
+// 8.5) 騎手（rider）が全頭に存在し、可視で、馬体上に突出している
+function findMeshesByGeo(v: (typeof visuals)[number], geo: THREE.BufferGeometry): THREE.Mesh[] {
+  const found: THREE.Mesh[] = [];
+  v.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry === geo) found.push(m); });
+  return found;
+}
+// 全頭に騎手 torso + 顔（helmet は torso と同一 merged geo に含む）
+check('全頭に rider torso が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.jockey).length >= 1));
+check('全頭に rider face が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.face).length >= 1));
+// rider は root の子孫
+{
+  const jv = visuals[3];
+  const jm = findMeshesByGeo(jv, res.geo.jockey)[0];
+  let isDescendant = false;
+  let o: THREE.Object3D | null = jm;
+  while (o) { if (o === jv.root) { isDescendant = true; break; } o = o.parent; }
+  check('rider が root の子孫', isDescendant);
+  // 可視 / opacity / scale
+  const jmat = jm.material as THREE.Material;
+  check('rider material visible', jmat.visible === true);
+  check('rider material opacity>0', (jmat.opacity ?? 1) > 0);
+  const ws = new THREE.Vector3(); jm.getWorldScale(ws);
+  check('rider scale>0', ws.x > 0.01 && ws.y > 0.01 && ws.z > 0.01, ws.toArray().join(','));
+}
+// 騎手が馬体上部へ突出（埋没しきっていない）
+{
+  const jv = visuals[4];
+  jv.root.updateMatrixWorld(true);
+  const bodyBox = new THREE.Box3();
+  for (const m of findMeshesByGeo(jv, res.geo.bodyCore)) bodyBox.expandByObject(m);
+  const riderBox = new THREE.Box3();
+  for (const m of findMeshesByGeo(jv, res.geo.jockey)) riderBox.expandByObject(m);
+  for (const m of findMeshesByGeo(jv, res.geo.face)) riderBox.expandByObject(m);
+  check('rider が馬体トップより上に突出', riderBox.max.y > bodyBox.max.y + 0.3,
+    `rider.max=${riderBox.max.y.toFixed(2)} body.max=${bodyBox.max.y.toFixed(2)}`);
+  const protrude = riderBox.max.y - bodyBox.max.y;
+  const riderH = riderBox.max.y - riderBox.min.y;
+  check('rider の突出が十分（埋没しすぎない）', protrude / riderH > 0.4, `protrude/H=${(protrude / riderH).toFixed(2)}`);
+}
+// selected/unselected で騎手が消えない
+{
+  const jv = visuals[5];
+  jv.setSelected(true);
+  check('selected でも rider 可視', findMeshesByGeo(jv, res.geo.jockey)[0].visible === true);
+  jv.setSelected(false);
+  check('unselected でも rider 可視', findMeshesByGeo(jv, res.geo.jockey)[0].visible === true);
+}
+
 // 9) dispose: root が親から外れる。共有リソースは破棄されない
 v0.dispose();
 check('dispose後 root が scene から外れる', v0.root.parent === null);

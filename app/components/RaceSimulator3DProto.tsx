@@ -124,6 +124,7 @@ export default function RaceSimulator3DProto({
   const labelLayerRef = useRef<HTMLDivElement>(null);
   const labelMgrRef = useRef<HorseLabelManager>(new HorseLabelManager());
   const labelPoolRef = useRef<HTMLDivElement[]>([]);
+  const labelLinePoolRef = useRef<HTMLDivElement[]>([]); // leader line 用の細い div プール
   const hoverHorseRef = useRef<number | null>(null);
   const prevHeadingRef = useRef<Map<number, number>>(new Map());
   const gaitTimeRef = useRef<number>(0);            // 再生中のみ進む gait 時刻（frame-rate 非依存）
@@ -638,6 +639,7 @@ export default function RaceSimulator3DProto({
       }
       horseVisualsRef.current.clear();
       labelPoolRef.current = [];
+      labelLinePoolRef.current = [];
     };
   }, []);
   
@@ -1185,7 +1187,6 @@ export default function RaceSimulator3DProto({
     const outs = labelMgrRef.current.layout(inputs, projector, {
       width: w, height: h, now: performance.now(),
       maxVisible: inputs.length,     // 既定=全頭。余裕があれば全表示。
-      maxDisplacement: 90,           // 密集で上へ押し出しすぎる低優先ラベルのみ間引く
       hysteresis: true,
     });
     renderLabelDom(layer, outs);
@@ -1193,6 +1194,7 @@ export default function RaceSimulator3DProto({
 
   const renderLabelDom = (layer: HTMLDivElement, outs: LabelOut[]) => {
     const pool = labelPoolRef.current;
+    const lines = labelLinePoolRef.current;
     while (pool.length < outs.length) {
       const el = document.createElement('div');
       Object.assign(el.style, {
@@ -1203,9 +1205,18 @@ export default function RaceSimulator3DProto({
       } as Partial<CSSStyleDeclaration>);
       layer.appendChild(el); pool.push(el);
     }
+    // leader line プール（ラベルと対象馬を結ぶ細い線）
+    while (lines.length < outs.length) {
+      const ln = document.createElement('div');
+      Object.assign(ln.style, {
+        position: 'absolute', transformOrigin: '0 0', pointerEvents: 'none',
+        height: '1px', background: 'rgba(255,255,255,0.5)', zIndex: '10',
+      } as Partial<CSSStyleDeclaration>);
+      layer.appendChild(ln); lines.push(ln);
+    }
     for (let i = 0; i < pool.length; i++) {
-      const el = pool[i]; const o = outs[i];
-      if (!o || !o.visible) { el.style.display = 'none'; continue; }
+      const el = pool[i]; const ln = lines[i]; const o = outs[i];
+      if (!o || !o.visible) { el.style.display = 'none'; if (ln) ln.style.display = 'none'; continue; }
       el.style.display = 'block';
       el.style.left = `${o.x}px`; el.style.top = `${o.y}px`;
       el.style.background = o.color; el.style.color = o.textColor;
@@ -1213,11 +1224,26 @@ export default function RaceSimulator3DProto({
       el.style.outline = o.emphasized ? '2px solid #ff3b30' : 'none';
       el.style.zIndex = o.emphasized ? '30' : '20';
       el.textContent = o.text;
+      // leader line: アンカー→ラベルへ細線（密集で横/上へ逃がしたときだけ）
+      if (ln) {
+        if (o.leader) {
+          const dx = o.x - o.ax, dy = o.y - o.ay;
+          const len = Math.hypot(dx, dy);
+          const ang = Math.atan2(dy, dx);
+          ln.style.display = 'block';
+          ln.style.left = `${o.ax}px`; ln.style.top = `${o.ay}px`;
+          ln.style.width = `${len}px`;
+          ln.style.transform = `rotate(${ang}rad)`;
+        } else {
+          ln.style.display = 'none';
+        }
+      }
     }
   };
 
   const hideAllLabels = () => {
     for (const el of labelPoolRef.current) el.style.display = 'none';
+    for (const ln of labelLinePoolRef.current) ln.style.display = 'none';
   };
 
   // Visual Step 1C-3A: 馬群の framing を計算（純粋な読み取りのみ）

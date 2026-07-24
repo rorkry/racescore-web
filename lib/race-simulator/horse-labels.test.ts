@@ -54,16 +54,21 @@ let outs = mgr1.layout(inputsSparse, projectorSpread(1), { width: W, height: H, 
 const visibleSparse = outs.filter((o) => o.visible).length;
 check('余裕ある配置で全頭表示', visibleSparse === 14, `${visibleSparse}/14`);
 
-// --- 2) 密集配置 → overlap が減る（間引き） ---
+// --- 2) 密集配置 → 横展開で重なり解消。縦積みは最大2段まで ---
 const mgr2 = new HorseLabelManager();
 const inputsDense = makeInputs(14, 0.02); // ほぼ同一 x に密集
-// maxDisplacement を設定して密集時は間引く
-outs = mgr2.layout(inputsDense, projectorSpread(1), { width: W, height: H, now: 0, hysteresis: false, maxDisplacement: 80 });
+outs = mgr2.layout(inputsDense, projectorSpread(1), { width: W, height: H, now: 0, hysteresis: false });
 const visDense = outs.filter((o) => o.visible);
 const boxes = visDense.map((o) => ({ x: o.x, y: o.y }));
 const overlaps = countOverlapPairs(boxes);
-check('密集時は間引かれる（表示数<14）', visDense.length < 14, `${visDense.length}`);
 check('密集時 overlap ペアが少ない', overlaps <= 2, `overlaps=${overlaps}`);
+// 縦積みは最大2段まで（アンカーからの縦変位は 1 段ぶん=ROW(22) 程度に収まる）
+const maxDy = Math.max(...visDense.map((o) => Math.abs(o.y - o.ay)));
+check('縦積みは最大2段（縦変位<=約22px）', maxDy <= 23, `maxDy=${maxDy.toFixed(1)}`);
+// 横方向へ逃がしているので、多くの馬が表示され続ける（A案の識別性維持）
+check('密集でも大半が表示（横展開）', visDense.length >= 10, `${visDense.length}/14`);
+// leader line が密集時に付与される（横/上へ逃がしたラベル）
+check('密集時に leader line が出る', visDense.some((o) => o.leader === true));
 
 // --- 3) 選択馬は密集でも必ず表示 ---
 const selVisible = outs.find((o) => o.id === 5)?.visible;
@@ -96,6 +101,43 @@ check('selected は forceShow', pSel.forceShow === true && pHov.forceShow === fa
 
 // --- 6) 出走頭数と出力数が一致 ---
 check('出力数==入力数', outs.length === 14, `${outs.length}`);
+
+// --- 7) ぴょんぴょん抑制: オフセットの1フレーム移動量が MAX_STEP(6px) 以内 ---
+// 密集(大きなオフセット)→疎(オフセット0)へ急変させても、1フレームの移動は制限される。
+const mgrS = new HorseLabelManager();
+const denseS = makeInputs(14, 0.02);
+const fA = mgrS.layout(denseS, projectorSpread(1), { width: W, height: H, now: 0, hysteresis: false });
+const sparseS = makeInputs(14, 0.9);
+const fB = mgrS.layout(sparseS, projectorSpread(1), { width: W, height: H, now: 16, hysteresis: false });
+let maxOffsetDelta = 0;
+for (const b of fB) {
+  const a = fA.find((x) => x.id === b.id);
+  if (!a) continue;
+  const dAx = a.x - a.ax, dAy = a.y - a.ay;
+  const dBx = b.x - b.ax, dBy = b.y - b.ay;
+  maxOffsetDelta = Math.max(maxOffsetDelta, Math.abs(dBx - dAx), Math.abs(dBy - dAy));
+}
+check('オフセット移動量が MAX_STEP 以内（ぴょんぴょん抑制）', maxOffsetDelta <= 6.5, `maxDelta=${maxOffsetDelta.toFixed(2)}`);
+
+// --- 8) スロット連続性: 同一入力を連続適用すると配置が安定（動かない） ---
+const mgrStable = new HorseLabelManager();
+const stableIn = makeInputs(14, 0.05);
+const s1 = mgrStable.layout(stableIn, projectorSpread(1), { width: W, height: H, now: 0, hysteresis: false });
+const s2 = mgrStable.layout(stableIn, projectorSpread(1), { width: W, height: H, now: 16, hysteresis: false });
+let maxStableMove = 0;
+for (const b of s2) {
+  const a = s1.find((x) => x.id === b.id);
+  if (!a || !a.visible || !b.visible) continue;
+  maxStableMove = Math.max(maxStableMove, Math.hypot(b.x - a.x, b.y - a.y));
+}
+check('同一入力では配置が安定（移動≈0）', maxStableMove < 1.0, `move=${maxStableMove.toFixed(2)}`);
+
+// --- 9) レース切替リセット: clearForRaceSwitch で状態が消える ---
+const mgrR = new HorseLabelManager();
+mgrR.layout(makeInputs(8, 0.05), projectorSpread(1), { width: W, height: H, now: 0, hysteresis: true });
+mgrR.clearForRaceSwitch();
+const rAfter = mgrR.layout(makeInputs(8, 0.05), projectorSpread(1), { width: W, height: H, now: 0, hysteresis: true });
+check('切替後は t=0 再開（未表示から）', rAfter.every((o) => o.visible === false || o.emphasized));
 
 console.log(`\n結果: ${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);

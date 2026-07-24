@@ -173,12 +173,14 @@ export function createHorseVisualResources(): HorseVisualResources {
     bake(new THREE.CylinderGeometry(0.1, 0.12, 0.16, 8), [0, -1.08, 0]),
   ]);
 
-  // ---- 騎手（胴 + 帽）jockey グループのローカル ----
+  // ---- 騎手（胴 + ヘルメット。枠色。遠景でも識別できるよう Visual Lab A 寄りに大型化）----
+  // 前傾クラウチング姿勢: 胴を前方(+X=鼻先方向)へ倒し、ヘルメットを前上に置く。
   const jockey = mergeAndDispose([
-    bake(new THREE.CapsuleGeometry(0.26, 0.42, 4, 8), [0, 0, 0], [0.5, 0, 0]),
-    bake(new THREE.SphereGeometry(0.2, 12, 10), [0.18, 0.42, 0]),
+    bake(new THREE.CapsuleGeometry(0.32, 0.54, 6, 12), [0, 0.16, 0], [0, 0, -0.55]),
+    bake(new THREE.SphereGeometry(0.27, 14, 12), [0.34, 0.52, 0]),
   ]);
-  const face = bake(new THREE.SphereGeometry(0.14, 10, 8), [0, 0, 0]);
+  // 顔（skin）: ヘルメットの前下に覗く
+  const face = bake(new THREE.SphereGeometry(0.16, 10, 8), [0.44, 0.4, 0]);
 
   const footRing = new THREE.TorusGeometry(0.72, 0.07, 8, 20); // 控えめな足元マーカー
   const blob = new THREE.PlaneGeometry(2.4, 2.4);
@@ -381,15 +383,18 @@ export function createBroadcastCelHorseVisual(
   const tailMesh = new THREE.Mesh(res.geo.tail, maneMat);
   tailPivot.add(tailMesh);
 
-  // 騎手（上下動する）
+  // 騎手（上下動する）。背の上・前方(withers)へ座らせ、埋没を抑える。
   const jockeyPivot = new THREE.Group();
-  jockeyPivot.position.set(-0.25, 1.95, 0);
+  jockeyPivot.position.set(0.15, 2.02, 0);
   bodyBob.add(jockeyPivot);
   const jockeyMesh = new THREE.Mesh(res.geo.jockey, silkMat);
   jockeyMesh.castShadow = true;
   jockeyPivot.add(jockeyMesh);
+  // 騎手アウトライン（セルルックで馬体から分離して見えるように）
+  const jockeyOutline = new THREE.Mesh(res.geo.jockey, res.mats.outline);
+  jockeyOutline.scale.setScalar(1.08);
+  jockeyMesh.add(jockeyOutline);
   const faceMesh = new THREE.Mesh(res.geo.face, res.mats.skin);
-  faceMesh.position.set(0.32, 0.36, 0);
   jockeyPivot.add(faceMesh);
 
   // 脚 4 本
