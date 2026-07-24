@@ -233,7 +233,7 @@ export default function VisualLabScene() {
     const stage = stageRef.current, mount = mountRef.current, renderer = rendererRef.current, cam = cameraRef.current;
     if (!stage || !mount || !renderer || !cam) return;
     if (captureSize) { stage.style.width = `${captureSize[0]}px`; stage.style.height = `${captureSize[1]}px`; }
-    else { stage.style.width = ''; stage.style.height = ''; }
+    else { stage.style.width = ''; stage.style.height = '68dvh'; }
     requestAnimationFrame(() => {
       renderer.setSize(mount.clientWidth, mount.clientHeight);
       cam.aspect = mount.clientWidth / mount.clientHeight; cam.updateProjectionMatrix();
