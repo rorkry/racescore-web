@@ -17,12 +17,22 @@ export interface HorseInput {
   runningStyle: RunningStyle;
   /** 総合能力 0..1（正規化済み） */
   ability: number;
-  /** 0-based の枠順（初期横位置に使用） */
+  /** 0-based の枠順（初期横位置に使用）。配列 index ではない */
   gateIndex: number;
   /** 反応の遅れ(s)。省略時は脚質から決定 */
   reactionDelay?: number;
   /** スタミナ基礎 0..1。省略時は 0.6 + ability*0.3 */
   staminaBase?: number;
+  /**
+   * 初期横位置(m)。指定時は gateIndex 由来より優先。
+   * start-phase / 旧2D の lateralPosition を踏襲するために使う。
+   */
+  initialLateralPosition?: number;
+  /**
+   * スタート後隊列の初期 raceProgress オフセット（0..約0.08）。
+   * 先頭に近いほど大きい。省略時は 0。
+   */
+  initialProgressOffset?: number;
 }
 
 export interface RaceDynamicsConfig {
@@ -49,6 +59,7 @@ export interface RaceDynamicsConfig {
 export interface HorseFrameState {
   horseId: string;
   horseNumber: number;
+  /** 走破距離メートル（0..raceDistance）。0..1 正規化値ではない */
   raceProgress: number;
   speed: number;
   acceleration: number;

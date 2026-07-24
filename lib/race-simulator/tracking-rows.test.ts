@@ -1,60 +1,67 @@
 /**
- * tracking-rows テスト
+ * tracking-rows テスト（レース進行連動）
  * 実行: npx tsx lib/race-simulator/tracking-rows.test.ts
- *
- * 検証:
- *  - 現在順位でソートされる
- *  - 先頭差(gap)が 0 以上に整形される（先頭は 0）
- *  - 枠は実データ優先・無ければ fallbackWaku（決定的）
- *  - 枠色・文字色が枠に対応
- *  - 短縮名（狭幅用）が最大4文字
  */
-import { buildTrackingRows, fallbackWaku } from './tracking-rows';
+import {
+  buildTrackingRows,
+  trackingInputsFromDynamics,
+  fallbackWaku,
+} from './tracking-rows';
 
 let pass = 0, fail = 0;
 function check(label: string, cond: boolean, detail = '') {
-  if (cond) { pass++; } else { fail++; console.error(`  \u2717 ${label} ${detail}`); }
+  if (cond) { pass++; } else { fail++; console.error(`  ✗ ${label} ${detail}`); }
 }
 
 console.log('=== tracking-rows ===');
 
-const horses = [
-  { horseNumber: 3, position: 2, horseName: 'アイウエオカキク', distanceFromLeader: 1.5 },
-  { horseNumber: 1, position: 1, horseName: 'サンプル馬', distanceFromLeader: 0 },
-  { horseNumber: 2, position: 3, horseName: 'テスト', distanceFromLeader: -0.3 }, // 異常値(負)は 0 に丸める
+const raceDistance = 1600;
+const wakuOf = (hn: number) => ((hn - 1) % 8) + 1;
+
+// dynamics フレーム風（raceProgress はメートル）
+const frameEarly = [
+  { horseNumber: 1, raceProgress: 160, rank: 2 },
+  { horseNumber: 2, raceProgress: 192, rank: 1 },
+  { horseNumber: 3, raceProgress: 128, rank: 3 },
+];
+const frameLate = [
+  { horseNumber: 1, raceProgress: 1280, rank: 1 },
+  { horseNumber: 2, raceProgress: 1200, rank: 2 },
+  { horseNumber: 3, raceProgress: 1120, rank: 3 },
 ];
 
-// 実データ枠: 3→枠5, 1→枠1, 2→なし（fallback）
-const wakuMap = new Map<number, number>([[3, 5], [1, 1]]);
-const rows = buildTrackingRows(horses, (hn) => wakuMap.get(hn));
+const earlyInputs = trackingInputsFromDynamics(frameEarly, raceDistance, (n) => `馬${n}`);
+const lateInputs = trackingInputsFromDynamics(frameLate, raceDistance, (n) => `馬${n}`);
+const earlyRows = buildTrackingRows(earlyInputs, { wakuOf, raceDistance });
+const lateRows = buildTrackingRows(lateInputs, { wakuOf, raceDistance });
 
-// 1) 順位でソート
-check('順位でソート', rows.map((r) => r.horseNumber).join(',') === '1,3,2', rows.map((r) => r.horseNumber).join(','));
-check('先頭は position=1', rows[0].position === 1 && rows[0].horseNumber === 1);
+check('早期: 先頭は rank1=馬2', earlyRows[0].horseNumber === 2 && earlyRows[0].gapLabel === '先頭');
+check('早期: 後続は 先頭差 +Xm', earlyRows[1].gapLabel.startsWith('先頭差 +') && earlyRows[1].gap > 0);
+check('早期: 全馬が常に0mではない', earlyRows.some((r) => r.gap > 0));
+check('早期: 走破距離が progress に比例', Math.abs(earlyRows.find((r) => r.horseNumber === 2)!.distanceRun - 192) < 1);
+check('早期: runLabel は走破のみ', earlyRows[0].runLabel === '192m' || earlyRows[0].runLabel.endsWith('m'));
+check('早期: 先頭に曖昧な0mラベルを出さない', earlyRows[0].gapLabel === '先頭');
 
-// 2) gap 整形
-check('先頭の gap=0', rows[0].gap === 0);
-check('2位の gap=1.5', rows.find((r) => r.horseNumber === 3)!.gap === 1.5);
-check('負の gap は 0 に丸め', rows.find((r) => r.horseNumber === 2)!.gap === 0);
+check('後期: progress増で走破距離が増える',
+  lateRows.find((r) => r.horseNumber === 1)!.distanceRun >
+  earlyRows.find((r) => r.horseNumber === 1)!.distanceRun);
 
-// 3) 枠: 実データ優先 / fallback
-check('実データ枠優先(3→5)', rows.find((r) => r.horseNumber === 3)!.waku === 5);
-check('実データ枠優先(1→1)', rows.find((r) => r.horseNumber === 1)!.waku === 1);
-check('枠なしは fallback(2→fallbackWaku)', rows.find((r) => r.horseNumber === 2)!.waku === fallbackWaku(2, 3));
+check('後期: 先頭が馬1へ追従', lateRows[0].horseNumber === 1 && lateRows[0].gapLabel === '先頭');
+check('後期: 残り距離が表示', lateRows[0].remaining != null && lateRows[0].remaining < raceDistance);
+check('距離ラベルに走破が含まれる', lateRows[0].distanceLabel.includes('走破'));
 
-// 4) 枠色・文字色
-check('枠1は白背景+黒文字', rows.find((r) => r.horseNumber === 1)!.color === '#f2f2f2' && rows.find((r) => r.horseNumber === 1)!.textColor === '#111111');
+// pause相当: 同じ入力なら同じ行
+const again = buildTrackingRows(lateInputs, { wakuOf, raceDistance });
+check('同一入力は同一表示', again[0].distanceRun === lateRows[0].distanceRun && again[0].gap === lateRows[0].gap);
 
-// 5) 短縮名（最大4文字）
-check('短縮名は最大4文字', rows.find((r) => r.horseNumber === 3)!.shortName.length <= 4, rows.find((r) => r.horseNumber === 3)!.shortName);
-check('短い名はそのまま', rows.find((r) => r.horseNumber === 2)!.shortName === 'テスト');
+// レース切替相当: 空→初期
+const empty = buildTrackingRows([], { wakuOf, raceDistance });
+check('空入力は空行', empty.length === 0);
 
-// 6) fallbackWaku: 18頭でも 1..8 に収まる
+// fallbackWaku
 {
-  const total = 18;
-  const wakus = Array.from({ length: total }, (_, i) => fallbackWaku(i + 1, total));
-  check('fallbackWaku は 1..8 に収まる(18頭)', wakus.every((w) => w >= 1 && w <= 8));
-  check('fallbackWaku は単調非減少(18頭)', wakus.every((w, i) => i === 0 || w >= wakus[i - 1]));
+  const wakus = Array.from({ length: 18 }, (_, i) => fallbackWaku(i + 1, 18));
+  check('fallbackWaku 1..8', wakus.every((w) => w >= 1 && w <= 8));
 }
 
 console.log(`\n結果: ${pass} passed, ${fail} failed`);

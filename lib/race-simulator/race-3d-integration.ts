@@ -33,6 +33,13 @@ import {
   type RawFormationHorse,
 } from '../race-dynamics';
 import { hashString } from '../race-dynamics/seed';
+import {
+  convertForecastLayoutTo3D,
+  computeExpectedGoalPositions,
+  computeGoalBlendWeights,
+  blendFrameTowardForecastLayouts,
+  type Layout3DPose,
+} from './forecast-layout-to-3d';
 
 /** CourseInfo の最小形（place / distance / trackType / clockwise / paceTendency） */
 export interface CourseInfoLike {
@@ -62,6 +69,11 @@ export interface SimHorseLike {
   waku?: number;
   leadingIntention?: number;
   staminaRemaining?: number;
+  /** start-phase の横位置(m)。dynamics 初期状態へ踏襲 */
+  lateralPosition?: number;
+  /** start-phase の走破距離(m)。初期 progress オフセットに使用 */
+  currentDistance?: number;
+  runningStyle?: string;
   capabilities?: {
     startSpeed?: number;
     cruiseSpeed?: number;
@@ -69,6 +81,126 @@ export interface SimHorseLike {
     stamina?: number;
     cornerSkill?: number;
   };
+}
+
+/** 表示用の旧2D配置（スタート後 / ゴール前 / 最終着順）。dynamics 本体は変更しない。 */
+export interface ForecastLayouts3D {
+  start: Layout3DPose[];
+  goal: Layout3DPose[];
+  finish: Layout3DPose[];
+  raceDistance: number;
+}
+
+/**
+ * SimulationResult から旧2D相当のスタート後・ゴール前・最終着順レイアウトを構築する。
+ * ゴール前は CourseStyleRacePace と同じ式（computeExpectedGoalPositions）。
+ * 最終着順は finalStandings.position（結果）。表示ブレンド用で着順ロジック自体は変えない。
+ */
+export function buildForecastLayoutsFromSimulation(
+  sim: SimulationLike,
+  raceDistance: number,
+): ForecastLayouts3D | null {
+  const startHorses = sim.phases?.start?.horses ?? [];
+  const finishHorses = sim.finalStandings ?? startHorses;
+  if (startHorses.length === 0 || raceDistance <= 0) return null;
+
+  const startAnchor = Math.max(
+    ...startHorses.map((h) => h.currentDistance ?? 0),
+    raceDistance * 0.12,
+  );
+
+  const start = convertForecastLayoutTo3D(
+    startHorses.map((h, i) => ({
+      horseNumber: h.horseNumber,
+      forecastPosition: h.position ?? i + 1,
+      waku: h.waku ?? ((h.horseNumber - 1) % 8) + 1,
+    })),
+    { anchorDistance: startAnchor },
+  );
+
+  const goalInputs = startHorses.map((h, i) => {
+    const cap = h.capabilities ?? {};
+    const kisoScore =
+      (cap.cruiseSpeed ?? 50) * 0.5 +
+      (cap.acceleration ?? 50) * 0.3 +
+      (cap.stamina ?? 50) * 0.2;
+    return {
+      horseNumber: h.horseNumber,
+      startPosition: h.position ?? i + 1,
+      waku: h.waku ?? ((h.horseNumber - 1) % 8) + 1,
+      kisoScore,
+      l4fScore: cap.acceleration ?? 50,
+      runningStyle: h.runningStyle,
+    };
+  });
+  const goalExpected = computeExpectedGoalPositions(goalInputs);
+  const goal = convertForecastLayoutTo3D(
+    goalExpected.map((g) => ({
+      horseNumber: g.horseNumber,
+      forecastPosition: g.expectedPositionGoal,
+      waku: g.waku,
+    })),
+    { anchorDistance: raceDistance * 0.96 },
+  );
+
+  const finish = convertForecastLayoutTo3D(
+    finishHorses.map((h, i) => ({
+      horseNumber: h.horseNumber,
+      forecastPosition: h.position ?? i + 1,
+      waku: h.waku ?? ((h.horseNumber - 1) % 8) + 1,
+    })),
+    { anchorDistance: raceDistance },
+  );
+
+  return { start, goal, finish, raceDistance };
+}
+
+/**
+ * 表示用: dynamics 補間 + ゴール前に旧2D配置へ blend + 入線直前に実着順へ収束。
+ * simulation / dynamics の着順計算は変更しない（表示座標のみ）。
+ *
+ * 収束先の「実際の最終着順」は dynamics の現フレーム rank（finishTime 反映済み）。
+ * layouts.finish（旧2D finalStandings）は参照しない（dynamics と食い違うため）。
+ */
+export function interpolateDynamicsForDisplay(
+  result: RaceDynamicsResult,
+  time: number,
+  layouts: ForecastLayouts3D | null,
+): HorseFrameState[] {
+  const frame = interpolateDynamics(result, time);
+  if (!layouts || layouts.goal.length === 0) return frame;
+
+  const rd = layouts.raceDistance > 0 ? layouts.raceDistance : 1;
+  // dynamics.raceProgress はメートル
+  const leaderMeters = frame.reduce((m, h) => Math.max(m, h.raceProgress), 0);
+  const leaderProgress01 = Math.min(1, Math.max(0, leaderMeters / rd));
+  const { blendToGoal, convergeToFinish } = computeGoalBlendWeights(leaderProgress01);
+  if (blendToGoal <= 0 && convergeToFinish <= 0) return frame;
+
+  // 枠番は goal レイアウトの lateral から逆算（(waku-4.5)*2.5）
+  const wakuOf = (hn: number) => {
+    const g = layouts.goal.find((x) => x.horseNumber === hn);
+    if (!g) return ((hn - 1) % 8) + 1;
+    return Math.max(1, Math.min(8, Math.round(g.lateralPosition / 2.5 + 4.5)));
+  };
+
+  // 実際の最終着順 = dynamics rank（表示の収束先）
+  const finishFromDynamics = convertForecastLayoutTo3D(
+    frame.map((h) => ({
+      horseNumber: h.horseNumber,
+      forecastPosition: h.rank,
+      waku: wakuOf(h.horseNumber),
+    })),
+    { anchorDistance: rd },
+  );
+
+  return blendFrameTowardForecastLayouts(frame, {
+    raceDistance: layouts.raceDistance,
+    goalLayout: layouts.goal,
+    finishLayout: finishFromDynamics,
+    blendToGoal,
+    convergeToFinish,
+  });
 }
 
 export interface RacecourseLayout {
@@ -177,14 +309,31 @@ export function buildHorseInputsFromSimulation(sim: SimulationLike): HorseInput[
 
   const base = adaptFormationToHorseInputs(raw);
 
-  // staminaBase を staminaRemaining から補完
+  // staminaBase / 初期横位置 / スタート隊列オフセットを start-phase から補完
+  // （旧2D/ start-phase の前後・内外関係を dynamics 初期状態へ踏襲）
+  const maxDist = Math.max(0, ...horses.map((h) => h.currentDistance ?? 0));
   return base.map((hi) => {
     const src = horses.find((h) => h.horseNumber === hi.horseNumber);
     const staminaBase =
       src?.staminaRemaining != null
         ? clamp01(src.staminaRemaining / 100)
         : undefined;
-    return staminaBase != null ? { ...hi, staminaBase } : hi;
+    const initialLateralPosition =
+      src?.lateralPosition != null && Number.isFinite(src.lateralPosition)
+        ? src.lateralPosition
+        : undefined;
+    // スタート後隊列: currentDistance が大きいほど先頭 → 微小 progress オフセット
+    let initialProgressOffset: number | undefined;
+    if (maxDist > 0 && src?.currentDistance != null && Number.isFinite(src.currentDistance)) {
+      // 最大でも 0.04（レース全体の 4%）。中間は dynamics が自然に進める。
+      initialProgressOffset = clamp01(src.currentDistance / Math.max(maxDist, 1)) * 0.04;
+    }
+    return {
+      ...hi,
+      ...(staminaBase != null ? { staminaBase } : {}),
+      ...(initialLateralPosition != null ? { initialLateralPosition } : {}),
+      ...(initialProgressOffset != null ? { initialProgressOffset } : {}),
+    };
   });
 }
 

@@ -89,12 +89,12 @@ export function selectCameraMode(phase: string | undefined, progress: number): C
   //  '直線〜ゴール' は 'ゴール' より先に '直線' を判定する（純 'ゴール' フェーズと区別）。
   if (p.includes('スタート')) return 'START_SIDE';
   if (p.includes('コーナー')) return 'CORNER_HIGH';
-  if (p.includes('直線')) return progress >= 0.97 ? 'FINISH' : 'FINAL_STRAIGHT_SIDE';
+  if (p.includes('直線')) return progress >= 0.94 ? 'FINISH' : 'FINAL_STRAIGHT_SIDE';
   if (p.includes('ゴール')) return 'FINISH';
   if (p.includes('隊列') || p.includes('ペース')) return 'BACK_STRAIGHT_TRACKING';
 
   // フォールバック（progress ベース）
-  if (progress >= 0.97) return 'FINISH';
+  if (progress >= 0.94) return 'FINISH';
   if (progress >= 0.72) return 'FINAL_STRAIGHT_SIDE';
   if (progress >= 0.45) return 'CORNER_HIGH';
   if (progress >= 0.20) return 'BACK_STRAIGHT_TRACKING';
@@ -195,4 +195,66 @@ export function computeGoalStandPose(
     .addScaledVector(UP, config.targetHeight);
 
   return { position, lookAt, fov: config.fov };
+}
+
+/** ゴール入線モードの進行度しきい値（先頭馬の raceProgress / 正規化距離） */
+export const FINISH_CAMERA_PROGRESS = 0.94;
+/** ゴール後に勝ち馬を映し続ける時間(s) */
+export const FINISH_HOLD_SECONDS = 2.5;
+
+/**
+ * ゴール入線カメラへ入るべきか（レース進行ベース）。
+ * - leaderProgress01: 先頭馬の 0..1 進行度
+ * - leaderFinished: 先頭がゴール済みか
+ * - timeSinceLeaderFinish: 先頭入線からの経過秒（未入線なら null）
+ */
+export function shouldUseFinishCamera(params: {
+  leaderProgress01: number;
+  leaderFinished?: boolean;
+  timeSinceLeaderFinish?: number | null;
+  holdSeconds?: number;
+}): boolean {
+  const hold = params.holdSeconds ?? FINISH_HOLD_SECONDS;
+  // 入線後の保持が終わったら通常へ戻す（progress=1 のままでも解除）
+  if (params.leaderFinished) {
+    const t = params.timeSinceLeaderFinish;
+    if (t != null && t > hold) return false;
+    return true;
+  }
+  if (params.leaderProgress01 >= FINISH_CAMERA_PROGRESS) return true;
+  return false;
+}
+
+/**
+ * ゴール入線用カメラ: ゴール線と先頭馬（＋上位群）を画面内へ。
+ * lookAt はゴールと先頭の中点寄り。急反転しないよう呼び出し側で lerp する。
+ */
+export function computeFinishApproachPose(params: {
+  goalPosition: THREE.Vector3;
+  goalTangent: THREE.Vector3;
+  standSideNormal: THREE.Vector3;
+  leaderPosition: THREE.Vector3;
+  packSpread?: number;
+  config?: Partial<GoalStandConfig>;
+}): CameraPose {
+  const cfg = { ...DEFAULT_GOAL_STAND_CONFIG, ...params.config };
+  const packSpread = params.packSpread ?? 20;
+
+  const position = params.goalPosition.clone()
+    .addScaledVector(params.standSideNormal, Math.min(70, Math.max(40, cfg.standDistance)))
+    .addScaledVector(UP, cfg.standHeight)
+    .addScaledVector(params.goalTangent, -Math.min(40, cfg.straightOffset));
+
+  // ゴール線と先頭馬の中点を見る（勝ち馬＋ゴール板が同時に入る）
+  const lookAt = new THREE.Vector3()
+    .addVectors(params.goalPosition, params.leaderPosition)
+    .multiplyScalar(0.5)
+    .addScaledVector(UP, cfg.targetHeight);
+
+  const dist = Math.max(1, position.distanceTo(lookAt));
+  const want = Math.max(24, packSpread + 18);
+  let fov = (2 * Math.atan(want / 2 / dist) * 180) / Math.PI;
+  fov = clamp(fov, 28, 55);
+
+  return { position, lookAt, fov };
 }

@@ -77,14 +77,15 @@ async function main() {
     check('空入力: 空 Map', m.size === 0);
   }
 
-  // 5) coatIndexFromName の分類（実データ毛色名）
+  // 5) coatIndexFromName の分類（実データ毛色名・normalizeCoatColor 経由）
   check('鹿毛→0', coatIndexFromName('鹿毛') === 0);
   check('黒鹿毛→1', coatIndexFromName('黒鹿毛') === 1);
-  check('青鹿毛→2', coatIndexFromName('青鹿毛') === 2);
+  check('青鹿毛→1(darkBay)', coatIndexFromName('青鹿毛') === 1);
+  check('青毛→2(black)', coatIndexFromName('青毛') === 2);
   check('栗毛→3', coatIndexFromName('栗毛') === 3);
-  check('栃栗毛→3', coatIndexFromName('栃栗毛') === 3);
+  check('栃栗毛→5', coatIndexFromName('栃栗毛') === 5);
   check('芦毛→4', coatIndexFromName('芦毛') === 4);
-  check('白毛→4', coatIndexFromName('白毛') === 4);
+  check('白毛→6', coatIndexFromName('白毛') === 6);
   check('未知→-1', coatIndexFromName('謎毛') === -1);
   check('null→-1', coatIndexFromName(null) === -1);
 
