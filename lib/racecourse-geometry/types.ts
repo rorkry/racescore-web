@@ -83,8 +83,14 @@ export interface RacecourseGeometry {
   /** ゴール板の弧長位置(m) */
   finishPathDistance: number;
 
-  /** 走路幅(m) */
+  /** 走路幅(m)。距離ごとには分けず、競馬場・芝/ダート・内外区分の基本属性として1つ持つ（代表値） */
   trackWidth: number;
+  /** 公式資料の幅員レンジ最小値(m)。範囲表記がある場合のみ */
+  trackWidthMinMeters?: number;
+  /** 公式資料の幅員レンジ最大値(m)。範囲表記がある場合のみ */
+  trackWidthMaxMeters?: number;
+  /** 幅員の採用根拠（公式値そのもの／レンジ中央値／既定値継続など） */
+  trackWidthSourceNote?: string;
   /** ホームストレッチ長(m)（公式値） */
   homeStraightLength: number;
   /** 高低差(m)（公式値, 最高-最低） */

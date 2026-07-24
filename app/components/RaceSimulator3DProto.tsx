@@ -17,7 +17,12 @@ import {
   type ForecastLayouts3D,
 } from '@/lib/race-simulator/race-3d-integration';
 import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE } from '@/lib/racecourse-geometry';
-import { buildTrackGroup, buildStartFinishGroup, type TrackRenderResult } from '@/lib/race-simulator/track-render';
+import {
+  buildTrackGroup,
+  buildStartFinishGroup,
+  buildDistanceMarkersGroup,
+  type TrackRenderResult,
+} from '@/lib/race-simulator/track-render';
 import type { RaceDynamicsResult } from '@/lib/race-dynamics';
 import {
   createHorseVisualResources,
@@ -499,6 +504,9 @@ export default function RaceSimulator3DProto({
         const sf = buildStartFinishGroup(layout.geometry, layout.startMarker);
         scene.add(sf.group);
         trackGroupsRef.current.push(sf);
+        const dm = buildDistanceMarkersGroup(layout.geometry);
+        scene.add(dm.group);
+        trackGroupsRef.current.push(dm);
       } catch (e) {
         console.error('[3DSimulator] 新走路描画エラー（旧描画へfallback）:', e);
         createCourse(scene, tl.courseDistance, courseInfo);

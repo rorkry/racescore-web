@@ -15,7 +15,7 @@
 
 import * as THREE from 'three';
 import type { RacecourseGeometry, StartMarker } from '../racecourse-geometry/types';
-import { samplePathPose } from '../racecourse-geometry';
+import { samplePathPose, pathDistanceAtRemaining } from '../racecourse-geometry';
 
 export interface TrackRenderResult {
   group: THREE.Group;
@@ -215,6 +215,78 @@ export function buildStartFinishGroup(
   // スタート線（黄）とゴール線（白・少し太く）
   makeLine(startMarker.pathDistance, 0xffdd33, 2);
   makeLine(geometry.finishPathDistance, 0xffffff, 3);
+
+  return {
+    group,
+    dispose: () => {
+      for (const d of disposables) d.dispose();
+    },
+  };
+}
+
+export interface DistanceMarkerOptions {
+  /** ゴールからの残り距離(m)群。既定 [200,400,600,800] */
+  distances?: number[];
+}
+
+/** 距離標の色（視認性のための識別用途。JRA実物の配色を厳密に再現したものではない） */
+const MARKER_PLATE_COLOR: Record<number, number> = {
+  200: 0xdd3333,
+  400: 0x33aa55,
+  600: 0xdddd33,
+  800: 0x3377cc,
+};
+const MARKER_PLATE_COLOR_DEFAULT = 0xeeeeee;
+/** ラチ外側の余白(m)。柵・走路へ食い込まないためのクランプ */
+const MARKER_OUTSIDE_MARGIN = 2.5;
+const MARKER_POLE_HEIGHT = 1.6;
+
+/**
+ * 距離標（残り200/400/600/800m）を構築する。全10場・芝ダート・内外回りで共通のロジック。
+ * geometry の finishPathDistance / pathLength / trackWidth / elevationProfile から算出するため、
+ * 座標のハードコードなし。右回り/左回り・芝/ダート・内回り/外回りいずれも同じ関数で対応。
+ */
+export function buildDistanceMarkersGroup(
+  geometry: RacecourseGeometry,
+  opts: DistanceMarkerOptions = {}
+): TrackRenderResult {
+  const group = new THREE.Group();
+  const disposables: Array<{ dispose: () => void }> = [];
+  const halfWidth = geometry.trackWidth / 2;
+  const closed = geometry.pathKind === 'closed-loop';
+  const distances = opts.distances ?? [200, 400, 600, 800];
+
+  for (const remaining of distances) {
+    // open-path（新潟芝直線1000等）でコース全長を超える残り距離は物理的に存在しないためスキップ
+    if (!closed && remaining > geometry.pathLength) continue;
+
+    const d = pathDistanceAtRemaining(geometry, remaining);
+    const pose = samplePathPose(geometry, d, 0);
+    const normal = new THREE.Vector3(pose.normal.x, 0, pose.normal.z);
+    const base = new THREE.Vector3(pose.position.x, pose.position.y, pose.position.z).addScaledVector(
+      normal,
+      halfWidth + MARKER_OUTSIDE_MARGIN
+    );
+
+    const poleGeom = new THREE.CylinderGeometry(0.06, 0.06, MARKER_POLE_HEIGHT, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
+    const pole = new THREE.Mesh(poleGeom, poleMat);
+    pole.position.set(base.x, base.y + MARKER_POLE_HEIGHT / 2, base.z);
+    group.add(pole);
+    disposables.push(poleGeom);
+    disposables.push(poleMat);
+
+    const plateColor = MARKER_PLATE_COLOR[remaining] ?? MARKER_PLATE_COLOR_DEFAULT;
+    const plateGeom = new THREE.BoxGeometry(0.9, 0.5, 0.06);
+    const plateMat = new THREE.MeshStandardMaterial({ color: plateColor, roughness: 0.5 });
+    const plate = new THREE.Mesh(plateGeom, plateMat);
+    const plateY = base.y + MARKER_POLE_HEIGHT + 0.05;
+    plate.position.set(base.x, plateY, base.z);
+    plate.lookAt(base.x + normal.x, plateY, base.z + normal.z);
+    group.add(plate);
+    disposables.push(plateGeom);
+    disposables.push(plateMat);
+  }
 
   return {
     group,
