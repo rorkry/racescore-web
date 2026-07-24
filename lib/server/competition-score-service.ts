@@ -20,6 +20,20 @@
  */
 
 // --- サーバー専用ガード（client bundle 混入を実行時に検知） ---
+//
+// 意図的に `import 'server-only'` は使用していない（検証済み・採用不可）。
+// 理由: `server-only` パッケージは package.json の exports 条件が
+//   { "react-server": "./empty.js", "default": "./index.js" }
+// であり、"react-server" 条件が付かないコンパイル経路では常に index.js
+// （require 時に即 throw）へ解決される。本サービスは Pages Router API
+// （pages/api/race-card-with-score.ts）からも import されるが、Pages Router の
+// API Routes はこの "react-server" 条件が付与されないため、`import 'server-only'`
+// を追加すると *毎リクエスト* race-card-with-score が
+// "This module cannot be imported from a Client Component module." で
+// 500 crash する（`next start` での実機検証で確認済み。App Router の
+// /api/simulator route.ts 側は問題なし＝react-server 条件が付くため）。
+// → 既存の本番 API を壊すため採用しない。代わりに以下の実行時ガードのみで
+//   client bundle への混入を検知する。
 if (typeof window !== 'undefined') {
   throw new Error(
     '[competition-score-service] これはサーバー専用モジュールです。client component から import しないでください。'
