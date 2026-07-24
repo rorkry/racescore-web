@@ -425,7 +425,11 @@ export default function RaceSimulator3DProto({
     dynamicsRef.current = dynamics;
     forecastLayoutsRef.current =
       layout && simulationResult
-        ? buildForecastLayoutsFromSimulation(simulationResult, layout.raceDistance)
+        ? buildForecastLayoutsFromSimulation(
+            simulationResult,
+            layout.raceDistance,
+            layout.geometry.trackWidth,
+          )
         : null;
     console.log('[3DSimulator] layout/dynamics:', {
       layout: layout ? layout.routeId : 'null(旧描画へfallback)',
