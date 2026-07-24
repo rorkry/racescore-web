@@ -38,7 +38,14 @@ import {
   computeExpectedGoalPositions,
   computeGoalBlendWeights,
   blendFrameTowardForecastLayouts,
+  buildStartGateLayout,
+  blendFrameFromStartGate,
+  startGateWeight,
+  buildPredictedFinishTargets,
+  convergeFrameToPredictedFinish,
+  START_BLEND_END_SEC,
   type Layout3DPose,
+  type PredictedFinishTarget,
 } from './forecast-layout-to-3d';
 
 /** CourseInfo の最小形（place / distance / trackType / clockwise / paceTendency） */
@@ -83,12 +90,31 @@ export interface SimHorseLike {
   };
 }
 
-/** 表示用の旧2D配置（スタート後 / ゴール前 / 最終着順）。dynamics 本体は変更しない。 */
+/**
+ * 表示用の配置群（dynamics 本体は変更しない・表示座標のみ）。
+ *  - startGate: 発馬ゲート配置（Phase A・馬番の内→外）
+ *  - start   : スタート後の展開形成（Phase B・expectedPosition2C 由来）
+ *  - goal    : ゴール前の展開（旧2D expectedPositionGoal）
+ *  - finish  : 最終入線（finalStandings.position）— 横位置のみ保持。前後順は finishTargets で規定
+ *  - finishTargets: 最終入線順の正本（PredictedFinishTarget）
+ */
 export interface ForecastLayouts3D {
+  startGate: Layout3DPose[];
   start: Layout3DPose[];
   goal: Layout3DPose[];
   finish: Layout3DPose[];
+  finishTargets: PredictedFinishTarget[];
   raceDistance: number;
+}
+
+/** finalStandings 由来の予想スコア（高いほど強い）。着差スケール用。 */
+function predictedScoreOf(h: SimHorseLike): number {
+  const cap = h.capabilities ?? {};
+  return (
+    (cap.cruiseSpeed ?? 50) * 0.5 +
+    (cap.acceleration ?? 50) * 0.3 +
+    (cap.stamina ?? 50) * 0.2
+  );
 }
 
 /**
@@ -99,10 +125,17 @@ export interface ForecastLayouts3D {
 export function buildForecastLayoutsFromSimulation(
   sim: SimulationLike,
   raceDistance: number,
+  trackWidth?: number,
 ): ForecastLayouts3D | null {
   const startHorses = sim.phases?.start?.horses ?? [];
   const finishHorses = sim.finalStandings ?? startHorses;
   if (startHorses.length === 0 || raceDistance <= 0) return null;
+
+  // Phase A: 発馬ゲート配置（馬番の内→外）。waku は使わない。
+  const startGate = buildStartGateLayout(
+    startHorses.map((h) => h.horseNumber),
+    { raceDistance, trackWidth },
+  );
 
   const startAnchor = Math.max(
     ...startHorses.map((h) => h.currentDistance ?? 0),
@@ -143,24 +176,38 @@ export function buildForecastLayoutsFromSimulation(
     { anchorDistance: raceDistance * 0.96 },
   );
 
-  const finish = convertForecastLayoutTo3D(
+  // 最終入線順の正本: finalStandings.position（予想着順）。配列 index で紐付けない。
+  const finishTargets = buildPredictedFinishTargets(
     finishHorses.map((h, i) => ({
+      horseId: String(h.horseNumber),
       horseNumber: h.horseNumber,
-      forecastPosition: h.position ?? i + 1,
-      waku: h.waku ?? ((h.horseNumber - 1) % 8) + 1,
+      position: h.position ?? i + 1,
+      score: predictedScoreOf(h),
     })),
-    { anchorDistance: raceDistance },
   );
+  // finish レイアウトの横位置は goal（旧2D）の内外を引き継ぎ、入線時に横が潰れないようにする。
+  const goalLatByHn = new Map(goal.map((p) => [p.horseNumber, p.lateralPosition]));
+  const finish: Layout3DPose[] = finishTargets.map((t) => ({
+    horseNumber: t.horseNumber,
+    currentDistance: Math.max(0, raceDistance - t.finishGapMeters),
+    lateralPosition: goalLatByHn.get(t.horseNumber) ?? 0,
+    rank: t.predictedRank,
+    distanceFromLeader: t.finishGapMeters,
+  }));
 
-  return { start, goal, finish, raceDistance };
+  return { startGate, start, goal, finish, finishTargets, raceDistance };
 }
 
 /**
- * 表示用: dynamics 補間 + ゴール前に旧2D配置へ blend + 入線直前に実着順へ収束。
+ * 表示用: dynamics 補間 + 発馬フェーズのゲート/展開 blend + ゴール前旧2D blend + 予想着順への収束。
  * simulation / dynamics の着順計算は変更しない（表示座標のみ）。
  *
- * 収束先の「実際の最終着順」は dynamics の現フレーム rank（finishTime 反映済み）。
- * layouts.finish（旧2D finalStandings）は参照しない（dynamics と食い違うため）。
+ * 段階（time は dynamics 時間・秒 / leaderProgress01 は先頭馬の進捗0..1）:
+ *  1. 発馬（time < START_BLEND_END_SEC）: ゲート配置(馬番) → dynamics(start-phase 展開) へ smoothstep 移行。
+ *  2. ゴール前（0.70〜0.88）: 旧2D expectedPositionGoal へ接近（blendToGoal）。
+ *  3. 入線収束（0.90〜1.00）: 進捗の順序統計量を finalStandings.position（予想着順）へ収束。
+ *
+ * 入線順の正本は layouts.finishTargets（finalStandings.position）。dynamics rank では上書きしない。
  */
 export function interpolateDynamicsForDisplay(
   result: RaceDynamicsResult,
@@ -168,7 +215,17 @@ export function interpolateDynamicsForDisplay(
   layouts: ForecastLayouts3D | null,
 ): HorseFrameState[] {
   const frame = interpolateDynamics(result, time);
-  if (!layouts || layouts.goal.length === 0) return frame;
+  if (!layouts) return frame;
+
+  // 1. 発馬フェーズ: ゲート配置 → 展開形成（dynamics）
+  if (layouts.startGate.length > 0 && time < START_BLEND_END_SEC) {
+    return blendFrameFromStartGate(frame, {
+      startGate: layouts.startGate,
+      weightToDynamics: startGateWeight(time),
+    });
+  }
+
+  if (layouts.goal.length === 0) return frame;
 
   const rd = layouts.raceDistance > 0 ? layouts.raceDistance : 1;
   // dynamics.raceProgress はメートル
@@ -177,30 +234,22 @@ export function interpolateDynamicsForDisplay(
   const { blendToGoal, convergeToFinish } = computeGoalBlendWeights(leaderProgress01);
   if (blendToGoal <= 0 && convergeToFinish <= 0) return frame;
 
-  // 枠番は goal レイアウトの lateral から逆算（(waku-4.5)*2.5）
-  const wakuOf = (hn: number) => {
-    const g = layouts.goal.find((x) => x.horseNumber === hn);
-    if (!g) return ((hn - 1) % 8) + 1;
-    return Math.max(1, Math.min(8, Math.round(g.lateralPosition / 2.5 + 4.5)));
-  };
-
-  // 実際の最終着順 = dynamics rank（表示の収束先）
-  const finishFromDynamics = convertForecastLayoutTo3D(
-    frame.map((h) => ({
-      horseNumber: h.horseNumber,
-      forecastPosition: h.rank,
-      waku: wakuOf(h.horseNumber),
-    })),
-    { anchorDistance: rd },
-  );
-
-  return blendFrameTowardForecastLayouts(frame, {
+  // 2. ゴール前: 旧2D expectedPositionGoal へ接近（finish は別段階で扱うため convergeToFinish=0）
+  const goalBlended = blendFrameTowardForecastLayouts(frame, {
     raceDistance: layouts.raceDistance,
     goalLayout: layouts.goal,
-    finishLayout: finishFromDynamics,
+    finishLayout: [],
     blendToGoal,
-    convergeToFinish,
+    convergeToFinish: 0,
   });
+
+  // 3. 入線収束: finalStandings.position（予想着順=正本）へ進捗の順序を寄せる
+  return convergeFrameToPredictedFinish(
+    goalBlended,
+    layouts.finishTargets,
+    convergeToFinish,
+    layouts.raceDistance,
+  );
 }
 
 export interface RacecourseLayout {
@@ -303,7 +352,8 @@ export function buildHorseInputsFromSimulation(sim: SimulationLike): HorseInput[
       horseNumber: h.horseNumber,
       expectedRankRatio: rankRatio,
       ability,
-      gateIndex: (h.waku ?? h.horseNumber ?? i + 1) - 1,
+      // 発馬横位置は馬番基準（waku ではない）。gateIndex = horseNumber - 1。
+      gateIndex: h.horseNumber - 1,
     };
   });
 
@@ -351,12 +401,56 @@ export function runRaceDynamicsForRace(
   const pace = normalizePace(courseInfo?.paceTendency);
   const seed = hashString(sim.raceKey || `${layout.routeId}:${layout.raceDistance}`);
 
-  return simulateRaceDynamics(inputs, {
+  const result = simulateRaceDynamics(inputs, {
     raceDistance: layout.raceDistance,
     trackWidth: layout.geometry.trackWidth,
     seed,
     pace,
   });
+
+  return unifyFinishOrderWithPrediction(result, sim);
+}
+
+/**
+ * dynamics.finishOrder を「予想着順（finalStandings.position）」へ整合させる。
+ *
+ * 表示（interpolateDynamicsForDisplay）は進捗を予想着順へ収束させるため、
+ * finishOrder も同じ正本を使う（別系統の最終結果で上書きしない）。
+ * 通過時刻は dynamics の実 finishTime を昇順に並べ、予想着順へ割り当てる
+ * （時間差の自然さは保ちつつ、順序だけ予想着順にする）。
+ */
+function unifyFinishOrderWithPrediction(
+  result: RaceDynamicsResult,
+  sim: SimulationLike,
+): RaceDynamicsResult {
+  const finishHorses = sim.finalStandings ?? sim.phases?.start?.horses ?? [];
+  if (finishHorses.length === 0) return result;
+
+  const targets = buildPredictedFinishTargets(
+    finishHorses.map((h, i) => ({
+      horseId: String(h.horseNumber),
+      horseNumber: h.horseNumber,
+      position: h.position ?? i + 1,
+      score: predictedScoreOf(h),
+    })),
+  );
+  if (targets.length === 0) return result;
+
+  const sortedTimes = result.finishOrder
+    .map((f) => f.finishTime)
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  const fallbackTime = sortedTimes[sortedTimes.length - 1] ?? result.totalTime;
+
+  const byRank = [...targets].sort((a, b) => a.predictedRank - b.predictedRank);
+  const unified = byRank.map((t, idx) => ({
+    horseId: t.horseId,
+    horseNumber: t.horseNumber,
+    rank: t.predictedRank,
+    finishTime: sortedTimes[idx] ?? fallbackTime,
+  }));
+
+  return { ...result, finishOrder: unified };
 }
 
 function normalizePace(p: string | undefined): PaceType | undefined {
