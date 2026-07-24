@@ -33,10 +33,11 @@ export function normalizeCoatColor(raw: unknown): NormalizedCoatColor | null {
   if (raw == null) return null;
   if (typeof raw !== 'string' && typeof raw !== 'number') return null;
 
-  // Unicode 正規化 + 空白・改行・タブ除去
+  // Unicode 正規化 + BOM + 空白・改行・タブ除去
   let s = String(raw).normalize('NFKC');
+  if (s.charCodeAt(0) === 0xfeff) s = s.slice(1);
   s = s.replace(/[\s\u3000\t\r\n]+/g, '');
-  // 括弧注釈を除去（例: 鹿毛（濃）→ 鹿毛）
+  // 括弧注釈を除去（例: 鹿毛（濃）→ 鹿毛、鹿毛（父系）→ 鹿毛）
   s = s.replace(/[（(][^）)]*[）)]/g, '');
   if (!s) return null;
 

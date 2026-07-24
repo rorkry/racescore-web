@@ -4,6 +4,10 @@ import Papa from 'papaparse';
 import iconv from 'iconv-lite';
 import { auth } from '@/lib/auth';
 import { checkRateLimit, getRateLimitIdentifier, strictRateLimit } from '@/lib/rate-limit';
+import {
+  describeKeiroColumnResolution,
+  extractKeiroFromCsvRow,
+} from '@/lib/umadata/keiro-from-csv';
 
 // Vercel/Railway向けのタイムアウト設定
 export const maxDuration = 300; // 5分
@@ -107,7 +111,9 @@ export async function POST(request: NextRequest) {
           message: `${result.date}のデータを${result.isUpdate ? '更新' : '追加'}しました`
         });
       } else if (file.name.includes('umadata')) {
-        const result = await importUmadata(client, data.slice(1)); // ヘッダー行をスキップ
+        // 1行目はヘッダー（毛色列名の照合に使う）。データは slice(1)。
+        const headerRow = Array.isArray(data[0]) ? (data[0] as unknown[]) : null;
+        const result = await importUmadata(client, data.slice(1) as unknown[][], headerRow);
         client.release();
         await pool.end();
         return NextResponse.json({ 
@@ -115,6 +121,7 @@ export async function POST(request: NextRequest) {
           count: result.count, 
           table: 'umadata',
           inserted: result.inserted,
+          keiroColumn: result.keiroColumn,
           message: `${result.inserted}件のデータを保存しました`
         });
       } else {
@@ -385,9 +392,13 @@ async function importWakujun(client: any, data: any[]): Promise<{ count: number;
  * 45: dam - 母馬
  * 46: lap_time - ワーク1（ラップタイム）
  * 47: work_2 - ワーク2
- * 63: keiro - 毛色（BL列。64列フォーマットのみ。無い場合は空）
+ * 63: keiro - 毛色（Excel BL列。ヘッダー「毛色」等があれば優先。ALTERは migration へ）
  */
-async function importUmadata(client: any, data: any[]): Promise<{ count: number; inserted: number }> {
+async function importUmadata(
+  client: any,
+  data: any[],
+  headerRow: unknown[] | null = null,
+): Promise<{ count: number; inserted: number; keiroColumn: ReturnType<typeof describeKeiroColumnResolution> }> {
   console.log(`[importUmadata] 開始: ${data.length}行`);
   const startTime = Date.now();
 
@@ -399,9 +410,10 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
   const commitEvery = 2000; // 2000件ごとにコミット
 
   let errors: string[] = [];
-  
-  // 毛色列（BL列=CSV idx63）を保存できるよう、無ければ追加する（冪等・既存データ非破壊）
-  await client.query('ALTER TABLE umadata ADD COLUMN IF NOT EXISTS keiro TEXT');
+
+  // Schema: keiro は db/migrations で追加。ここでは ALTER しない。
+  const keiroColumn = describeKeiroColumnResolution(headerRow);
+  console.log('[importUmadata] keiro column resolution:', keiroColumn);
 
   try {
     await client.query('BEGIN');
@@ -418,6 +430,7 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
             await client.query(`SAVEPOINT ${rowId}`);
             
             const horseName = (row[11] || '').trim();
+            const keiro = extractKeiroFromCsvRow(row, keiroColumn.headerIndex);
             
             await client.query(`
               INSERT INTO umadata (
@@ -487,7 +500,7 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
               (row[45] || '').trim(),  // dam
               (row[46] || '').trim(),  // lap_time
               (row[47] || '').trim(),  // work_2
-              (row[63] || '').trim()   // keiro（毛色・BL列。64列フォーマットのみ。無い場合は空）
+              keiro                   // keiro（ヘッダー名 or Excel BL=idx63）
             ]);
             
             await client.query(`RELEASE SAVEPOINT ${rowId}`);
@@ -528,7 +541,7 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[importUmadata] 完了: ${inserted}件処理 (${elapsed}秒)`);
 
-    return { count, inserted };
+    return { count, inserted, keiroColumn };
   } catch (error) {
     try {
       await client.query('ROLLBACK');

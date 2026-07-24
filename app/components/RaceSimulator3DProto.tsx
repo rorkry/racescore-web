@@ -845,7 +845,7 @@ export default function RaceSimulator3DProto({
                 layout,
                 frame.map((h) => ({
                   horseNumber: h.horseNumber,
-                  progress: h.raceProgress,
+                  progressMeters: h.raceProgress,
                   lateral: h.lateralPosition,
                   blocked: h.blocked,
                   finished: h.finished,
@@ -856,7 +856,7 @@ export default function RaceSimulator3DProto({
                 layout,
                 currentState.horses.map((h) => ({
                   horseNumber: h.horseNumber,
-                  progress: h.currentDistance,
+                  progressMeters: h.currentDistance,
                   lateral: h.lateralPosition,
                 }))
               );
@@ -1206,7 +1206,7 @@ export default function RaceSimulator3DProto({
   // Phase B: 新geometry上へ馬を配置（progress は dynamics.raceProgress or 既存 currentDistance）
   const positionHorsesOnGeometry = (
     layout: RacecourseLayout,
-    horses: Array<{ horseNumber: number; progress: number; lateral: number; blocked?: boolean; finished?: boolean }>
+    horses: Array<{ horseNumber: number; progressMeters: number; lateral: number; blocked?: boolean; finished?: boolean }>
   ) => {
     const geometry = layout.geometry;
     const startPathDistance = layout.startMarker.pathDistance;
@@ -1214,7 +1214,7 @@ export default function RaceSimulator3DProto({
       const mesh = horseMeshesRef.current.get(h.horseNumber);
       if (!mesh) continue;
       try {
-        const pose = sampleRaceProgressPose(geometry, startPathDistance, h.progress, h.lateral);
+        const pose = sampleRaceProgressPose(geometry, startPathDistance, h.progressMeters, h.lateral);
         if (
           !Number.isFinite(pose.position.x) ||
           !Number.isFinite(pose.position.z) ||
@@ -1452,7 +1452,7 @@ export default function RaceSimulator3DProto({
 
       let horses: Array<{
         horseNumber: number;
-        progress: number;
+        progressMeters: number;
         lateral: number;
         finished?: boolean;
         finishTime?: number;
@@ -1461,7 +1461,7 @@ export default function RaceSimulator3DProto({
         const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
         horses = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current).map((h) => ({
           horseNumber: h.horseNumber,
-          progress: h.raceProgress,
+          progressMeters: h.raceProgress,
           lateral: h.lateralPosition,
           finished: h.finished,
           finishTime: h.finishTime,
@@ -1469,7 +1469,7 @@ export default function RaceSimulator3DProto({
       } else {
         horses = currentState.horses.map((h) => ({
           horseNumber: h.horseNumber,
-          progress: h.currentDistance, // meters
+          progressMeters: h.currentDistance,
           lateral: h.lateralPosition ?? 0,
         }));
       }
@@ -1480,12 +1480,12 @@ export default function RaceSimulator3DProto({
       let leaderLat = 0;
       let leaderFinished = false;
       for (const h of horses) {
-        if (!Number.isFinite(h.progress)) continue;
-        sum += h.progress; min = Math.min(min, h.progress); max = Math.max(max, h.progress);
+        if (!Number.isFinite(h.progressMeters)) continue;
+        sum += h.progressMeters; min = Math.min(min, h.progressMeters); max = Math.max(max, h.progressMeters);
         const l = h.lateral ?? 0;
         lsum += l; lmin = Math.min(lmin, l); lmax = Math.max(lmax, l); c++;
-        if (h.progress > leaderProgress) {
-          leaderProgress = h.progress;
+        if (h.progressMeters > leaderProgress) {
+          leaderProgress = h.progressMeters;
           leaderHn = h.horseNumber;
           leaderLat = l;
           leaderFinished = !!h.finished;

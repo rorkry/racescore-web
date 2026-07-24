@@ -114,11 +114,18 @@ export function orderByLateralInnerFirst(
     .map((p) => p.horseNumber);
 }
 
-/** ゴール前 forecast blend の進行度区間（0..1） */
+/** ゴール前 forecast blend の進行度区間（0..1, leaderProgress01）
+ *
+ * 優先方針:
+ *  - <0.70: dynamics のみ
+ *  - 0.70〜0.84: 旧2Dゴール前配置へ緩やかに接近
+ *  - 0.84〜0.94: 旧2Dゴール前を最も強く反映（converge=0）
+ *  - 0.94〜1.00: 最終着順（dynamics finish）へ滑らかに収束
+ */
 export const GOAL_BLEND_START = 0.70;
-export const GOAL_BLEND_PEAK = 0.88;
-export const FINISH_CONVERGE_START = 0.88;
-export const FINISH_CONVERGE_END = 0.98;
+export const GOAL_BLEND_PEAK = 0.84;
+export const FINISH_CONVERGE_START = 0.94;
+export const FINISH_CONVERGE_END = 1.00;
 
 export interface GoalForecastInputHorse {
   horseNumber: number;
@@ -204,8 +211,12 @@ export interface BlendableHorse {
  * dynamics フレームを旧2Dゴール配置・最終着順配置へ滑らかにブレンドする。
  * horseNumber で対応（配列 index 禁止）。急ワープしないよう weight は呼び出し側の smoothstep。
  *
- * targetProgress = lerp(dyn, goal, blendToGoal)
- * その後 targetProgress = lerp(targetProgress, finish, convergeToFinish)
+ * 重要: goal/finish の currentDistance は「絶対メートル」としては使わない。
+ * distanceFromLeader（隊列内オフセット）を現在の先頭距離に載せ替えて相対配置だけ寄せる。
+ * これにより blend 開始時にパック全体が数百メートル飛ばない。
+ *
+ * targetProgress = lerp(dyn, goalRelative, blendToGoal)
+ * その後 targetProgress = lerp(targetProgress, finishRelative, convergeToFinish)
  * lateral も同様。
  */
 export function blendFrameTowardForecastLayouts<T extends BlendableHorse>(
@@ -224,20 +235,23 @@ export function blendFrameTowardForecastLayouts<T extends BlendableHorse>(
   const bg = Math.max(0, Math.min(1, opts.blendToGoal));
   const cf = Math.max(0, Math.min(1, opts.convergeToFinish));
 
+  const leaderDyn = frame.reduce((m, h) => Math.max(m, h.raceProgress), 0);
+  // 入線収束時はゴール線を先頭基準にする（相対オフセットは finish.distanceFromLeader）
+  const leaderFinish = rd;
+
   return frame.map((h) => {
     const g = goalMap.get(h.horseNumber);
     const f = finishMap.get(h.horseNumber);
-    // dynamics の raceProgress はメートル（0..raceDistance）
     let progress = h.raceProgress;
     let lateral = h.lateralPosition;
 
     if (g && bg > 0) {
-      const gMeters = Math.max(0, Math.min(rd, g.currentDistance));
+      const gMeters = Math.max(0, Math.min(rd, leaderDyn - g.distanceFromLeader));
       progress = progress + (gMeters - progress) * bg;
       lateral = lateral + (g.lateralPosition - lateral) * bg;
     }
     if (f && cf > 0) {
-      const fMeters = Math.max(0, Math.min(rd, f.currentDistance));
+      const fMeters = Math.max(0, Math.min(rd, leaderFinish - f.distanceFromLeader));
       progress = progress + (fMeters - progress) * cf;
       lateral = lateral + (f.lateralPosition - lateral) * cf;
     }

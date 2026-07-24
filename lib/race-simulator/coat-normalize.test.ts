@@ -13,8 +13,12 @@ function check(label: string, cond: boolean, detail = '') {
 console.log('=== coat-normalize ===');
 
 check('鹿毛 → bay', normalizeCoatColor('鹿毛') === 'bay');
+check(' 鹿毛　 → bay', normalizeCoatColor(' 鹿毛　') === 'bay');
+check('鹿毛（父系）→ bay', normalizeCoatColor('鹿毛（父系）') === 'bay');
 check(' 黒鹿毛  → darkBay', normalizeCoatColor(' 黒鹿毛 ') === 'darkBay');
 check('全角空白・改行', normalizeCoatColor('　青毛\n') === 'black');
+check('BOM付き鹿毛', normalizeCoatColor('\uFEFF鹿毛') === 'bay');
+check('改行混入', normalizeCoatColor('栗\r\n毛') === 'chestnut');
 check('葦毛 → gray', normalizeCoatColor('葦毛') === 'gray');
 check('芦毛 → gray', normalizeCoatColor('芦毛') === 'gray');
 check('青毛 → black', normalizeCoatColor('青毛') === 'black');
@@ -26,7 +30,8 @@ check('括弧注釈除去', normalizeCoatColor('鹿毛（濃）') === 'bay');
 check('null → null', normalizeCoatColor(null) === null);
 check('undefined → null', normalizeCoatColor(undefined) === null);
 check('空文字 → null', normalizeCoatColor('') === null);
-check('未知 → null', normalizeCoatColor('斑毛XYZ') === null);
+check('未知 → null（fallbackへ）', normalizeCoatColor('斑毛XYZ') === null);
+check('未知は coatIndexFromName=-1', coatIndexFromName('斑毛XYZ') === -1);
 
 check('coatIndexFromName 鹿毛→0', coatIndexFromName('鹿毛') === 0);
 check('coatIndexFromName 青毛→2', coatIndexFromName('青毛') === 2);

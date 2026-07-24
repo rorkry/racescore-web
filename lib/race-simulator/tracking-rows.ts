@@ -13,10 +13,19 @@ export interface TrackingHorseInput {
   position?: number;
   horseName?: string | null;
   /** 先頭からの差(m)。未指定なら走破距離から算出 */
+  leaderGapMeters?: number | null;
+  /** @deprecated use leaderGapMeters */
   distanceFromLeader?: number | null;
   /** 現在走破距離(m) */
+  currentDistanceMeters?: number | null;
+  /** @deprecated use currentDistanceMeters */
   currentDistance?: number | null;
-  /** 0..1 の raceProgress（あれば走破距離の代わりに使える） */
+  /**
+   * 正規化進捗 0..1（走破距離の代替）。
+   * ※ dynamics の raceProgress（メートル）とは別物。混在禁止。
+   */
+  progress01?: number | null;
+  /** @deprecated use progress01 — 歴史的に 0..1 として解釈 */
   raceProgress?: number | null;
 }
 
@@ -24,14 +33,24 @@ export interface TrackingRow {
   horseNumber: number;
   position: number;
   /** 先頭差(m, 0以上)。先頭は 0 */
+  leaderGapMeters: number;
+  /** @deprecated alias of leaderGapMeters */
   gap: number;
-  /** 表示用: 先頭 →「先頭」、後続 →「+2.4m」 */
+  /** 表示用: 先頭 →「先頭」、後続 →「先頭差 +2.4m」 */
   gapLabel: string;
   /** 走破距離(m) */
+  distanceRunMeters: number;
+  /** @deprecated alias */
   distanceRun: number;
   /** ゴールまでの残り(m)。不明時は null */
+  remainingMeters: number | null;
+  /** @deprecated alias */
   remaining: number | null;
-  /** 表示用走破/残りラベル */
+  /** 表示用走破ラベル（例: 842m） */
+  runLabel: string;
+  /** 表示用残りラベル（例: 残り358m）。不明時は空 */
+  remainingLabel: string;
+  /** 表示用走破/残りラベル（互換） */
   distanceLabel: string;
   name: string;
   shortName: string;
@@ -66,12 +85,15 @@ function shorten(name: string, max: number): string {
   return s.slice(0, max);
 }
 
-function resolveDistanceRun(h: TrackingHorseInput, raceDistance?: number): number {
-  if (h.currentDistance != null && Number.isFinite(h.currentDistance)) {
-    return Math.max(0, h.currentDistance);
+function resolveDistanceRunMeters(h: TrackingHorseInput, raceDistance?: number): number {
+  const meters = h.currentDistanceMeters ?? h.currentDistance;
+  if (meters != null && Number.isFinite(meters)) {
+    return Math.max(0, meters);
   }
-  if (h.raceProgress != null && Number.isFinite(h.raceProgress) && raceDistance != null && raceDistance > 0) {
-    return Math.max(0, Math.min(raceDistance, h.raceProgress * raceDistance));
+  const p01 = h.progress01 ?? h.raceProgress;
+  if (p01 != null && Number.isFinite(p01) && raceDistance != null && raceDistance > 0) {
+    // progress01 のみ 0..1 として扱う（メートルと混在させない）
+    return Math.max(0, Math.min(raceDistance, p01 * raceDistance));
   }
   return 0;
 }
@@ -79,8 +101,8 @@ function resolveDistanceRun(h: TrackingHorseInput, raceDistance?: number): numbe
 /**
  * 3D と同じフレーム状態からトラッキング行を組み立てる。
  * - 順位: 明示 position があればそれを使い、無ければ走破距離降順で算出（表示用のみ）
- * - 先頭差: 明示 distanceFromLeader があればそれ、無ければ leaderDist - dist
- * - ラベルは曖昧な「0m」を出さず、先頭 / +Xm / 走破 / 残り を明示
+ * - 先頭差: 明示 leaderGapMeters があればそれ、無ければ leaderDist - dist
+ * - ラベルは曖昧な「0m」を出さず、先頭 / 先頭差 +Xm / 走破Xm / 残りXm を分離
  */
 export function buildTrackingRows(
   horses: TrackingHorseInput[],
@@ -93,7 +115,7 @@ export function buildTrackingRows(
 
   const withDist = horses.map((h) => ({
     h,
-    dist: resolveDistanceRun(h, raceDistance),
+    dist: resolveDistanceRunMeters(h, raceDistance),
   }));
 
   // 表示用順位: 明示 position が全頭にあればそれを使い、欠けていれば走破距離から算出
@@ -114,34 +136,42 @@ export function buildTrackingRows(
   const rows: TrackingRow[] = withDist.map(({ h, dist }) => {
     const waku = ((Math.max(1, wakuOf(h.horseNumber) ?? fallbackWaku(h.horseNumber, total)) - 1) % 8) + 1;
     const position = rankByNumber.get(h.horseNumber) ?? total;
-    let gap: number;
-    if (h.distanceFromLeader != null && Number.isFinite(h.distanceFromLeader)) {
-      gap = Math.max(0, h.distanceFromLeader);
+    const explicitGap = h.leaderGapMeters ?? h.distanceFromLeader;
+    let leaderGapMeters: number;
+    if (explicitGap != null && Number.isFinite(explicitGap)) {
+      leaderGapMeters = Math.max(0, explicitGap);
     } else {
-      gap = Math.max(0, leaderDist - dist);
+      leaderGapMeters = Math.max(0, leaderDist - dist);
     }
     // 先頭馬は gap を 0 に揃える（表示は「先頭」）
-    if (position === 1) gap = 0;
+    if (position === 1) leaderGapMeters = 0;
 
-    const remaining =
+    const remainingMeters =
       raceDistance != null && raceDistance > 0
         ? Math.max(0, raceDistance - dist)
         : null;
 
-    const gapLabel = position === 1 ? '先頭' : `+${gap.toFixed(1)}m`;
+    const gapLabel = position === 1 ? '先頭' : `先頭差 +${leaderGapMeters.toFixed(1)}m`;
+    const runLabel = `${Math.round(dist)}m`;
+    const remainingLabel = remainingMeters != null ? `残り${Math.round(remainingMeters)}m` : '';
     const distanceLabel =
-      remaining != null
-        ? `走破 ${dist.toFixed(0)}m / 残り ${remaining.toFixed(0)}m`
-        : `走破 ${dist.toFixed(0)}m`;
+      remainingMeters != null
+        ? `走破 ${Math.round(dist)}m / ${remainingLabel}`
+        : `走破 ${Math.round(dist)}m`;
 
     const name = (h.horseName ?? '').trim();
     return {
       horseNumber: h.horseNumber,
       position,
-      gap,
+      leaderGapMeters,
+      gap: leaderGapMeters,
       gapLabel,
+      distanceRunMeters: dist,
       distanceRun: dist,
-      remaining,
+      remainingMeters,
+      remaining: remainingMeters,
+      runLabel,
+      remainingLabel,
       distanceLabel,
       name,
       shortName: shorten(name, 4),
@@ -159,12 +189,13 @@ export function buildTrackingRows(
 }
 
 /**
- * dynamics フレーム（raceProgress はメートル）から TrackingHorseInput を作る。
+ * dynamics フレーム（raceProgressMeters）から TrackingHorseInput を作る。
  * 順位・先頭差は表示距離から算出（3D 位置関係と一致）。タイは finishTime → 馬番。
  */
 export function trackingInputsFromDynamics(
   frame: Array<{
     horseNumber: number;
+    /** meters (0..raceDistance) */
     raceProgress: number;
     rank?: number;
     finished?: boolean;
@@ -192,8 +223,9 @@ export function trackingInputsFromDynamics(
       horseNumber: h.horseNumber,
       position: i + 1,
       horseName: nameOf?.(h.horseNumber),
+      currentDistanceMeters: dist,
       currentDistance: dist,
-      // buildTrackingRows の raceProgress は 0..1 解釈なので距離は currentDistance を正本にする
+      leaderGapMeters: Math.max(0, leaderDist - dist),
       distanceFromLeader: Math.max(0, leaderDist - dist),
     };
   });

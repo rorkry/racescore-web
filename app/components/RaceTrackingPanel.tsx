@@ -67,21 +67,22 @@ function TrackingChip({
   layout: 'vertical' | 'horizontal';
 }) {
   const ring = selected ? 'ring-2 ring-white' : 'ring-1 ring-black/30';
-  const runShort = `走破${Math.round(row.distanceRun)}m`;
+  const runShort = row.runLabel;
+  const gapShort = row.gapLabel;
 
   if (layout === 'horizontal') {
     return (
       <button
         type="button"
         onClick={() => onSelect(row.horseNumber)}
-        aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel} ${row.distanceLabel}`}
+        aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel} 走破${row.runLabel}${row.remainingLabel ? ` ${row.remainingLabel}` : ''}`}
         aria-pressed={selected}
         className={`pointer-events-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 ${ring}`}
         style={{ background: row.color, color: row.textColor }}
       >
         <span className="text-[11px] font-bold leading-none opacity-80 tabular-nums">{row.position}</span>
         <span className="text-sm font-bold leading-none tabular-nums">{row.horseNumber}</span>
-        <span className="text-[10px] leading-none opacity-90 tabular-nums">{row.gapLabel}</span>
+        <span className="text-[10px] leading-none opacity-90 tabular-nums">{gapShort}</span>
         <span className="text-[9px] leading-none opacity-80 tabular-nums">{runShort}</span>
       </button>
     );
@@ -91,7 +92,7 @@ function TrackingChip({
     <button
       type="button"
       onClick={() => onSelect(row.horseNumber)}
-      aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel} ${row.distanceLabel}`}
+      aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel} 走破${row.runLabel}${row.remainingLabel ? ` ${row.remainingLabel}` : ''}`}
       aria-pressed={selected}
       className={`pointer-events-auto flex w-full shrink-0 flex-col items-center rounded-md px-1 py-1 ${ring}`}
       style={{ background: row.color, color: row.textColor }}
@@ -101,7 +102,7 @@ function TrackingChip({
         <span className="text-base font-bold leading-none tabular-nums">{row.horseNumber}</span>
       </span>
       <span className="mt-0.5 w-full truncate text-center text-[10px] font-semibold leading-none tabular-nums">
-        {row.gapLabel}
+        {gapShort}
       </span>
       <span className="mt-0.5 w-full truncate text-center text-[9px] leading-none opacity-90 tabular-nums">
         {runShort}

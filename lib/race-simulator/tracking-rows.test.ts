@@ -36,9 +36,11 @@ const earlyRows = buildTrackingRows(earlyInputs, { wakuOf, raceDistance });
 const lateRows = buildTrackingRows(lateInputs, { wakuOf, raceDistance });
 
 check('早期: 先頭は rank1=馬2', earlyRows[0].horseNumber === 2 && earlyRows[0].gapLabel === '先頭');
-check('早期: 後続は +Xm', earlyRows[1].gapLabel.startsWith('+') && earlyRows[1].gap > 0);
+check('早期: 後続は 先頭差 +Xm', earlyRows[1].gapLabel.startsWith('先頭差 +') && earlyRows[1].gap > 0);
 check('早期: 全馬が常に0mではない', earlyRows.some((r) => r.gap > 0));
 check('早期: 走破距離が progress に比例', Math.abs(earlyRows.find((r) => r.horseNumber === 2)!.distanceRun - 192) < 1);
+check('早期: runLabel は走破のみ', earlyRows[0].runLabel === '192m' || earlyRows[0].runLabel.endsWith('m'));
+check('早期: 先頭に曖昧な0mラベルを出さない', earlyRows[0].gapLabel === '先頭');
 
 check('後期: progress増で走破距離が増える',
   lateRows.find((r) => r.horseNumber === 1)!.distanceRun >

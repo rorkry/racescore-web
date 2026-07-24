@@ -65,7 +65,7 @@ function main() {
   console.log('adapter: buildForecastLayoutsFromSimulation → forecastLayoutsRef');
   console.log('apply: interpolateDynamicsForDisplay(dynamics, time, layouts)');
   console.log('Proto paths: positionHorsesOnGeometry / syncTrackingRows / updateBroadcastCamera');
-  console.log('GOAL_BLEND 0.70→0.88, FINISH_CONVERGE 0.88→0.98');
+  console.log('GOAL_BLEND 0.70→0.84, FINISH_CONVERGE 0.94→1.00');
 
   // 比較表: 旧2Dゴール前後順 vs 修正前(raw) vs 修正後(display) at leader≈0.85
   // dynamics.raceProgress はメートル

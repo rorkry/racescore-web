@@ -59,6 +59,7 @@ export interface RaceDynamicsConfig {
 export interface HorseFrameState {
   horseId: string;
   horseNumber: number;
+  /** 走破距離メートル（0..raceDistance）。0..1 正規化値ではない */
   raceProgress: number;
   speed: number;
   acceleration: number;
