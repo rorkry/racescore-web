@@ -496,6 +496,26 @@ export default function RaceSimulator3DProto({
         '[3DSimulator] mixedSurface:',
         turfSeg ? `芝スタート区間あり(${turfSeg.toRaceProgress}m, ${turfSeg.provenance})` : 'なし(単一路面)'
       );
+
+      // 競うスコア（正本）が /api/simulator 経由で 3D 入力まで届いているかの開発確認。
+      // 位置補正の適用有無とは独立（Stage 1 は届いていることの確認のみ）。
+      const simHorses =
+        (simulationResult?.phases?.start?.horses as Array<{ horseNumber: number; competitionScore?: number }> | undefined) ??
+        (simulationResult?.finalStandings as Array<{ horseNumber: number; competitionScore?: number }> | undefined) ??
+        [];
+      const withScore = simHorses.filter((h) => typeof h.competitionScore === 'number');
+      console.log(
+        '[3DSimulator] competitionScore(正本):',
+        `${withScore.length}/${simHorses.length}頭に付与`,
+        withScore.length > 0
+          ? withScore
+              .slice()
+              .sort((a, b) => (b.competitionScore ?? 0) - (a.competitionScore ?? 0))
+              .slice(0, 5)
+              .map((h) => `#${h.horseNumber}:${(h.competitionScore ?? 0).toFixed(1)}`)
+              .join(' ')
+          : '(スコアなし=位置補正は自然に無効)'
+      );
     }
 
     // 地面（背景）

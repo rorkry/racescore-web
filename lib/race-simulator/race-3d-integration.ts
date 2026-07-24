@@ -88,6 +88,12 @@ export interface SimHorseLike {
     stamina?: number;
     cornerSkill?: number;
   };
+  /**
+   * 正本の競うスコア（0〜100・高いほど高評価）。/api/simulator で join 済み。
+   * ローカル能力集約値（capabilities 由来）とは別物。表示隊列の位置補正のみに使用し、
+   * finish / finalStandings / dynamics には影響しない。欠損時は undefined。
+   */
+  competitionScore?: number;
 }
 
 /**
