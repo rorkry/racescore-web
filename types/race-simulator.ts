@@ -111,6 +111,12 @@ export interface HorseState {
 
   // 見た目用（simulation には影響しない）
   keiro?: string | null;      // 毛色名（umadata BL列。例: "鹿毛"。未取得時は null/undefined）
+
+  // 正本の競うスコア（0〜100・高いほど高評価）。/api/simulator で join して付与。
+  // simulation ロジック（着順・速度・finish）には一切影響しない。表示隊列の位置補正のみに使用。
+  // 3D 内のローカル能力集約値（cruiseSpeed/acceleration/stamina 由来）とは別物。
+  // 欠損（過去走なし等）は undefined のまま（0 へ丸めない）。
+  competitionScore?: number;
 }
 
 export interface HorseCapabilities {

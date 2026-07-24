@@ -16,6 +16,7 @@ import {
   CourseInputError,
   CourseBoundariesError,
 } from '@/lib/race-simulator/course-resolver';
+import { loadCompetitionScoresForRace } from '@/lib/server/competition-score-service';
 import type { TrackBias } from '@/types/race-simulator';
 
 /** buildSimulatorResponse への入力（route.ts で DB から取得した生値） */
@@ -71,6 +72,30 @@ export async function buildSimulatorResponse(
     enableDetailedLog: true,
     resolvedCourse,
   });
+
+  // 2.5. 競うスコア（正本 kisoScore）を join する（サーバー専用共有サービス経由）
+  //   - race-card-with-score と同じ取得・同じ式（computeKisoScore）で算出。
+  //   - horseNumber を正本 identity として結合（配列 index / 馬名では対応しない）。
+  //   - 欠損は undefined のまま（0 へ丸めない）。取得失敗時は空 Map（3D は止めない）。
+  //   - simulation ロジック（着順・速度・finish）には一切影響しない。表示隊列の位置補正のみで使用。
+  try {
+    const scoreMap = await loadCompetitionScoresForRace(
+      { year: String(year), date: String(date), place: String(place), raceNumber: String(raceNumber) },
+      db
+    );
+    const stamp = (h: { horseNumber: number; competitionScore?: number }) => {
+      const s = scoreMap.get(h.horseNumber);
+      // provenance='missing' の場合は competitionScore=undefined のまま（上書きしない）
+      if (s && s.competitionScore != null) h.competitionScore = s.competitionScore;
+    };
+    result.finalStandings.forEach(stamp);
+    if (result.phases?.start?.horses) result.phases.start.horses.forEach(stamp);
+  } catch (e) {
+    // 競うスコア join 失敗はシミュレーション本体を止めない（位置補正は自然に無効化される）
+    console.warn(
+      `[API] 競うスコア join に失敗（3D はスコアなしで継続）: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
 
   // 3. タイムライン生成
   const timeline = generateTimeline(result);
