@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { generateTimeline, interpolateTimeline, type RaceTimeline, type RaceTimelineKeyframe } from '@/lib/race-simulator/timeline-generator';
 import { validateInterpolatedTimeline } from '@/lib/race-simulator/timeline-validation';
 import { buildVisualCourseCurve, sampleLoopPose, sampleRacePose, type VisualCourseCurve } from '@/lib/race-simulator/course-curve';
-import { selectCameraMode, computeCameraPose, DEFAULT_GOAL_STAND_CONFIG, type CameraMode } from '@/lib/race-simulator/camera-director';
+import { selectCameraMode, computeCameraPose, shouldUseFinishCamera, computeFinishApproachPose, type CameraMode } from '@/lib/race-simulator/camera-director';
 import { shouldShowDebugHud } from '@/lib/race-simulator/hud-visibility';
 import {
   resolveRacecourseLayout,
@@ -33,7 +33,7 @@ import {
   type LabelOut,
 } from '@/lib/race-simulator/horse-labels';
 import RaceTrackingPanel from './RaceTrackingPanel';
-import { buildTrackingRows } from '@/lib/race-simulator/tracking-rows';
+import { buildTrackingRows, trackingInputsFromDynamics, type TrackingRow } from '@/lib/race-simulator/tracking-rows';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -137,6 +137,8 @@ export default function RaceSimulator3DProto({
   const horseVisualsRef = useRef<Map<number, HorseVisual>>(new Map());
   const horseModeRef = useRef<HorseVisualMode>('cel');       // 実効モード（fallback で legacy になり得る）
   const horseMetaRef = useRef<Map<number, { waku: number; coatName?: string }>>(new Map());
+  /** horseNumber → 馬名（トラッキング表示用。レース切替で再構築） */
+  const horseNameRef = useRef<Map<number, string>>(new Map());
   // 頭上ラベル（screen-space・選択/hover/先頭のみ・真上固定）。全頭識別はトラッキングパネルで保証。
   const labelLayerRef = useRef<HTMLDivElement>(null);
   const labelMgrRef = useRef<HorseLabelManager>(new HorseLabelManager());
@@ -146,6 +148,10 @@ export default function RaceSimulator3DProto({
   const prevHeadingRef = useRef<Map<number, number>>(new Map());
   const gaitTimeRef = useRef<number>(0);            // 再生中のみ進む gait 時刻（frame-rate 非依存）
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
+  /** ゴール先頭入線時刻（currentTimeRef 基準）。未入線は null */
+  const leaderFinishTimeRef = useRef<number | null>(null);
+  /** トラッキング行（3D と同じ dynamics/timeline フレームから 100〜200ms で更新） */
+  const [trackingRows, setTrackingRows] = useState<TrackingRow[]>([]);
   const courseGeometryRef = useRef<{
     track?: THREE.Mesh;
     innerRail?: THREE.Line;
@@ -456,6 +462,20 @@ export default function RaceSimulator3DProto({
     horseModeRef.current = requestedMode;
     labelsModeRef.current = resolveLabelsMode(typeof window !== 'undefined' ? window.location.search : '');
     horseMetaRef.current = buildHorseMetaMap(simulationResult);
+    // 馬名マップ（トラッキング用）。simulation の finalStandings / start horses から構築。
+    {
+      const names = new Map<number, string>();
+      const list: any[] =
+        simulationResult?.finalStandings ??
+        simulationResult?.phases?.start?.horses ??
+        [];
+      for (const h of list) {
+        if (h && typeof h.horseNumber === 'number' && typeof h.horseName === 'string') {
+          names.set(h.horseNumber, h.horseName);
+        }
+      }
+      horseNameRef.current = names;
+    }
     // 共有リソースは一度だけ生成し保持（レース切替では作り直さない）
     if (requestedMode === 'cel' && !horseResourcesRef.current) {
       try {
@@ -468,6 +488,38 @@ export default function RaceSimulator3DProto({
 
     // 馬作成
     createHorses(scene, tl.keyframes[0]);
+
+    // トラッキング初回同期（dynamics 設定直後。3D と同じ t=0 フレーム）
+    leaderFinishTimeRef.current = null;
+    {
+      const dynamics = dynamicsRef.current;
+      const layout = layoutRef.current;
+      const raceDistance = layout?.raceDistance ?? tl.courseDistance ?? 0;
+      const wakuOf = (hn: number) => horseMetaRef.current.get(hn)?.waku;
+      const nameOf = (hn: number) => horseNameRef.current.get(hn);
+      if (dynamics && raceDistance > 0) {
+        const frame = interpolateDynamics(dynamics, 0);
+        setTrackingRows(
+          buildTrackingRows(trackingInputsFromDynamics(frame, raceDistance, nameOf), { wakuOf, raceDistance }),
+        );
+      } else {
+        const state0 = interpolateTimeline(tl, 0);
+        if (state0) {
+          setTrackingRows(
+            buildTrackingRows(
+              state0.horses.map((h) => ({
+                horseNumber: h.horseNumber,
+                position: h.position,
+                horseName: h.horseName ?? nameOf(h.horseNumber),
+                currentDistance: h.currentDistance,
+                distanceFromLeader: h.distanceFromLeader,
+              })),
+              { wakuOf, raceDistance },
+            ),
+          );
+        }
+      }
+    }
 
     // Broadcast Cel: hover 検出（頭上ラベルの hover 高優先度用。pointer-events は canvas のみ）
     const onPointerMove = (ev: PointerEvent) => {
@@ -591,6 +643,9 @@ export default function RaceSimulator3DProto({
       // レース固有状態をリセット（共有リソースは保持）
       labelMgrRef.current.clearForRaceSwitch();
       prevHeadingRef.current.clear();
+      leaderFinishTimeRef.current = null;
+      setTrackingRows([]);
+      horseNameRef.current = new Map();
       hoverHorseRef.current = null;
       
       // コースジオメトリの dispose（Visual Step 1C-1）
@@ -683,6 +738,46 @@ export default function RaceSimulator3DProto({
     }
   }, [cameraMode]);
   
+  // トラッキング行を 3D と同じ補間済み状態から組み立てる（100〜200ms throttle 前提）。
+  // dynamics があるときは raceProgress/rank を正本にし、無ければ timeline の走破距離から算出する。
+  const syncTrackingRows = (tl: RaceTimeline, time: number) => {
+    const dynamics = dynamicsRef.current;
+    const layout = layoutRef.current;
+    const raceDistance =
+      layout?.raceDistance ??
+      (Number.isFinite(tl.courseDistance) ? tl.courseDistance : 0) ??
+      0;
+    const wakuOf = (hn: number) => horseMetaRef.current.get(hn)?.waku;
+    const nameOf = (hn: number) => horseNameRef.current.get(hn);
+
+    if (dynamics && raceDistance > 0) {
+      const dur = tl.totalDuration > 0 ? tl.totalDuration : 1;
+      const dynTime = (time / dur) * dynamics.totalTime;
+      const frame = interpolateDynamics(dynamics, dynTime);
+      const inputs = trackingInputsFromDynamics(frame, raceDistance, nameOf);
+      setTrackingRows(buildTrackingRows(inputs, { wakuOf, raceDistance }));
+      return;
+    }
+
+    const state = interpolateTimeline(tl, time);
+    if (!state) {
+      setTrackingRows([]);
+      return;
+    }
+    setTrackingRows(
+      buildTrackingRows(
+        state.horses.map((h) => ({
+          horseNumber: h.horseNumber,
+          position: h.position,
+          horseName: h.horseName ?? nameOf(h.horseNumber),
+          currentDistance: h.currentDistance,
+          distanceFromLeader: h.distanceFromLeader,
+        })),
+        { wakuOf, raceDistance },
+      ),
+    );
+  };
+
   // アニメーションループ（scene生成後に1本のみ。再生stateは ref 経由で読む）
   // timeline が未設定でも scene/コースは render する（黒画面防止）。
   useEffect(() => {
@@ -711,12 +806,14 @@ export default function RaceSimulator3DProto({
             currentTimeRef.current = duration;
             setIsPlaying(false);
             setCurrentTime(duration); // 最終フレームでUI更新
+            syncTrackingRows(timeline, duration);
           } else {
             currentTimeRef.current = next;
             
-            // UI更新は100msごと（60fps → 10fps）
+            // UI更新は100msごと（60fps → 10fps）。トラッキングも同じ周期で 3D と同じフレームを参照。
             if (now - lastUIUpdateRef.current >= 100) {
               setCurrentTime(currentTimeRef.current);
+              syncTrackingRows(timeline, currentTimeRef.current);
               lastUIUpdateRef.current = now;
             }
           }
@@ -1328,7 +1425,8 @@ export default function RaceSimulator3DProto({
     camera.lookAt(broadcastLookAtRef.current);
   };
 
-  // 中継カメラ更新。layout がある場合は新geometry基準（最終直線はゴール前スタンド視点）。
+  // 中継カメラ更新。layout がある場合は新geometry基準。
+  // 通常は馬群追従、先頭がゴール接近したらゴール入線カメラへ滑らかに移行し、勝ち馬を保持する。
   const updateBroadcastCamera = (currentState: RaceTimelineKeyframe) => {
     const camera = cameraRef.current;
     if (!camera) return;
@@ -1337,72 +1435,125 @@ export default function RaceSimulator3DProto({
     const dynamics = dynamicsRef.current;
 
     if (layout) {
-      // pack（進行度・広がり）を dynamics または既存 distance から求める
-      let horses: Array<{ progress: number; lateral: number }>;
+      const raceDistance = layout.raceDistance;
+      const geometry = layout.geometry;
+      const startPathDistance = layout.startMarker.pathDistance;
+      const dur = timeline && timeline.totalDuration > 0 ? timeline.totalDuration : 1;
+
+      let horses: Array<{
+        horseNumber: number;
+        progress: number;
+        lateral: number;
+        finished?: boolean;
+        finishTime?: number;
+      }>;
       if (dynamics) {
-        const dur = timeline && timeline.totalDuration > 0 ? timeline.totalDuration : 1;
         const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
         horses = interpolateDynamics(dynamics, dynTime).map((h) => ({
+          horseNumber: h.horseNumber,
           progress: h.raceProgress,
           lateral: h.lateralPosition,
+          finished: h.finished,
+          finishTime: h.finishTime,
         }));
       } else {
         horses = currentState.horses.map((h) => ({
-          progress: h.currentDistance,
+          horseNumber: h.horseNumber,
+          progress: raceDistance > 0 ? h.currentDistance / raceDistance : 0,
           lateral: h.lateralPosition ?? 0,
         }));
       }
+
       let sum = 0, min = Infinity, max = -Infinity, lsum = 0, lmin = Infinity, lmax = -Infinity, c = 0;
+      let leaderProgress = -1;
+      let leaderHn: number | null = null;
+      let leaderLat = 0;
+      let leaderFinished = false;
       for (const h of horses) {
         if (!Number.isFinite(h.progress)) continue;
         sum += h.progress; min = Math.min(min, h.progress); max = Math.max(max, h.progress);
         const l = h.lateral ?? 0;
         lsum += l; lmin = Math.min(lmin, l); lmax = Math.max(lmax, l); c++;
+        if (h.progress > leaderProgress) {
+          leaderProgress = h.progress;
+          leaderHn = h.horseNumber;
+          leaderLat = l;
+          leaderFinished = !!h.finished;
+        }
       }
-      if (c > 0) {
-        const avg = sum / c;
-        const avgL = lsum / c;
-        const spread = max - min;
-        const laneSpread = lmax - lmin;
-        const raceDistance = layout.raceDistance;
-        const frac = raceDistance > 0 ? Math.min(1, Math.max(0, avg / raceDistance)) : 0;
-        const geometry = layout.geometry;
-        const startPathDistance = layout.startMarker.pathDistance;
+      if (c === 0) return;
 
-        // ── ゴール前スタンド側を「基準カメラ」にする ──
-        // カメラはゴール板前のスタンド側(外向き法線=観客席側)に固定し、
-        // 注視点だけを馬群中心へ向ける（＝馬がコースを回って戻ってくるのを追う）。
-        // これにより初期構図がコーナー横見にならず、最終直線は自然な横〜正面視になる。
-        // course direction/tangent は一切反転しない（右回り/左回りロジックはそのまま）。
-        const gp = sampleRaceProgressPose(geometry, startPathDistance, raceDistance, 0);
-        const goalPos = new THREE.Vector3(gp.position.x, gp.position.y, gp.position.z);
-        const goalTan = new THREE.Vector3(gp.tangent.x, 0, gp.tangent.z).normalize(); // ゴールへ向かう進行方向
-        const standNormal = new THREE.Vector3(gp.normal.x, 0, gp.normal.z).normalize(); // 観客席側(外向き)
+      const avg = sum / c;
+      const avgL = lsum / c;
+      const spread = (max - min) * (raceDistance > 0 ? raceDistance : 1);
+      const laneSpread = lmax - lmin;
+      const leaderProgress01 = Math.min(1, Math.max(0, leaderProgress));
 
-        const standDistance = Math.min(80, Math.max(46, 46 + laneSpread * 0.6));
-        const standHeight = DEFAULT_GOAL_STAND_CONFIG.standHeight + (frac < 0.5 ? 14 : 0);
-        const camPos = goalPos.clone()
-          .addScaledVector(standNormal, standDistance)
-          .addScaledVector(new THREE.Vector3(0, 1, 0), standHeight)
-          .addScaledVector(goalTan, -DEFAULT_GOAL_STAND_CONFIG.straightOffset);
+      // 先頭入線時刻を記録（currentTimeRef 基準）
+      if (leaderFinished && leaderFinishTimeRef.current == null) {
+        leaderFinishTimeRef.current = currentTimeRef.current;
+      }
+      const timeSinceFinish =
+        leaderFinishTimeRef.current != null
+          ? currentTimeRef.current - leaderFinishTimeRef.current
+          : null;
 
-        // 注視点: 馬群中心（周回中は馬群を、最終盤はゴール板前を自然に見る）
-        const cp = sampleRaceProgressPose(geometry, startPathDistance, Math.min(raceDistance, Math.max(0, avg)), avgL);
-        const lookAt = new THREE.Vector3(cp.position.x, cp.position.y + DEFAULT_GOAL_STAND_CONFIG.targetHeight, cp.position.z);
+      const gp = sampleRaceProgressPose(geometry, startPathDistance, raceDistance, 0);
+      const goalPos = new THREE.Vector3(gp.position.x, gp.position.y, gp.position.z);
+      const goalTan = new THREE.Vector3(gp.tangent.x, 0, gp.tangent.z).normalize();
+      const standNormal = new THREE.Vector3(gp.normal.x, 0, gp.normal.z).normalize();
 
-        // FOV: 馬群が数ピクセルにならないよう、距離と広がりから可視角を決める
-        const distToPack = Math.max(1, camPos.distanceTo(lookAt));
-        const wantVisible = Math.max(28, spread * 0.5 + laneSpread + 26);
-        let fov = (2 * Math.atan(wantVisible / 2 / distToPack) * 180) / Math.PI;
-        fov = Math.min(62, Math.max(26, fov));
+      const useFinish = shouldUseFinishCamera({
+        leaderProgress01,
+        leaderFinished,
+        timeSinceLeaderFinish: timeSinceFinish,
+      });
 
-        applyBroadcastPose(
-          camera,
-          { position: camPos, lookAt, fov },
-          frac >= 0.72 ? 'FINISH' : 'FINAL_STRAIGHT_SIDE'
+      if (useFinish && leaderHn != null) {
+        const leaderPose = sampleRaceProgressPose(
+          geometry,
+          startPathDistance,
+          Math.min(raceDistance, Math.max(0, leaderProgress01 * raceDistance)),
+          leaderLat,
         );
+        const leaderPos = new THREE.Vector3(
+          leaderPose.position.x,
+          leaderPose.position.y,
+          leaderPose.position.z,
+        );
+        const pose = computeFinishApproachPose({
+          goalPosition: goalPos,
+          goalTangent: goalTan,
+          standSideNormal: standNormal,
+          leaderPosition: leaderPos,
+          packSpread: Math.max(spread, laneSpread + 10),
+        });
+        applyBroadcastPose(camera, pose, 'FINISH');
         return;
       }
+
+      // 通常: 馬群中心を追従（ゴール固定カメラにはしない）
+      // horses.progress は dynamics/timeline とも 0..1 に正規化済み
+      const packProgressM = Math.min(raceDistance, Math.max(0, avg * raceDistance));
+      const cp = sampleRaceProgressPose(geometry, startPathDistance, packProgressM, avgL);
+      const center = new THREE.Vector3(cp.position.x, cp.position.y, cp.position.z);
+      const tangent = new THREE.Vector3(cp.tangent.x, 0, cp.tangent.z).normalize();
+      const normal = new THREE.Vector3(cp.normal.x, 0, cp.normal.z).normalize();
+      const progress01 = raceDistance > 0 ? packProgressM / raceDistance : 0;
+      const mode = selectCameraMode(currentState.phase, progress01);
+      const pose = computeCameraPose(
+        mode,
+        {
+          center,
+          tangent,
+          normal,
+          spread: Math.max(spread, 18),
+          laneSpread: Math.max(laneSpread, 6),
+        },
+        aspect,
+      );
+      applyBroadcastPose(camera, pose, mode);
+      return;
     }
 
     // fallback: 旧 VisualCourseCurve ベースの framing
@@ -1444,19 +1595,6 @@ export default function RaceSimulator3DProto({
   // timeline 未設定でも 3D コンテナは常時マウントする（黒画面防止: init effect が container を掴めるように）
   const currentState = timeline ? interpolateTimeline(timeline, currentTime) : null;
   const selectedHorseState = currentState?.horses.find(h => h.horseNumber === selectedHorse);
-
-  // 画面端トラッキング用の行（現在順位でソート）。simロジックは読み取りのみ。
-  const trackingRows = currentState
-    ? buildTrackingRows(
-        currentState.horses.map(h => ({
-          horseNumber: h.horseNumber,
-          position: h.position,
-          horseName: h.horseName,
-          distanceFromLeader: h.distanceFromLeader,
-        })),
-        (hn) => horseMetaRef.current.get(hn)?.waku,
-      )
-    : [];
   
   // Fallback使用チェック
   const usingFallback = !courseInfo || !courseInfo.corners || courseInfo.corners.length === 0;
@@ -1567,7 +1705,9 @@ export default function RaceSimulator3DProto({
             onClick={() => { 
               currentTimeRef.current = 0;
               setCurrentTime(0); 
-              setIsPlaying(false); 
+              setIsPlaying(false);
+              leaderFinishTimeRef.current = null;
+              if (timeline) syncTrackingRows(timeline, 0);
             }}
             className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
           >
@@ -1656,6 +1796,8 @@ export default function RaceSimulator3DProto({
               const newTime = Number.isFinite(parsed) ? parsed : 0;
               currentTimeRef.current = newTime;
               setCurrentTime(newTime);
+              // seek 直後にトラッキングを該当時刻へ追従
+              if (timeline) syncTrackingRows(timeline, newTime);
             }}
             className="w-full"
           />

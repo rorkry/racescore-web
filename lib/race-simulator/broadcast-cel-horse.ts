@@ -26,6 +26,9 @@
  *  rotation.y = -PI/2 して +X→+Z の固定補正を掛ける。
  */
 import * as THREE from 'three';
+import { normalizeCoatColor, COAT_PALETTE_INDEX } from './coat-normalize';
+export { normalizeCoatColor } from './coat-normalize';
+export type { NormalizedCoatColor } from './coat-normalize';
 
 // ---- 枠色（JRA 8枠: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃）----
 export const WAKU_HEX: number[] = [
@@ -43,25 +46,24 @@ export function wakuCssColor(waku: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
-// ---- 毛色パレット（鹿毛/黒鹿毛/青鹿毛/栗毛/芦毛）----
+// ---- 毛色パレット（正規化済み NormalizedCoatColor と対応）----
 interface CoatDef { coat: number; mane: number }
 export const COAT_PALETTE: CoatDef[] = [
-  { coat: 0x6b4a34, mane: 0x2a1c12 }, // 鹿毛(bay) ※ Visual Lab A の horseHex/mane と同値
-  { coat: 0x4a3222, mane: 0x1f150d }, // 黒鹿毛(dark bay)
-  { coat: 0x2f2620, mane: 0x17120e }, // 青鹿毛(brown-black)
-  { coat: 0x9c6238, mane: 0x6b3f1e }, // 栗毛(chestnut)
-  { coat: 0xb9b3ad, mane: 0x9a948e }, // 芦毛(gray)
+  { coat: 0x6b4a34, mane: 0x2a1c12 }, // 0 bay 鹿毛 ※ Visual Lab A と同値
+  { coat: 0x4a3222, mane: 0x1f150d }, // 1 darkBay 黒鹿毛/青鹿毛寄り
+  { coat: 0x2f2620, mane: 0x17120e }, // 2 black 青毛/青鹿毛
+  { coat: 0x9c6238, mane: 0x6b3f1e }, // 3 chestnut 栗毛
+  { coat: 0xb9b3ad, mane: 0x9a948e }, // 4 gray 芦毛/葦毛
+  { coat: 0x7a4a28, mane: 0x3a2414 }, // 5 darkChestnut 栃栗毛
+  { coat: 0xe8e4dc, mane: 0xc8c4bc }, // 6 white 白毛
 ];
 
 /** 実データの毛色名 → パレット index（存在時のみ）。未知は -1。 */
 export function coatIndexFromName(name?: string | null): number {
-  if (!name) return -1;
-  if (name.includes('青鹿')) return 2;
-  if (name.includes('黒鹿')) return 1;
-  if (name.includes('鹿')) return 0;
-  if (name.includes('栗') || name.includes('栃栗')) return 3;
-  if (name.includes('芦') || name.includes('葦') || name.includes('白')) return 4;
-  return -1;
+  const n = normalizeCoatColor(name);
+  if (!n) return -1;
+  const idx = COAT_PALETTE_INDEX[n];
+  return idx >= 0 && idx < COAT_PALETTE.length ? idx : -1;
 }
 
 /** horseNumber から決定的に毛色 index を割当（Math.random 不使用・均等分散）。 */

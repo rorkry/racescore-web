@@ -62,6 +62,10 @@ export interface SimHorseLike {
   waku?: number;
   leadingIntention?: number;
   staminaRemaining?: number;
+  /** start-phase の横位置(m)。dynamics 初期状態へ踏襲 */
+  lateralPosition?: number;
+  /** start-phase の走破距離(m)。初期 progress オフセットに使用 */
+  currentDistance?: number;
   capabilities?: {
     startSpeed?: number;
     cruiseSpeed?: number;
@@ -177,14 +181,31 @@ export function buildHorseInputsFromSimulation(sim: SimulationLike): HorseInput[
 
   const base = adaptFormationToHorseInputs(raw);
 
-  // staminaBase を staminaRemaining から補完
+  // staminaBase / 初期横位置 / スタート隊列オフセットを start-phase から補完
+  // （旧2D/ start-phase の前後・内外関係を dynamics 初期状態へ踏襲）
+  const maxDist = Math.max(0, ...horses.map((h) => h.currentDistance ?? 0));
   return base.map((hi) => {
     const src = horses.find((h) => h.horseNumber === hi.horseNumber);
     const staminaBase =
       src?.staminaRemaining != null
         ? clamp01(src.staminaRemaining / 100)
         : undefined;
-    return staminaBase != null ? { ...hi, staminaBase } : hi;
+    const initialLateralPosition =
+      src?.lateralPosition != null && Number.isFinite(src.lateralPosition)
+        ? src.lateralPosition
+        : undefined;
+    // スタート後隊列: currentDistance が大きいほど先頭 → 微小 progress オフセット
+    let initialProgressOffset: number | undefined;
+    if (maxDist > 0 && src?.currentDistance != null && Number.isFinite(src.currentDistance)) {
+      // 最大でも 0.04（レース全体の 4%）。中間は dynamics が自然に進める。
+      initialProgressOffset = clamp01(src.currentDistance / Math.max(maxDist, 1)) * 0.04;
+    }
+    return {
+      ...hi,
+      ...(staminaBase != null ? { staminaBase } : {}),
+      ...(initialLateralPosition != null ? { initialLateralPosition } : {}),
+      ...(initialProgressOffset != null ? { initialProgressOffset } : {}),
+    };
   });
 }
 

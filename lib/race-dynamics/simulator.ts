@@ -86,11 +86,13 @@ export function simulateRaceDynamics(
 
   const n = horses.length;
   const halfWidth = Math.max(2, config.trackWidth / 2 - RAIL_MARGIN);
-  const spacing = n > 1 ? Math.min((halfWidth * 2) / (n - 1), 2.0) : 0;
-  const latStart = -((n - 1) / 2) * spacing;
+  // 枠順(gateIndex)ベースの横配置。配列 index は使わない（順位ソート配列で identity が崩れるため）。
+  const maxGate = Math.max(0, ...horses.map((h) => h.gateIndex ?? 0), Math.max(0, n - 1));
+  const spacing = maxGate > 0 ? Math.min((halfWidth * 2) / maxGate, 2.0) : 0;
+  const latStart = -(maxGate / 2) * spacing;
 
   // 初期化（馬ごとの決定論ドロー）
-  const sims: HorseSim[] = horses.map((input, i) => {
+  const sims: HorseSim[] = horses.map((input) => {
     const rng = horseRng(config.seed, input.horseId || input.horseNumber);
     const sp = styleParams(input.runningStyle);
     const reactionDelay =
@@ -107,9 +109,20 @@ export function simulateRaceDynamics(
 
     const staminaBase = input.staminaBase ?? 0.6 + input.ability * 0.3;
 
-    // 枠順ベースの初期横位置（gate 0 = 最内 = 負側）
-    const lateral0 = clamp(latStart + i * spacing, -halfWidth, halfWidth);
+    // 横位置: start-phase / 2D 由来の initialLateral を優先。無ければ枠順(gateIndex)。
+    const gate = input.gateIndex ?? 0;
+    const lateralFromGate = clamp(latStart + gate * spacing, -halfWidth, halfWidth);
+    const lateral0 =
+      input.initialLateralPosition != null && Number.isFinite(input.initialLateralPosition)
+        ? clamp(input.initialLateralPosition, -halfWidth, halfWidth)
+        : lateralFromGate;
     const targetLat = clamp(sp.lateralBias * halfWidth * 0.5, -halfWidth, halfWidth);
+
+    // スタート後隊列: expectedRank 由来の微小 progress オフセット（先頭ほど先行）
+    const progress0 =
+      input.initialProgressOffset != null && Number.isFinite(input.initialProgressOffset)
+        ? clamp(input.initialProgressOffset, 0, 0.08)
+        : 0;
 
     return {
       input,
@@ -118,13 +131,13 @@ export function simulateRaceDynamics(
       reactionDelay,
       abilityMod,
       drainFactor,
-      raceProgress: 0,
+      raceProgress: progress0,
       speed: 0,
       acceleration: 0,
       lateralPosition: lateral0,
       targetLateralPosition: targetLat,
       stamina: clamp(staminaBase, 0, 1),
-      rank: i + 1,
+      rank: 1,
       blocked: false,
       finished: false,
       finishTime: undefined,

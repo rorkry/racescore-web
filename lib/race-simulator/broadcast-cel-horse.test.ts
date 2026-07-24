@@ -79,7 +79,7 @@ check('coatMats数<=パレット数', res.coatMats.size <= COAT_PALETTE.length, 
 
 // 5) 実データ毛色名の優先
 check('毛色名: 鹿毛→0', coatIndexFromName('鹿毛') === 0);
-check('毛色名: 青鹿毛→2', coatIndexFromName('青鹿毛') === 2);
+check('毛色名: 青鹿毛→1', coatIndexFromName('青鹿毛') === 1);
 check('毛色名: 芦毛→4', coatIndexFromName('芦毛') === 4);
 check('毛色名: 未知→-1', coatIndexFromName('未知色') === -1);
 
