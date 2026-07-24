@@ -373,7 +373,9 @@ export async function runRaceSimulation(
   if (!validation.valid) {
     console.error('[Simulator] 整合性エラーが検出されました！');
   } else if (validation.warnings.length > 0) {
-    console.warn('[Simulator] 警告がありますが、シミュレーションは有効です。');
+    // [旧2D内部診断] 以下の警告は旧phasesエンジン(finalStandings算出用)の内部チェックのみ。
+    // 3D描画(dynamics/display frame)には影響しないため、本番障害ではない。
+    console.warn('[旧2D内部診断] 警告がありますが、シミュレーション（finalStandings算出）は有効です。3D表示への影響はありません。');
   } else {
     console.log('[Simulator] ✅ 整合性検証: すべて正常');
   }

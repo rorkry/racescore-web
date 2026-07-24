@@ -170,7 +170,9 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
       const at20s = horse1Frames.find(x => x.time >= 20);
       const at30s = horse1Frames.find(x => x.time >= 30);
       
-      console.warn('[TimelineGenerator] 馬1番の距離変化:', {
+      // [旧timeline診断] ここでの currentDistance は旧phasesエンジンの10fps補間値であり、
+      // 実際の3D描画(dynamics/display frame)の座標ではない。以下のログは旧経路の参考情報。
+      console.warn('[旧timeline診断] 馬1番の距離変化（3D表示には非適用の旧phases参考値）:', {
         先頭: first.horse?.currentDistance.toFixed(1) + 'm',
         中間: mid.horse?.currentDistance.toFixed(1) + 'm',
         最終: last.horse?.currentDistance.toFixed(1) + 'm',
@@ -190,10 +192,12 @@ export function generateTimeline(result: SimulationResult): RaceTimeline {
       const allPositive = deltaCheck.every(d => d! > 0);
       const allZero = deltaCheck.every(d => d === 0);
       
-      console.warn('[TimelineGenerator] 隣接フレーム間の距離差:', {
+      // [旧timeline診断] 3D表示には非適用（実際の描画は dynamics/display frame が正本）。
+      // allZero は旧phasesの補間区間が粗い場合に起こり得る参考情報で、本番障害ではない。
+      console.warn('[旧timeline診断] 隣接フレーム間の距離差（3D表示には非適用の旧phases参考値）:', {
         最初の10フレーム: deltaCheck.map(d => d?.toFixed(2) + 'm').join(', '),
-        全て正の値: allPositive ? 'YES ✓' : 'NO ❌',
-        全てゼロ: allZero ? 'YES ❌' : 'NO ✓',
+        全て正の値: allPositive ? 'YES' : 'NO（旧timeline内部の参考情報・3D表示には影響なし）',
+        全てゼロ: allZero ? 'YES（旧timeline内部の参考情報・3D表示には影響なし）' : 'NO',
       });
     }
   }

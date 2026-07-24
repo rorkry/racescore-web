@@ -113,7 +113,10 @@ export function executeCornerPhase(
   
   if (usingFallback) {
     warnings.push('COURSE_GEOMETRY_FALLBACK: コーナー半径が未登録のため50mを使用');
-    console.warn(`  ⚠️ コーナー半径が未登録のため、fallback値50mを使用`);
+    // [旧2D内部診断・3D表示には直接影響なし]
+    // この corner-phase の内部近似値は finalStandings 算出にのみ使う内部計算で、
+    // 3D描画（dynamics/display frame）には渡らない。
+    console.warn(`  [旧2D内部診断・3D表示には直接影響なし] コーナー半径が未登録のため、fallback値50mを使用`);
   }
   
   // 距離と円弧長の整合性チェック
@@ -121,7 +124,8 @@ export function executeCornerPhase(
   const distanceDiff = Math.abs(calculatedArcLength - cornerDistance);
   if (distanceDiff > cornerDistance * 0.3) {
     warnings.push(`コーナー円弧長(${calculatedArcLength.toFixed(0)}m)と実距離(${cornerDistance}m)が大きく乖離`);
-    console.warn(`  ⚠️ 円弧長と実距離の乖離: ${distanceDiff.toFixed(0)}m`);
+    // [旧2D内部診断・3D表示には直接影響なし]
+    console.warn(`  [旧2D内部診断・3D表示には直接影響なし] 円弧長と実距離の乖離: ${distanceDiff.toFixed(0)}m`);
   }
   
   console.log(`  基準半径: ${baseRadius}m, 角度: ${(cornerAngle * 180 / Math.PI).toFixed(1)}度`);
@@ -657,6 +661,7 @@ function validateCornerPhase(
   }
   
   if (warnings.length > 0) {
-    console.warn(`  ⚠️ 警告${warnings.length}件`);
+    // [旧2D内部診断・3D表示には直接影響なし]
+    console.warn(`  [旧2D内部診断・3D表示には直接影響なし] 警告${warnings.length}件`);
   }
 }
