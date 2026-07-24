@@ -42,6 +42,9 @@ temp_*.ts
 # vercel
 .vercel
 
+# Visual Lab 撮影/計測の出力（コミットしない）
+/visual-lab-output/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
