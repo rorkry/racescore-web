@@ -17,10 +17,72 @@ import {
 import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE } from '@/lib/racecourse-geometry';
 import { buildTrackGroup, buildStartFinishGroup, type TrackRenderResult } from '@/lib/race-simulator/track-render';
 import type { RaceDynamicsResult } from '@/lib/race-dynamics';
+import {
+  createHorseVisualResources,
+  createBroadcastCelHorseVisual,
+  wakuCssColor,
+  wakuTextColor,
+  type HorseVisualResources,
+  type HorseVisual,
+} from '@/lib/race-simulator/broadcast-cel-horse';
+import {
+  HorseLabelManager,
+  buildLabelPriority,
+  type LabelInput,
+  type LabelOut,
+} from '@/lib/race-simulator/horse-labels';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
   courseInfo: any;
+}
+
+/**
+ * 馬ビジュアルモード（feature flag）。
+ * 既定は Broadcast Cel（本番標準）。?horseVisual=legacy で旧カプセルへ、?horseVisual=cel で強制。
+ * 新ビジュアルの生成で例外が出た場合はレース単位で legacy へ自動 fallback する（warning 出力）。
+ * 一般ユーザー向けの UI 切替ボタンは追加しない。
+ */
+type HorseVisualMode = 'cel' | 'legacy';
+function resolveHorseVisualMode(search: string): HorseVisualMode {
+  try {
+    const p = new URLSearchParams(search).get('horseVisual');
+    if (p === 'legacy') return 'legacy';
+    if (p === 'cel') return 'cel';
+  } catch { /* SSR等 */ }
+  return 'cel';
+}
+
+/** simulationResult(読み取り専用) から horseNumber→{waku, 毛色名} を作る。simロジックは変更しない。 */
+function buildHorseMetaMap(simulationResult: any): Map<number, { waku: number; coatName?: string }> {
+  const map = new Map<number, { waku: number; coatName?: string }>();
+  const list: any[] =
+    simulationResult?.finalStandings ??
+    simulationResult?.phases?.start?.horses ??
+    [];
+  for (const h of list) {
+    if (h && typeof h.horseNumber === 'number') {
+      map.set(h.horseNumber, {
+        waku: typeof h.waku === 'number' && h.waku > 0 ? h.waku : jraWakuOf(h.horseNumber, list.length || 1),
+        coatName: typeof h.coatColor === 'string' ? h.coatColor : (typeof h.keiro === 'string' ? h.keiro : undefined),
+      });
+    }
+  }
+  return map;
+}
+
+/** JRA 枠割り（実データに waku が無い場合の決定的 fallback）。 */
+function jraWakuOf(horseNumber: number, total: number): number {
+  if (total <= 8) return Math.max(1, Math.min(8, horseNumber));
+  const base = Math.floor(total / 8);
+  const extra = total % 8;
+  let acc = 0;
+  for (let w = 1; w <= 8; w++) {
+    const inWaku = base + (w > 8 - extra ? 1 : 0);
+    acc += inWaku;
+    if (horseNumber <= acc) return w;
+  }
+  return 8;
 }
 
 /**
@@ -52,6 +114,20 @@ export default function RaceSimulator3DProto({
   const controlsRef = useRef<OrbitControls | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const horseMeshesRef = useRef<Map<number, THREE.Group>>(new Map());
+  // Broadcast Cel: 共有リソース（renderer/コンポーネント生存中は保持し、unmount時のみ dispose）
+  const horseResourcesRef = useRef<HorseVisualResources | null>(null);
+  // レース固有の各馬ビジュアル（レース切替で root だけ破棄。共有リソースは破棄しない）
+  const horseVisualsRef = useRef<Map<number, HorseVisual>>(new Map());
+  const horseModeRef = useRef<HorseVisualMode>('cel');       // 実効モード（fallback で legacy になり得る）
+  const horseMetaRef = useRef<Map<number, { waku: number; coatName?: string }>>(new Map());
+  // 頭上ラベル（screen-space・全頭表示を基本／密集時のみ間引き）
+  const labelLayerRef = useRef<HTMLDivElement>(null);
+  const labelMgrRef = useRef<HorseLabelManager>(new HorseLabelManager());
+  const labelPoolRef = useRef<HTMLDivElement[]>([]);
+  const hoverHorseRef = useRef<number | null>(null);
+  const prevHeadingRef = useRef<Map<number, number>>(new Map());
+  const gaitTimeRef = useRef<number>(0);            // 再生中のみ進む gait 時刻（frame-rate 非依存）
+  const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
   const courseGeometryRef = useRef<{
     track?: THREE.Mesh;
     innerRail?: THREE.Line;
@@ -298,11 +374,11 @@ export default function RaceSimulator3DProto({
     controls.dampingFactor = 0.05;
     controlsRef.current = controls;
     
-    // ライト
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // ライト（セルルックの読みやすさ: 空/地の環境光 + 指向性。白飛び/黒潰れを避ける）
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x6b7280, 0.85);
+    scene.add(hemiLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
     directionalLight.position.set(100, 200, 100);
     scene.add(directionalLight);
     
@@ -357,10 +433,47 @@ export default function RaceSimulator3DProto({
       createCourse(scene, tl.courseDistance, courseInfo);
     }
     
+    // 馬ビジュアルモードを解決（既定=Broadcast Cel）。メタ(枠色/毛色名)を読み取り専用で構築。
+    const requestedMode = resolveHorseVisualMode(typeof window !== 'undefined' ? window.location.search : '');
+    horseModeRef.current = requestedMode;
+    horseMetaRef.current = buildHorseMetaMap(simulationResult);
+    // 共有リソースは一度だけ生成し保持（レース切替では作り直さない）
+    if (requestedMode === 'cel' && !horseResourcesRef.current) {
+      try {
+        horseResourcesRef.current = createHorseVisualResources();
+      } catch (e) {
+        console.warn('[3DSimulator] Broadcast Cel 共有リソース生成に失敗 → legacy へ fallback:', e);
+        horseModeRef.current = 'legacy';
+      }
+    }
+
     // 馬作成
     createHorses(scene, tl.keyframes[0]);
-    
-    console.log('[3DSimulator] Three.js初期化完了');
+
+    // Broadcast Cel: hover 検出（頭上ラベルの hover 高優先度用。pointer-events は canvas のみ）
+    const onPointerMove = (ev: PointerEvent) => {
+      if (horseModeRef.current !== 'cel') return;
+      const cam = cameraRef.current, rnd = rendererRef.current;
+      if (!cam || !rnd) return;
+      const rect = rnd.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((ev.clientX - rect.left) / rect.width) * 2 - 1,
+        -((ev.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycasterRef.current.setFromCamera(ndc, cam);
+      const roots = Array.from(horseVisualsRef.current.values()).map((v) => v.root);
+      const hits = roots.length ? raycasterRef.current.intersectObjects(roots, true) : [];
+      let hovered: number | null = null;
+      if (hits.length) {
+        let o: THREE.Object3D | null = hits[0].object;
+        while (o) { if (o.userData?.horseNumber) { hovered = o.userData.horseNumber; break; } o = o.parent; }
+      }
+      hoverHorseRef.current = hovered;
+    };
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointerleave', () => { hoverHorseRef.current = null; });
+
+    console.log('[3DSimulator] Three.js初期化完了', { horseMode: horseModeRef.current });
     
     // ── 描画パイプライン診断（debug=1 のときだけ・1回） ──
     const debugEnabled = shouldShowDebugHud({
@@ -433,19 +546,33 @@ export default function RaceSimulator3DProto({
         rendererRef.current.dispose();
       }
       
-      horseMeshesRef.current.forEach(mesh => {
-        mesh.traverse(child => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry.dispose();
-            if (Array.isArray(child.material)) {
-              child.material.forEach(mat => mat.dispose());
-            } else {
-              child.material.dispose();
-            }
-          }
+      // Broadcast Cel: 各馬 root を scene から外すだけ（共有 geometry/material は保持＝誤破棄しない）。
+      // legacy: 従来通り per-mesh dispose（旧カプセルは共有リソースを持たない）。
+      if (horseVisualsRef.current.size > 0) {
+        horseVisualsRef.current.forEach((v) => {
+          if (sceneRef.current) sceneRef.current.remove(v.root);
+          v.dispose();
         });
-      });
+        horseVisualsRef.current.clear();
+      } else {
+        horseMeshesRef.current.forEach(mesh => {
+          mesh.traverse(child => {
+            if (child instanceof THREE.Mesh) {
+              child.geometry.dispose();
+              if (Array.isArray(child.material)) {
+                child.material.forEach(mat => mat.dispose());
+              } else {
+                child.material.dispose();
+              }
+            }
+          });
+        });
+      }
       horseMeshesRef.current.clear();
+      // レース固有状態をリセット（共有リソースは保持）
+      labelMgrRef.current.clearForRaceSwitch();
+      prevHeadingRef.current.clear();
+      hoverHorseRef.current = null;
       
       // コースジオメトリの dispose（Visual Step 1C-1）
       if (courseGeometryRef.current.track) {
@@ -500,7 +627,26 @@ export default function RaceSimulator3DProto({
     // raceSignature が変わったときだけ作り直す（simulationResult/courseInfo の参照churn無視）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raceSignature]);
+
+  // 共有リソースの寿命 = コンポーネント生存期間。unmount時にだけ dispose する。
+  // （レース切替では作り直さない＝切替時の再コンパイル/一時停止と dispose漏れリスクを避ける）
+  useEffect(() => {
+    return () => {
+      if (horseResourcesRef.current) {
+        horseResourcesRef.current.dispose();
+        horseResourcesRef.current = null;
+      }
+      horseVisualsRef.current.clear();
+      labelPoolRef.current = [];
+    };
+  }, []);
   
+  // 選択馬の変更を Broadcast Cel の選択リングへ同期（頭上ラベルは次フレームで自動反映）
+  useEffect(() => {
+    horseVisualsRef.current.forEach((v, hn) => v.setSelected(hn === selectedHorse));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedHorse]);
+
   // カメラモード切替時の初期化（アニメーションループとは分離）
   useEffect(() => {
     if (cameraMode === 'overview' && cameraRef.current) {
@@ -599,6 +745,16 @@ export default function RaceSimulator3DProto({
             updateBroadcastCamera(currentState);
           } else if (mode === 'follow' && selectedHorseRef.current !== null) {
             updateFollowCamera(currentState);
+          }
+
+          // Broadcast Cel: gait アニメ（再生中のみ進む＝停止時は脚を止める）+ 頭上ラベル
+          if (horseVisualsRef.current.size > 0) {
+            const playing = isPlayingRef.current && timelineValidRef.current;
+            if (playing) gaitTimeRef.current += deltaTime * playbackSpeedRef.current;
+            driveHorseGait(currentState, playing, deltaTime);
+            updateHorseLabels(currentState);
+          } else {
+            hideAllLabels();
           }
         }
       }
@@ -709,8 +865,48 @@ export default function RaceSimulator3DProto({
     courseGeometryRef.current.goalLine = undefined;
   };
   
-  // 馬作成
+  // 馬作成（Broadcast Cel / legacy を feature flag で分岐）
   const createHorses = (scene: THREE.Scene, initialFrame: RaceTimelineKeyframe) => {
+    if (horseModeRef.current === 'cel' && horseResourcesRef.current) {
+      try {
+        createBroadcastCelHorses(scene, initialFrame);
+        return;
+      } catch (e) {
+        // 新ビジュアルの生成で例外 → このレースは legacy へ fallback（warning で分かるように）
+        console.warn('[3DSimulator] Broadcast Cel 馬生成で例外 → legacy 馬へ fallback:', e);
+        // 途中まで作った cel visual を撤去
+        horseVisualsRef.current.forEach((v) => { scene.remove(v.root); v.dispose(); });
+        horseVisualsRef.current.clear();
+        horseMeshesRef.current.clear();
+        horseModeRef.current = 'legacy';
+      }
+    }
+    createLegacyHorses(scene, initialFrame);
+  };
+
+  // Broadcast Cel 馬（共有リソースを使用。root は本番ロジックが position/heading を設定する）
+  const createBroadcastCelHorses = (scene: THREE.Scene, initialFrame: RaceTimelineKeyframe) => {
+    const res = horseResourcesRef.current!;
+    const total = initialFrame.horses.length;
+    for (const horse of initialFrame.horses) {
+      const meta = horseMetaRef.current.get(horse.horseNumber);
+      const waku = meta?.waku ?? jraWakuOf(horse.horseNumber, total);
+      const visual = createBroadcastCelHorseVisual(res, {
+        horseNumber: horse.horseNumber,
+        waku,
+        coatName: meta?.coatName ?? null,
+        selected: horse.horseNumber === selectedHorseRef.current,
+      });
+      // 見た目のみ拡大（位置・laneOffset・heading には影響しない。旧カプセルと同じ倍率）
+      visual.root.scale.setScalar(HORSE_VISUAL_SCALE);
+      scene.add(visual.root);
+      horseVisualsRef.current.set(horse.horseNumber, visual);
+      horseMeshesRef.current.set(horse.horseNumber, visual.root);
+    }
+  };
+
+  // 旧馬（fallback 用: 単一カプセル + 常時スプライトラベル）
+  const createLegacyHorses = (scene: THREE.Scene, initialFrame: RaceTimelineKeyframe) => {
     const wakuColors = [
       0xFFFFFF, // 1枠 白
       0x000000, // 2枠 黒
@@ -852,15 +1048,20 @@ export default function RaceSimulator3DProto({
         // 向き: heading を使用（カプセルの長軸=Z軸なので rotation.y でOK）
         mesh.rotation.y = pose.heading;
         
-        // 状態による色変更（既存ロジック維持）
-        const body = mesh.children[0] as THREE.Mesh;
-        if (body && body.material instanceof THREE.MeshStandardMaterial) {
-          if (horse.blocked) {
-            body.material.emissive.setHex(0xFF0000); // ブロック: 赤
-          } else if (horse.accelerationStarted) {
-            body.material.emissive.setHex(0x00FF00); // 加速: 緑
-          } else {
-            body.material.emissive.setHex(0x000000); // 通常
+        // 状態による色変更（既存ロジック維持 / cel は per-instance マーカー）
+        const cv = horseVisualsRef.current.get(horse.horseNumber);
+        if (cv) {
+          cv.setBlocked(!!horse.blocked);
+        } else {
+          const body = mesh.children[0] as THREE.Mesh;
+          if (body && body.material instanceof THREE.MeshStandardMaterial) {
+            if (horse.blocked) {
+              body.material.emissive.setHex(0xFF0000); // ブロック: 赤
+            } else if (horse.accelerationStarted) {
+              body.material.emissive.setHex(0x00FF00); // 加速: 緑
+            } else {
+              body.material.emissive.setHex(0x000000); // 通常
+            }
           }
         }
       } catch (e) {
@@ -897,14 +1098,126 @@ export default function RaceSimulator3DProto({
         }
         mesh.position.set(pose.position.x, pose.position.y + 1.0, pose.position.z);
         mesh.rotation.y = pose.heading;
-        const body = mesh.children[0] as THREE.Mesh;
-        if (body && body.material instanceof THREE.MeshStandardMaterial) {
-          body.material.emissive.setHex(h.blocked ? 0x552200 : 0x000000);
+        const cv = horseVisualsRef.current.get(h.horseNumber);
+        if (cv) {
+          // Broadcast Cel: 状態フィードバックは共有 material を汚さず per-instance マーカーで
+          cv.setBlocked(!!h.blocked);
+        } else {
+          const body = mesh.children[0] as THREE.Mesh;
+          if (body && body.material instanceof THREE.MeshStandardMaterial) {
+            body.material.emissive.setHex(h.blocked ? 0x552200 : 0x000000);
+          }
         }
       } catch {
         continue;
       }
     }
+  };
+
+  // Broadcast Cel: gait アニメを本番速度へ接続（root position/heading は変更しない）
+  const driveHorseGait = (
+    currentState: RaceTimelineKeyframe,
+    playing: boolean,
+    deltaTime: number,
+  ) => {
+    const gt = gaitTimeRef.current;
+    for (const h of currentState.horses) {
+      const v = horseVisualsRef.current.get(h.horseNumber);
+      if (!v) continue;
+      // 速度で周期・振幅を変える。停止（再生していない）時は 0＝脚を止める。
+      const speedFactor = playing ? Math.max(0, Math.min(1, (h.currentVelocity ?? 0) / 17)) : 0;
+      // コーナー傾き: heading 角速度から（root.rotation.y は positioning が設定済みの値を読むだけ）
+      const cur = v.root.rotation.y;
+      const prev = prevHeadingRef.current.get(h.horseNumber);
+      let lean = 0;
+      if (prev !== undefined && deltaTime > 1e-4) {
+        let dh = cur - prev;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        const angVel = dh / deltaTime;
+        lean = Math.max(-0.3, Math.min(0.3, -angVel * 0.35)) * speedFactor;
+      }
+      prevHeadingRef.current.set(h.horseNumber, cur);
+      v.update(gt, speedFactor, lean);
+    }
+  };
+
+  // Broadcast Cel: 頭上ラベル（全頭表示を基本／密集時のみ優先度+衝突で間引き）
+  const updateHorseLabels = (currentState: RaceTimelineKeyframe) => {
+    const layer = labelLayerRef.current;
+    const cam = cameraRef.current;
+    const renderer = rendererRef.current;
+    if (!layer || !cam || !renderer) return;
+    const w = renderer.domElement.clientWidth;
+    const h = renderer.domElement.clientHeight;
+    if (w === 0 || h === 0) return;
+
+    let leader: number | null = null;
+    for (const hh of currentState.horses) { if (hh.position === 1) { leader = hh.horseNumber; break; } }
+    const selected = selectedHorseRef.current;
+    const hover = hoverHorseRef.current;
+
+    const inputs: LabelInput[] = [];
+    for (const hh of currentState.horses) {
+      const v = horseVisualsRef.current.get(hh.horseNumber);
+      if (!v) continue;
+      const meta = horseMetaRef.current.get(hh.horseNumber);
+      const waku = meta?.waku ?? jraWakuOf(hh.horseNumber, currentState.horses.length);
+      const anchorY = v.root.position.y + 2.9 * HORSE_VISUAL_SCALE;
+      const pr = buildLabelPriority({ horseNumber: hh.horseNumber, selectedHorse: selected, hoverHorse: hover, leaderHorse: leader });
+      inputs.push({
+        id: hh.horseNumber,
+        wx: v.root.position.x, wy: anchorY, wz: v.root.position.z,
+        text: String(hh.horseNumber),
+        color: wakuCssColor(waku),
+        textColor: wakuTextColor(((waku - 1) % 8) + 1),
+        priority: pr.priority, forceShow: pr.forceShow,
+      });
+    }
+
+    const tmp = new THREE.Vector3();
+    const projector = {
+      project: (x: number, y: number, z: number) => {
+        const p = tmp.set(x, y, z).project(cam);
+        return { x: p.x, y: p.y, z: p.z };
+      },
+    };
+    const outs = labelMgrRef.current.layout(inputs, projector, {
+      width: w, height: h, now: performance.now(),
+      maxVisible: inputs.length,     // 既定=全頭。余裕があれば全表示。
+      maxDisplacement: 90,           // 密集で上へ押し出しすぎる低優先ラベルのみ間引く
+      hysteresis: true,
+    });
+    renderLabelDom(layer, outs);
+  };
+
+  const renderLabelDom = (layer: HTMLDivElement, outs: LabelOut[]) => {
+    const pool = labelPoolRef.current;
+    while (pool.length < outs.length) {
+      const el = document.createElement('div');
+      Object.assign(el.style, {
+        position: 'absolute', transform: 'translate(-50%,-50%)', pointerEvents: 'none',
+        fontWeight: '700', fontSize: '13px', lineHeight: '18px', textAlign: 'center',
+        minWidth: '20px', padding: '1px 6px', borderRadius: '6px',
+        fontVariantNumeric: 'tabular-nums', boxShadow: '0 1px 3px rgba(0,0,0,0.45)', whiteSpace: 'nowrap',
+      } as Partial<CSSStyleDeclaration>);
+      layer.appendChild(el); pool.push(el);
+    }
+    for (let i = 0; i < pool.length; i++) {
+      const el = pool[i]; const o = outs[i];
+      if (!o || !o.visible) { el.style.display = 'none'; continue; }
+      el.style.display = 'block';
+      el.style.left = `${o.x}px`; el.style.top = `${o.y}px`;
+      el.style.background = o.color; el.style.color = o.textColor;
+      el.style.border = o.emphasized ? '2px solid #ffffff' : '1px solid rgba(0,0,0,0.35)';
+      el.style.outline = o.emphasized ? '2px solid #ff3b30' : 'none';
+      el.style.zIndex = o.emphasized ? '30' : '20';
+      el.textContent = o.text;
+    }
+  };
+
+  const hideAllLabels = () => {
+    for (const el of labelPoolRef.current) el.style.display = 'none';
   };
 
   // Visual Step 1C-3A: 馬群の framing を計算（純粋な読み取りのみ）
@@ -1127,6 +1440,9 @@ export default function RaceSimulator3DProto({
         className="w-full h-[600px] border border-gray-300 rounded-lg overflow-hidden bg-black relative"
         style={{ touchAction: 'none' }}
       >
+        {/* Broadcast Cel: 頭上ラベル層（screen-space・pointer-events なし。canvas 操作を妨げない） */}
+        <div ref={labelLayerRef} className="pointer-events-none absolute inset-0 z-30" />
+
         {/* タイムライン生成待ちの読み込み表示（canvas は既にマウント済み） */}
         {!timeline && (
           <div className="absolute inset-0 z-40 flex items-center justify-center text-white/80 text-sm">
