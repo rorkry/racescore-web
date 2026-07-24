@@ -13,8 +13,10 @@ import {
   runRaceDynamicsForRace,
   interpolateDynamicsForDisplay,
   buildForecastLayoutsFromSimulation,
+  buildFormationBonusFromSimulation,
   type RacecourseLayout,
   type ForecastLayouts3D,
+  type FormationBonusContext,
 } from '@/lib/race-simulator/race-3d-integration';
 import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE, getSurfaceProfile } from '@/lib/racecourse-geometry';
 import {
@@ -212,6 +214,8 @@ export default function RaceSimulator3DProto({
   const dynamicsRef = useRef<RaceDynamicsResult | null>(null);
   /** Old-2D start/goal layouts for goal-approach display blend (meters). */
   const forecastLayoutsRef = useRef<ForecastLayouts3D | null>(null);
+  /** 競うスコア由来の表示隊列 前方向補正（formation〜corner のみ・表示専用）。 */
+  const formationBonusRef = useRef<FormationBonusContext | null>(null);
   const trackGroupsRef = useRef<TrackRenderResult[]>([]);
   const groundRef = useRef<THREE.Mesh | null>(null);
   // レース切替の安全化: シーン世代。init のたびに +1 し、
@@ -480,6 +484,20 @@ export default function RaceSimulator3DProto({
             layout.geometry.trackWidth,
           )
         : null;
+    // 競うスコア由来の表示隊列 前方向補正を構築（formation〜corner のみ・表示専用）。
+    // finish / finalStandings / finishTime / dynamics には一切影響しない。
+    const formationBonusResults =
+      layout && simulationResult
+        ? buildFormationBonusFromSimulation(simulationResult, layout.raceDistance)
+        : null;
+    if (formationBonusResults && formationBonusResults.size > 0) {
+      const appliedMetersByHorse = new Map<number, number>();
+      formationBonusResults.forEach((r, hn) => appliedMetersByHorse.set(hn, r.appliedBonusMeters));
+      formationBonusRef.current = { appliedMetersByHorse };
+    } else {
+      formationBonusRef.current = null;
+    }
+
     console.log('[3DSimulator] layout/dynamics:', {
       layout: layout ? layout.routeId : 'null(旧描画へfallback)',
       dynamics: dynamics ? `${dynamics.frames.length}frames/${dynamics.totalTime}s` : 'null',
@@ -516,6 +534,25 @@ export default function RaceSimulator3DProto({
               .join(' ')
           : '(スコアなし=位置補正は自然に無効)'
       );
+
+      // 位置補正（段階2）の適用量デバッグ。前方向へ寄せた馬のみ表示。
+      if (formationBonusResults && formationBonusResults.size > 0) {
+        const applied = [...formationBonusResults.values()]
+          .filter((r) => r.appliedBonusMeters > 0)
+          .sort((a, b) => b.appliedBonusMeters - a.appliedBonusMeters);
+        console.log(
+          '[3DSimulator] 位置補正(前方向のみ):',
+          applied.length > 0
+            ? applied
+                .slice(0, 6)
+                .map(
+                  (r) =>
+                    `#${r.horseNumber}(${r.runningStyle},p=${r.percentile.toFixed(2)}):+${r.appliedBonusMeters.toFixed(2)}m${r.clampedByStyleBand ? '[脚質帯clamp]' : ''}`
+                )
+                .join(' ')
+            : '(補正対象なし=全馬中央値以下/データ不足/同点)'
+        );
+      }
     }
 
     // 地面（背景）
@@ -604,7 +641,7 @@ export default function RaceSimulator3DProto({
       const wakuOf = (hn: number) => horseMetaRef.current.get(hn)?.waku;
       const nameOf = (hn: number) => horseNameRef.current.get(hn);
       if (dynamics && raceDistance > 0) {
-        const frame = interpolateDynamicsForDisplay(dynamics, 0, forecastLayoutsRef.current);
+        const frame = interpolateDynamicsForDisplay(dynamics, 0, forecastLayoutsRef.current, formationBonusRef.current);
         setTrackingRows(
           buildTrackingRows(trackingInputsFromDynamics(frame, raceDistance, nameOf), { wakuOf, raceDistance }),
         );
@@ -804,6 +841,7 @@ export default function RaceSimulator3DProto({
       layoutRef.current = null;
       dynamicsRef.current = null;
       forecastLayoutsRef.current = null;
+      formationBonusRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
       sceneRef.current = null;
@@ -867,6 +905,7 @@ export default function RaceSimulator3DProto({
       dynamics,
       dynamicsTime,
       forecastLayouts: forecastLayoutsRef.current,
+      formationBonus: formationBonusRef.current,
       fallbackHorses: currentState.horses.map((h) => ({
         horseNumber: h.horseNumber,
         currentDistance: h.currentDistance,
@@ -899,7 +938,7 @@ export default function RaceSimulator3DProto({
     if (dynamics && raceDistance > 0) {
       const dur = tl.totalDuration > 0 ? tl.totalDuration : 1;
       const dynTime = (time / dur) * dynamics.totalTime;
-      const frame = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current);
+      const frame = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current, formationBonusRef.current);
       const inputs = trackingInputsFromDynamics(frame, raceDistance, nameOf);
       setTrackingRows(buildTrackingRows(inputs, { wakuOf, raceDistance }));
       return;

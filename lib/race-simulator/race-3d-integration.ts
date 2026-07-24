@@ -32,6 +32,12 @@ import {
   adaptFormationToHorseInputs,
   type RawFormationHorse,
 } from '../race-dynamics';
+import {
+  computeCompetitionFormationBonus,
+  formationBonusTaperWeight,
+  type BonusInputHorse,
+  type BonusResult,
+} from '../race-dynamics/ai-position-adjust';
 import { hashString } from '../race-dynamics/seed';
 import {
   convertForecastLayoutTo3D,
@@ -215,15 +221,58 @@ export function buildForecastLayoutsFromSimulation(
  *
  * 入線順の正本は layouts.finishTargets（finalStandings.position）。dynamics rank では上書きしない。
  */
+/**
+ * 競うスコア由来の「表示隊列 前方向補正」コンテキスト。
+ * appliedMetersByHorse: 馬番 -> 前方向へ寄せる最大メートル（>=0）。
+ * dynamics / finish / finalStandings には影響しない。formation〜corner の表示のみ。
+ */
+export interface FormationBonusContext {
+  appliedMetersByHorse: Map<number, number>;
+}
+
+/**
+ * 表示フレームへ competitionScore 由来の前方向補正を適用（表示専用）。
+ *  - 先頭進捗に応じたテーパーで、発馬直後に立ち上げ・ゴール前ブレンド開始より前に0へ戻す。
+ *  - 前方向のみ（raceProgress を増やすだけ）。lateralPosition は変更しない。
+ *  - 累積しない（毎フレーム raw frame から一発適用）。
+ */
+function applyFormationBonus(
+  frame: HorseFrameState[],
+  bonus: FormationBonusContext | null | undefined,
+  leaderProgress01: number,
+): HorseFrameState[] {
+  if (!bonus || bonus.appliedMetersByHorse.size === 0) return frame;
+  const w = formationBonusTaperWeight(leaderProgress01);
+  if (w <= 0) return frame;
+  return frame.map((h) => {
+    const add = bonus.appliedMetersByHorse.get(h.horseNumber) ?? 0;
+    if (add <= 0) return h;
+    // 前方向のみ。lateralPosition/rank/finished などは一切変更しない。
+    return { ...h, raceProgress: h.raceProgress + w * add };
+  });
+}
+
 export function interpolateDynamicsForDisplay(
   result: RaceDynamicsResult,
   time: number,
   layouts: ForecastLayouts3D | null,
+  bonus?: FormationBonusContext | null,
 ): HorseFrameState[] {
   const frame = interpolateDynamics(result, time);
-  if (!layouts) return frame;
 
-  // 1. 発馬フェーズ: ゲート配置 → 展開形成（dynamics）
+  // 先頭進捗（bonus テーパー / goal blend 用）。goal blend の判定は raw frame 基準（既存挙動）。
+  const rdAll =
+    layouts && layouts.raceDistance > 0
+      ? layouts.raceDistance
+      : result.raceDistance > 0
+        ? result.raceDistance
+        : 1;
+  const leaderMetersAll = frame.reduce((m, h) => Math.max(m, h.raceProgress), 0);
+  const leaderProgress01 = Math.min(1, Math.max(0, leaderMetersAll / rdAll));
+
+  if (!layouts) return applyFormationBonus(frame, bonus, leaderProgress01);
+
+  // 1. 発馬フェーズ: ゲート配置 → 展開形成（dynamics）。この区間は補正しない（テーパーも0付近）。
   if (layouts.startGate.length > 0 && time < START_BLEND_END_SEC) {
     return blendFrameFromStartGate(frame, {
       startGate: layouts.startGate,
@@ -231,17 +280,17 @@ export function interpolateDynamicsForDisplay(
     });
   }
 
-  if (layouts.goal.length === 0) return frame;
+  // 2. formation〜corner: 競うスコア由来の前方向補正（表示のみ・テーパーで自動的に0へ戻る）
+  const boosted = applyFormationBonus(frame, bonus, leaderProgress01);
 
-  const rd = layouts.raceDistance > 0 ? layouts.raceDistance : 1;
-  // dynamics.raceProgress はメートル
-  const leaderMeters = frame.reduce((m, h) => Math.max(m, h.raceProgress), 0);
-  const leaderProgress01 = Math.min(1, Math.max(0, leaderMeters / rd));
+  if (layouts.goal.length === 0) return boosted;
+
   const { blendToGoal, convergeToFinish } = computeGoalBlendWeights(leaderProgress01);
-  if (blendToGoal <= 0 && convergeToFinish <= 0) return frame;
+  // goal blend 開始(≈0.70)時点でテーパーは既に0のため boosted===frame（goal/finish は不変）。
+  if (blendToGoal <= 0 && convergeToFinish <= 0) return boosted;
 
-  // 2. ゴール前: 旧2D expectedPositionGoal へ接近（finish は別段階で扱うため convergeToFinish=0）
-  const goalBlended = blendFrameTowardForecastLayouts(frame, {
+  // 3. ゴール前: 旧2D expectedPositionGoal へ接近（finish は別段階で扱うため convergeToFinish=0）
+  const goalBlended = blendFrameTowardForecastLayouts(boosted, {
     raceDistance: layouts.raceDistance,
     goalLayout: layouts.goal,
     finishLayout: [],
@@ -249,13 +298,41 @@ export function interpolateDynamicsForDisplay(
     convergeToFinish: 0,
   });
 
-  // 3. 入線収束: finalStandings.position（予想着順=正本）へ進捗の順序を寄せる
+  // 4. 入線収束: finalStandings.position（予想着順=正本）へ進捗の順序を寄せる
   return convergeFrameToPredictedFinish(
     goalBlended,
     layouts.finishTargets,
     convergeToFinish,
     layouts.raceDistance,
   );
+}
+
+/**
+ * SimulationResult から競うスコア由来の「表示隊列 前方向補正」を構築する（表示専用）。
+ *  - 脚質は buildHorseInputsFromSimulation（dynamics と同一の解決）を正本とする。
+ *  - competitionScore / 基準前後位置(currentDistance) は start-phase 馬から取得。
+ *  - dynamics / finish / finalStandings には影響しない。
+ */
+export function buildFormationBonusFromSimulation(
+  sim: SimulationLike,
+  raceDistance: number,
+): Map<number, BonusResult> {
+  const startHorses = sim.phases?.start?.horses ?? sim.finalStandings ?? [];
+  if (startHorses.length === 0) return new Map();
+
+  // 脚質は dynamics 入力と同じ解決を使う（表示と挙動の脚質を一致させる）
+  const inputs = buildHorseInputsFromSimulation(sim);
+  const styleByHn = new Map<number, string>();
+  for (const inp of inputs) styleByHn.set(inp.horseNumber, inp.runningStyle);
+
+  const bonusInputs: BonusInputHorse[] = startHorses.map((h) => ({
+    horseNumber: h.horseNumber,
+    runningStyle: styleByHn.get(h.horseNumber) ?? h.runningStyle ?? null,
+    competitionScore: h.competitionScore,
+    baseFormationMeters: h.currentDistance ?? 0,
+  }));
+
+  return computeCompetitionFormationBonus(bonusInputs, raceDistance);
 }
 
 export interface RacecourseLayout {

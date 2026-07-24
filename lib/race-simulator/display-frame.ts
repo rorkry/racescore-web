@@ -15,7 +15,7 @@
  */
 
 import type { RaceDynamicsResult } from '../race-dynamics/types';
-import { interpolateDynamicsForDisplay, type ForecastLayouts3D, type RacecourseLayout } from './race-3d-integration';
+import { interpolateDynamicsForDisplay, type ForecastLayouts3D, type RacecourseLayout, type FormationBonusContext } from './race-3d-integration';
 import { trackingInputsFromDynamics } from './tracking-rows';
 import { sampleRaceProgressPose } from '../racecourse-geometry';
 
@@ -49,10 +49,12 @@ export function resolveDisplayFrame(params: {
   dynamicsTime: number;
   forecastLayouts: ForecastLayouts3D | null;
   fallbackHorses: FallbackHorseInput[];
+  /** 競うスコア由来の表示隊列 前方向補正（formation〜corner のみ・表示専用）。省略可 */
+  formationBonus?: FormationBonusContext | null;
 }): DisplayHorseFrame[] {
-  const { dynamics, dynamicsTime, forecastLayouts, fallbackHorses } = params;
+  const { dynamics, dynamicsTime, forecastLayouts, fallbackHorses, formationBonus } = params;
   if (dynamics) {
-    const frame = interpolateDynamicsForDisplay(dynamics, dynamicsTime, forecastLayouts);
+    const frame = interpolateDynamicsForDisplay(dynamics, dynamicsTime, forecastLayouts, formationBonus);
     return frame.map((h) => ({
       horseNumber: h.horseNumber,
       raceProgress: h.raceProgress,
