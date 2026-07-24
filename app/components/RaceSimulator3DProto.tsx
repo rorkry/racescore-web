@@ -28,9 +28,12 @@ import {
 import {
   HorseLabelManager,
   buildLabelPriority,
+  shouldLabelHorse,
   type LabelInput,
   type LabelOut,
 } from '@/lib/race-simulator/horse-labels';
+import RaceTrackingPanel from './RaceTrackingPanel';
+import { buildTrackingRows } from '@/lib/race-simulator/tracking-rows';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -51,6 +54,20 @@ function resolveHorseVisualMode(search: string): HorseVisualMode {
     if (p === 'cel') return 'cel';
   } catch { /* SSR等 */ }
   return 'cel';
+}
+
+/**
+ * 頭上ラベルの表示モード（feature flag / デバッグ用）。
+ * 既定 'auto' = 選択馬 / hover 馬 / 先頭馬のみ。?labels=all で全頭表示（デバッグ）。
+ * 全頭の識別は常設の画面端トラッキングパネルが保証するため、通常は 'auto' で十分。
+ */
+type LabelsMode = 'auto' | 'all';
+function resolveLabelsMode(search: string): LabelsMode {
+  try {
+    const p = new URLSearchParams(search).get('labels');
+    if (p === 'all') return 'all';
+  } catch { /* SSR等 */ }
+  return 'auto';
 }
 
 /** simulationResult(読み取り専用) から horseNumber→{waku, 毛色名} を作る。simロジックは変更しない。 */
@@ -120,11 +137,11 @@ export default function RaceSimulator3DProto({
   const horseVisualsRef = useRef<Map<number, HorseVisual>>(new Map());
   const horseModeRef = useRef<HorseVisualMode>('cel');       // 実効モード（fallback で legacy になり得る）
   const horseMetaRef = useRef<Map<number, { waku: number; coatName?: string }>>(new Map());
-  // 頭上ラベル（screen-space・全頭表示を基本／密集時のみ間引き）
+  // 頭上ラベル（screen-space・選択/hover/先頭のみ・真上固定）。全頭識別はトラッキングパネルで保証。
   const labelLayerRef = useRef<HTMLDivElement>(null);
   const labelMgrRef = useRef<HorseLabelManager>(new HorseLabelManager());
   const labelPoolRef = useRef<HTMLDivElement[]>([]);
-  const labelLinePoolRef = useRef<HTMLDivElement[]>([]); // leader line 用の細い div プール
+  const labelsModeRef = useRef<LabelsMode>('auto');
   const hoverHorseRef = useRef<number | null>(null);
   const prevHeadingRef = useRef<Map<number, number>>(new Map());
   const gaitTimeRef = useRef<number>(0);            // 再生中のみ進む gait 時刻（frame-rate 非依存）
@@ -437,6 +454,7 @@ export default function RaceSimulator3DProto({
     // 馬ビジュアルモードを解決（既定=Broadcast Cel）。メタ(枠色/毛色名)を読み取り専用で構築。
     const requestedMode = resolveHorseVisualMode(typeof window !== 'undefined' ? window.location.search : '');
     horseModeRef.current = requestedMode;
+    labelsModeRef.current = resolveLabelsMode(typeof window !== 'undefined' ? window.location.search : '');
     horseMetaRef.current = buildHorseMetaMap(simulationResult);
     // 共有リソースは一度だけ生成し保持（レース切替では作り直さない）
     if (requestedMode === 'cel' && !horseResourcesRef.current) {
@@ -639,7 +657,6 @@ export default function RaceSimulator3DProto({
       }
       horseVisualsRef.current.clear();
       labelPoolRef.current = [];
-      labelLinePoolRef.current = [];
     };
   }, []);
   
@@ -1144,7 +1161,8 @@ export default function RaceSimulator3DProto({
     }
   };
 
-  // Broadcast Cel: 頭上ラベル（全頭表示を基本／密集時のみ優先度+衝突で間引き）
+  // Broadcast Cel: 頭上ラベル（新仕様: 選択馬 / hover 馬 / 先頭馬のみ・馬の真上に固定）
+  // 全頭の識別は画面端のトラッキングパネルが保証する。?labels=all で全頭表示（デバッグ）。
   const updateHorseLabels = (currentState: RaceTimelineKeyframe) => {
     const layer = labelLayerRef.current;
     const cam = cameraRef.current;
@@ -1158,11 +1176,16 @@ export default function RaceSimulator3DProto({
     for (const hh of currentState.horses) { if (hh.position === 1) { leader = hh.horseNumber; break; } }
     const selected = selectedHorseRef.current;
     const hover = hoverHorseRef.current;
+    const showAll = labelsModeRef.current === 'all';
 
     const inputs: LabelInput[] = [];
     for (const hh of currentState.horses) {
       const v = horseVisualsRef.current.get(hh.horseNumber);
       if (!v) continue;
+      // 新仕様: 選択/hover/先頭のみ（デバッグ時のみ全頭）
+      if (!showAll && !shouldLabelHorse({
+        horseNumber: hh.horseNumber, selectedHorse: selected, hoverHorse: hover, leaderHorse: leader,
+      })) continue;
       const meta = horseMetaRef.current.get(hh.horseNumber);
       const waku = meta?.waku ?? jraWakuOf(hh.horseNumber, currentState.horses.length);
       const anchorY = v.root.position.y + 2.9 * HORSE_VISUAL_SCALE;
@@ -1186,7 +1209,6 @@ export default function RaceSimulator3DProto({
     };
     const outs = labelMgrRef.current.layout(inputs, projector, {
       width: w, height: h, now: performance.now(),
-      maxVisible: inputs.length,     // 既定=全頭。余裕があれば全表示。
       hysteresis: true,
     });
     renderLabelDom(layer, outs);
@@ -1194,7 +1216,6 @@ export default function RaceSimulator3DProto({
 
   const renderLabelDom = (layer: HTMLDivElement, outs: LabelOut[]) => {
     const pool = labelPoolRef.current;
-    const lines = labelLinePoolRef.current;
     while (pool.length < outs.length) {
       const el = document.createElement('div');
       Object.assign(el.style, {
@@ -1205,18 +1226,9 @@ export default function RaceSimulator3DProto({
       } as Partial<CSSStyleDeclaration>);
       layer.appendChild(el); pool.push(el);
     }
-    // leader line プール（ラベルと対象馬を結ぶ細い線）
-    while (lines.length < outs.length) {
-      const ln = document.createElement('div');
-      Object.assign(ln.style, {
-        position: 'absolute', transformOrigin: '0 0', pointerEvents: 'none',
-        height: '1px', background: 'rgba(255,255,255,0.5)', zIndex: '10',
-      } as Partial<CSSStyleDeclaration>);
-      layer.appendChild(ln); lines.push(ln);
-    }
     for (let i = 0; i < pool.length; i++) {
-      const el = pool[i]; const ln = lines[i]; const o = outs[i];
-      if (!o || !o.visible) { el.style.display = 'none'; if (ln) ln.style.display = 'none'; continue; }
+      const el = pool[i]; const o = outs[i];
+      if (!o || !o.visible) { el.style.display = 'none'; continue; }
       el.style.display = 'block';
       el.style.left = `${o.x}px`; el.style.top = `${o.y}px`;
       el.style.background = o.color; el.style.color = o.textColor;
@@ -1224,26 +1236,11 @@ export default function RaceSimulator3DProto({
       el.style.outline = o.emphasized ? '2px solid #ff3b30' : 'none';
       el.style.zIndex = o.emphasized ? '30' : '20';
       el.textContent = o.text;
-      // leader line: アンカー→ラベルへ細線（密集で横/上へ逃がしたときだけ）
-      if (ln) {
-        if (o.leader) {
-          const dx = o.x - o.ax, dy = o.y - o.ay;
-          const len = Math.hypot(dx, dy);
-          const ang = Math.atan2(dy, dx);
-          ln.style.display = 'block';
-          ln.style.left = `${o.ax}px`; ln.style.top = `${o.ay}px`;
-          ln.style.width = `${len}px`;
-          ln.style.transform = `rotate(${ang}rad)`;
-        } else {
-          ln.style.display = 'none';
-        }
-      }
     }
   };
 
   const hideAllLabels = () => {
     for (const el of labelPoolRef.current) el.style.display = 'none';
-    for (const ln of labelLinePoolRef.current) ln.style.display = 'none';
   };
 
   // Visual Step 1C-3A: 馬群の framing を計算（純粋な読み取りのみ）
@@ -1447,6 +1444,19 @@ export default function RaceSimulator3DProto({
   // timeline 未設定でも 3D コンテナは常時マウントする（黒画面防止: init effect が container を掴めるように）
   const currentState = timeline ? interpolateTimeline(timeline, currentTime) : null;
   const selectedHorseState = currentState?.horses.find(h => h.horseNumber === selectedHorse);
+
+  // 画面端トラッキング用の行（現在順位でソート）。simロジックは読み取りのみ。
+  const trackingRows = currentState
+    ? buildTrackingRows(
+        currentState.horses.map(h => ({
+          horseNumber: h.horseNumber,
+          position: h.position,
+          horseName: h.horseName,
+          distanceFromLeader: h.distanceFromLeader,
+        })),
+        (hn) => horseMetaRef.current.get(hn)?.waku,
+      )
+    : [];
   
   // Fallback使用チェック
   const usingFallback = !courseInfo || !courseInfo.corners || courseInfo.corners.length === 0;
@@ -1468,6 +1478,15 @@ export default function RaceSimulator3DProto({
       >
         {/* Broadcast Cel: 頭上ラベル層（screen-space・pointer-events なし。canvas 操作を妨げない） */}
         <div ref={labelLayerRef} className="pointer-events-none absolute inset-0 z-30" />
+
+        {/* 画面端トラッキング（全頭の識別を保証）: PC=右端縦帯 / 狭幅=下端横帯。3D 選択と双方向同期。 */}
+        {timeline && trackingRows.length > 0 && (
+          <RaceTrackingPanel
+            rows={trackingRows}
+            selectedHorse={selectedHorse}
+            onSelect={setSelectedHorse}
+          />
+        )}
 
         {/* タイムライン生成待ちの読み込み表示（canvas は既にマウント済み） */}
         {!timeline && (

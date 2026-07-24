@@ -2,28 +2,30 @@
  * broadcast-cel-horse（本番 Broadcast Cel 馬ビジュアル / THREE 描画専用）
  *
  * Visual Lab A（Broadcast Cel）の「馬らしいシルエット + セルルック + 騎手 + 識別」を
- * 本番 RaceSimulator3DProto へ安全に統合するための独立モジュール。
- * Visual Lab のコードを単純コピーせず、描画構造を最適化して再設計している。
+ * 本番 RaceSimulator3DProto へ忠実に再現するための独立モジュール。
  *
- * 設計方針（ユーザー承認済み）:
+ * 正本方針（ユーザー承認済み）:
+ *  - 馬・騎手の造形、輪郭、材質、姿勢、接地感、アニメーションは Visual Lab A を正本とする。
+ *    パーツは A 案どおり「個別メッシュ」で構成する（geometry merge はしない）。
+ *    → 騎手は 胴(torso)・帽(helmet)・顔(face) を独立メッシュに戻す。
+ *    → 寸法・位置・rotation・outline はすべて Visual Lab A の buildRigged に一致させる。
  *  - 共有リソース（geometry / material / toon gradient / 番号texture）は
  *    createHorseVisualResources() で 1 度だけ生成し、renderer/コンポーネント生存中は保持する。
  *    レース切替では各 HorseVisual の root だけを破棄し、共有リソースは破棄しない。
- *  - 毛色は単一固定にせず、少数パレット（鹿毛/黒鹿毛/青鹿毛/栗毛/芦毛）をキャッシュ共有。
- *    割当は horseNumber から決定的（Math.random 不使用）。実データに毛色があればそれを優先。
- *  - draw call 削減: 全馬同一形状のため、胴コア/首頭/騎手/脚 を「マージ済み共有 geometry」にして
- *    1 度だけ生成し全馬で共有する。material は色ごとにキャッシュ（無制限生成しない）。
+ *    （geometry は全馬同一形状なので共有・material は色ごとにキャッシュ）
+ *  - 毛色は Visual Lab A の単一鹿毛へは戻さない。少数パレット（鹿毛/黒鹿毛/青鹿毛/栗毛/芦毛）を
+ *    キャッシュ共有し、実データ keiro があれば優先、無ければ horseNumber から決定的割当
+ *    （Math.random 不使用）。A 案の単一毛色は研究用 fixture の仕様として扱う。
  *
  * 変更禁止（このモジュールから触れない）:
  *  - raceProgress / lane / velocity / ranking / timeline / course position
  *  - root の world position と heading は本番ロジックが設定する。ここは受け取って反映するだけ。
  *
  * heading 規約: 本番は root.rotation.y = heading（heading = atan2(tangent.x, tangent.z)）で
- *  「ローカル +Z」を進行方向へ向ける。本モデルは鼻先が +X なので、内部の orient グループを
- *  rotation.y = -PI/2 して +X→+Z の固定補正を掛ける（＝A案の「進行方向を向く補正」）。
+ *  「ローカル +Z」を進行方向へ向ける。A 案モデルは鼻先が +X なので、内部の orient グループを
+ *  rotation.y = -PI/2 して +X→+Z の固定補正を掛ける。
  */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 // ---- 枠色（JRA 8枠: 1白 2黒 3赤 4青 5黄 6緑 7橙 8桃）----
 export const WAKU_HEX: number[] = [
@@ -44,7 +46,7 @@ export function wakuCssColor(waku: number): string {
 // ---- 毛色パレット（鹿毛/黒鹿毛/青鹿毛/栗毛/芦毛）----
 interface CoatDef { coat: number; mane: number }
 export const COAT_PALETTE: CoatDef[] = [
-  { coat: 0x6b4a34, mane: 0x2a1c12 }, // 鹿毛(bay)
+  { coat: 0x6b4a34, mane: 0x2a1c12 }, // 鹿毛(bay) ※ Visual Lab A の horseHex/mane と同値
   { coat: 0x4a3222, mane: 0x1f150d }, // 黒鹿毛(dark bay)
   { coat: 0x2f2620, mane: 0x17120e }, // 青鹿毛(brown-black)
   { coat: 0x9c6238, mane: 0x6b3f1e }, // 栗毛(chestnut)
@@ -68,13 +70,16 @@ export function coatIndexFor(horseNumber: number): number {
   return h % COAT_PALETTE.length;
 }
 
-const SKIN_HEX = 0xe8c9a8;
-const OUTLINE_HEX = 0x14171a;
+// Visual Lab A 準拠の定数
+const SKIN_HEX = 0xe8c9a8;   // 騎手の顔
+const HOOF_HEX = 0x1a1a1a;   // 蹄
+const OUTLINE_HEX = 0x111417; // A 案の addOutline 色
+const OUTLINE_SCALE = 1.08;   // A 案の addOutline scale
 const BLOCKED_HEX = 0xff3b30;
 
-// トゥーンの明暗段（3段）
+// トゥーンの明暗段（3段・Visual Lab A の toonGradient と同値）
 function makeToonGradient(): THREE.DataTexture {
-  const data = new Uint8Array([90, 90, 90, 255, 175, 175, 175, 255, 255, 255, 255, 255]);
+  const data = new Uint8Array([80, 80, 80, 255, 170, 170, 170, 255, 255, 255, 255, 255]);
   const tex = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
@@ -82,51 +87,35 @@ function makeToonGradient(): THREE.DataTexture {
   return tex;
 }
 
-// 変換をベイクした geometry を返す（マージ用）
-function bake(
-  geo: THREE.BufferGeometry,
-  pos: [number, number, number],
-  euler?: [number, number, number],
-): THREE.BufferGeometry {
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  if (euler) q.setFromEuler(new THREE.Euler(euler[0], euler[1], euler[2]));
-  m.compose(new THREE.Vector3(pos[0], pos[1], pos[2]), q, new THREE.Vector3(1, 1, 1));
-  geo.applyMatrix4(m);
-  return geo;
-}
-
-function mergeAndDispose(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const merged = mergeGeometries(parts, false);
-  for (const p of parts) p.dispose();
-  if (!merged) throw new Error('[broadcast-cel-horse] geometry merge に失敗');
-  merged.computeVertexNormals();
-  return merged;
-}
-
 /**
  * 共有リソース（renderer/コンポーネント生存中に 1 度だけ生成し保持）。
  * dispose() は component unmount / renderer 破棄時にだけ呼ぶ。
+ * geometry は全馬同一形状なので「個別パーツ geometry」を全馬で共有する（A 案どおりのメッシュ構成）。
  */
 export interface HorseVisualResources {
   gradientMap: THREE.Texture;
   geo: {
-    bodyCore: THREE.BufferGeometry; // 胴 + 尻（マージ済み・全馬共有）
-    neckHead: THREE.BufferGeometry; // 首 + 頭 + 耳（マージ済み）
-    mane: THREE.BufferGeometry;     // たてがみ
-    tail: THREE.BufferGeometry;     // 尾
-    leg: THREE.BufferGeometry;      // 脚 + 蹄（マージ済み・4本共有）
-    jockey: THREE.BufferGeometry;   // 騎手 胴 + 帽（マージ済み）
-    face: THREE.BufferGeometry;     // 騎手 顔
-    footRing: THREE.BufferGeometry; // 足元の枠色マーカー
-    blob: THREE.BufferGeometry;     // 接地影
-    selRing: THREE.BufferGeometry;  // 選択リング
-    blocked: THREE.BufferGeometry;  // ブロック時マーカー
-    saddle: THREE.BufferGeometry;   // ゼッケン板（sprite 代替の平面）
+    body: THREE.BufferGeometry;        // 胴（Capsule）
+    rump: THREE.BufferGeometry;        // 尻（Sphere）
+    neck: THREE.BufferGeometry;        // 首（Cylinder）
+    head: THREE.BufferGeometry;        // 頭（Box）
+    ear: THREE.BufferGeometry;         // 耳（Cone）
+    mane: THREE.BufferGeometry;        // たてがみ（Box）
+    tail: THREE.BufferGeometry;        // 尾（Cone）
+    leg: THREE.BufferGeometry;         // 脚（Cylinder）
+    hoof: THREE.BufferGeometry;        // 蹄（Cylinder）
+    jockeyTorso: THREE.BufferGeometry; // 騎手 胴（Capsule）
+    helmet: THREE.BufferGeometry;      // 騎手 帽（Sphere）
+    face: THREE.BufferGeometry;        // 騎手 顔（Sphere）
+    footRing: THREE.BufferGeometry;    // 足元の枠色マーカー
+    blob: THREE.BufferGeometry;        // 接地影
+    selRing: THREE.BufferGeometry;     // 選択リング
+    blocked: THREE.BufferGeometry;     // ブロック時マーカー
   };
   mats: {
     outline: THREE.MeshBasicMaterial;
     skin: THREE.MeshToonMaterial;
+    hoof: THREE.MeshToonMaterial;
     blob: THREE.MeshBasicMaterial;
     selRing: THREE.MeshBasicMaterial;
     blocked: THREE.MeshBasicMaterial;
@@ -147,55 +136,41 @@ export interface HorseVisualResources {
 export function createHorseVisualResources(): HorseVisualResources {
   const gradientMap = makeToonGradient();
 
-  // ---- 胴コア（胴 + 尻）----
-  const bodyCore = mergeAndDispose([
-    bake(new THREE.CapsuleGeometry(0.55, 1.5, 6, 14), [0, 1.25, 0], [0, 0, Math.PI / 2]),
-    bake(new THREE.SphereGeometry(0.6, 14, 12), [-0.9, 1.25, 0]),
-  ]);
+  // ---- 馬体パーツ（Visual Lab A の buildRigged と同一寸法・全馬で共有）----
+  const body = new THREE.CapsuleGeometry(0.55, 1.5, 6, 14);
+  const rump = new THREE.SphereGeometry(0.6, 14, 12);
+  const neck = new THREE.CylinderGeometry(0.28, 0.42, 1.0, 12);
+  const head = new THREE.BoxGeometry(0.7, 0.36, 0.34);
+  const ear = new THREE.ConeGeometry(0.07, 0.2, 8);
+  const mane = new THREE.BoxGeometry(0.12, 0.9, 0.24);
+  const tail = new THREE.ConeGeometry(0.18, 0.9, 8);
+  const leg = new THREE.CylinderGeometry(0.11, 0.08, 1.1, 8);
+  const hoof = new THREE.CylinderGeometry(0.1, 0.12, 0.16, 8);
 
-  // ---- 首 + 頭 + 耳（neck グループのローカル空間）----
-  const neckHead = mergeAndDispose([
-    bake(new THREE.CylinderGeometry(0.28, 0.42, 1.0, 12), [0.28, 0.35, 0], [0, 0, -Math.PI / 3.2]),
-    bake(new THREE.BoxGeometry(0.7, 0.36, 0.34), [0.75, 0.72, 0], [0, 0, -0.35]),
-    bake(new THREE.ConeGeometry(0.07, 0.2, 8), [0.62, 0.92, 0.11]),
-    bake(new THREE.ConeGeometry(0.07, 0.2, 8), [0.62, 0.92, -0.11]),
-  ]);
+  // ---- 騎手パーツ（Visual Lab A: 胴 + 帽 + 顔 を独立メッシュ）----
+  const jockeyTorso = new THREE.CapsuleGeometry(0.26, 0.42, 4, 8);
+  const helmet = new THREE.SphereGeometry(0.2, 12, 10);
+  const face = new THREE.SphereGeometry(0.14, 10, 8);
 
-  // ---- たてがみ（neck グループのローカル）----
-  const mane = bake(new THREE.BoxGeometry(0.12, 0.9, 0.24), [0.2, 0.4, 0], [0, 0, -Math.PI / 3.2]);
-
-  // ---- 尾（tail ピボットのローカル: 原点から後方へ垂れる）----
-  const tail = bake(new THREE.ConeGeometry(0.18, 0.9, 8), [0, -0.1, 0], [0, 0, Math.PI / 2.2]);
-
-  // ---- 脚 + 蹄（leg ピボットのローカル）----
-  const leg = mergeAndDispose([
-    bake(new THREE.CylinderGeometry(0.11, 0.08, 1.1, 8), [0, -0.55, 0]),
-    bake(new THREE.CylinderGeometry(0.1, 0.12, 0.16, 8), [0, -1.08, 0]),
-  ]);
-
-  // ---- 騎手（胴 + ヘルメット。枠色。遠景でも識別できるよう Visual Lab A 寄りに大型化）----
-  // 前傾クラウチング姿勢: 胴を前方(+X=鼻先方向)へ倒し、ヘルメットを前上に置く。
-  const jockey = mergeAndDispose([
-    bake(new THREE.CapsuleGeometry(0.32, 0.54, 6, 12), [0, 0.16, 0], [0, 0, -0.55]),
-    bake(new THREE.SphereGeometry(0.27, 14, 12), [0.34, 0.52, 0]),
-  ]);
-  // 顔（skin）: ヘルメットの前下に覗く
-  const face = bake(new THREE.SphereGeometry(0.16, 10, 8), [0.44, 0.4, 0]);
-
-  const footRing = new THREE.TorusGeometry(0.72, 0.07, 8, 20); // 控えめな足元マーカー
+  // ---- 識別・接地マーカー（本番付加。接地影と選択リングは維持）----
+  const footRing = new THREE.TorusGeometry(0.72, 0.07, 8, 20);
   const blob = new THREE.PlaneGeometry(2.4, 2.4);
   const selRing = new THREE.TorusGeometry(1.32, 0.12, 8, 28);
   const blocked = new THREE.SphereGeometry(0.16, 8, 8);
-  const saddle = new THREE.PlaneGeometry(1, 1);
 
   const blobTexture = makeBlobTexture();
 
   const res: HorseVisualResources = {
     gradientMap,
-    geo: { bodyCore, neckHead, mane, tail, leg, jockey, face, footRing, blob, selRing, blocked, saddle },
+    geo: {
+      body, rump, neck, head, ear, mane, tail, leg, hoof,
+      jockeyTorso, helmet, face,
+      footRing, blob, selRing, blocked,
+    },
     mats: {
       outline: new THREE.MeshBasicMaterial({ color: OUTLINE_HEX, side: THREE.BackSide }),
       skin: new THREE.MeshToonMaterial({ color: SKIN_HEX, gradientMap }),
+      hoof: new THREE.MeshToonMaterial({ color: HOOF_HEX, gradientMap }),
       blob: new THREE.MeshBasicMaterial({ map: blobTexture, transparent: true, opacity: 0.42, depthWrite: false }),
       selRing: new THREE.MeshBasicMaterial({ color: 0xffffff }),
       blocked: new THREE.MeshBasicMaterial({ color: BLOCKED_HEX }),
@@ -321,11 +296,11 @@ export interface HorseVisual {
   dispose: () => void;
 }
 
-// ギャロップ近似（4脚の位相）
+// ギャロップ近似（4脚の位相・Visual Lab A finalize と同値）
 const LEG_PHASES = [0, Math.PI, Math.PI * 0.5, Math.PI * 1.5];
 
 /**
- * Broadcast Cel の馬ビジュアルを 1 頭ぶん生成する。
+ * Broadcast Cel の馬ビジュアルを 1 頭ぶん生成する（Visual Lab A の buildRigged 構造に忠実）。
  * geometry / material は res の共有物のみを使う（このインスタンス固有の GPU リソースは作らない）。
  */
 export function createBroadcastCelHorseVisual(
@@ -351,53 +326,68 @@ export function createBroadcastCelHorseVisual(
   orient.rotation.y = -Math.PI / 2;
   root.add(orient);
 
-  // 上下動 + コーナー傾きの親
+  // 上下動 + コーナー傾きの親（A 案の bodyBob 相当）
   const bodyBob = new THREE.Group();
   orient.add(bodyBob);
 
-  // 胴コア + アウトライン
-  const body = new THREE.Mesh(res.geo.bodyCore, coatMat);
-  body.castShadow = true;
-  bodyBob.add(body);
-  const bodyOutline = new THREE.Mesh(res.geo.bodyCore, res.mats.outline);
-  bodyOutline.scale.setScalar(1.06);
-  body.add(bodyOutline);
+  // outline を追加するヘルパー（A 案 addOutline: BackSide / scale 1.08 / 共有 outline material）
+  const addOutline = (mesh: THREE.Mesh) => {
+    const om = new THREE.Mesh(mesh.geometry, res.mats.outline);
+    om.scale.setScalar(OUTLINE_SCALE);
+    mesh.add(om);
+  };
 
-  // 首（上下動する）+ 頭 + 耳 + たてがみ
+  // 胴（A 案: rotation.z=PI/2, position(0,1.25,0)）
+  const body = new THREE.Mesh(res.geo.body, coatMat);
+  body.rotation.z = Math.PI / 2;
+  body.position.set(0, 1.25, 0);
+  body.castShadow = true;
+  addOutline(body);
+  bodyBob.add(body);
+
+  // 尻（A 案: position(-0.9,1.25,0)）
+  const rump = new THREE.Mesh(res.geo.rump, coatMat);
+  rump.position.set(-0.9, 1.25, 0);
+  rump.castShadow = true;
+  addOutline(rump);
+  bodyBob.add(rump);
+
+  // 首グループ（A 案: position(0.85,1.55,0)。上下動で rotation.z がわずかに動く）
   const neck = new THREE.Group();
   neck.position.set(0.85, 1.55, 0);
   bodyBob.add(neck);
-  const neckMesh = new THREE.Mesh(res.geo.neckHead, coatMat);
+  const neckMesh = new THREE.Mesh(res.geo.neck, coatMat);
+  neckMesh.rotation.z = -Math.PI / 3.2;
+  neckMesh.position.set(0.28, 0.35, 0);
   neckMesh.castShadow = true;
+  addOutline(neckMesh);
   neck.add(neckMesh);
-  const neckOutline = new THREE.Mesh(res.geo.neckHead, res.mats.outline);
-  neckOutline.scale.setScalar(1.06);
-  neckMesh.add(neckOutline);
+  // 頭
+  const head = new THREE.Mesh(res.geo.head, coatMat);
+  head.position.set(0.75, 0.72, 0);
+  head.rotation.z = -0.35;
+  head.castShadow = true;
+  addOutline(head);
+  neck.add(head);
+  // 耳 ×2（A 案は outline なし）
+  for (const dz of [-0.11, 0.11]) {
+    const earMesh = new THREE.Mesh(res.geo.ear, coatMat);
+    earMesh.position.set(0.62, 0.92, dz);
+    neck.add(earMesh);
+  }
+  // たてがみ（A 案は outline なし・mane 色）
   const maneMesh = new THREE.Mesh(res.geo.mane, maneMat);
+  maneMesh.rotation.z = -Math.PI / 3.2;
+  maneMesh.position.set(0.2, 0.4, 0);
   neck.add(maneMesh);
 
-  // 尾（揺れる）
-  const tailPivot = new THREE.Group();
-  tailPivot.position.set(-1.4, 1.5, 0);
-  bodyBob.add(tailPivot);
+  // 尾（A 案: bodyBob 直下・静的・position(-1.4,1.15,0), rotation.z=PI/2.2, mane 色, outline なし）
   const tailMesh = new THREE.Mesh(res.geo.tail, maneMat);
-  tailPivot.add(tailMesh);
+  tailMesh.position.set(-1.4, 1.15, 0);
+  tailMesh.rotation.z = Math.PI / 2.2;
+  bodyBob.add(tailMesh);
 
-  // 騎手（上下動する）。背の上・前方(withers)へ座らせ、埋没を抑える。
-  const jockeyPivot = new THREE.Group();
-  jockeyPivot.position.set(0.15, 2.02, 0);
-  bodyBob.add(jockeyPivot);
-  const jockeyMesh = new THREE.Mesh(res.geo.jockey, silkMat);
-  jockeyMesh.castShadow = true;
-  jockeyPivot.add(jockeyMesh);
-  // 騎手アウトライン（セルルックで馬体から分離して見えるように）
-  const jockeyOutline = new THREE.Mesh(res.geo.jockey, res.mats.outline);
-  jockeyOutline.scale.setScalar(1.08);
-  jockeyMesh.add(jockeyOutline);
-  const faceMesh = new THREE.Mesh(res.geo.face, res.mats.skin);
-  jockeyPivot.add(faceMesh);
-
-  // 脚 4 本
+  // 脚 4 本（A 案: pivot(lx,1.15,lz) / legMesh(0,-0.55,0) outline / hoof(0,-1.08,0)）
   const legDefs: [number, number][] = [
     [0.7, 0.32], [0.7, -0.32], [-0.7, 0.32], [-0.7, -0.32],
   ];
@@ -406,11 +396,32 @@ export function createBroadcastCelHorseVisual(
     const pivot = new THREE.Group();
     pivot.position.set(lx, 1.15, lz);
     const legMesh = new THREE.Mesh(res.geo.leg, coatMat);
+    legMesh.position.set(0, -0.55, 0);
     legMesh.castShadow = true;
+    addOutline(legMesh);
+    const hoofMesh = new THREE.Mesh(res.geo.hoof, res.mats.hoof);
+    hoofMesh.position.set(0, -1.08, 0);
+    pivot.add(hoofMesh);
     pivot.add(legMesh);
     bodyBob.add(pivot);
     legs.push(pivot);
   }
+
+  // 騎手（A 案: bodyBob 直下 jockey group(-0.25,1.95,0)。胴/帽=枠色, 顔=skin。胴に outline）
+  const jockey = new THREE.Group();
+  jockey.position.set(-0.25, 1.95, 0);
+  const torso = new THREE.Mesh(res.geo.jockeyTorso, silkMat);
+  torso.rotation.x = 0.5;
+  torso.castShadow = true;
+  addOutline(torso);
+  jockey.add(torso);
+  const helmet = new THREE.Mesh(res.geo.helmet, silkMat);
+  helmet.position.set(0.18, 0.42, 0);
+  jockey.add(helmet);
+  const faceMesh = new THREE.Mesh(res.geo.face, res.mats.skin);
+  faceMesh.position.set(0.32, 0.36, 0);
+  jockey.add(faceMesh);
+  bodyBob.add(jockey);
 
   // 足元の枠色マーカー（控えめ・接地面）
   const footRing = new THREE.Mesh(res.geo.footRing, footRingMat);
@@ -443,7 +454,7 @@ export function createBroadcastCelHorseVisual(
   if (saddleMat) {
     saddle = new THREE.Sprite(saddleMat);
     saddle.scale.set(1.0, 0.75, 1);
-    saddle.position.set(0, 1.75, 0); // 馬体寄り・控えめ（頭上ラベルの代替ではない補助識別）
+    saddle.position.set(0, 1.75, 0);
     root.add(saddle);
   }
 
@@ -453,24 +464,21 @@ export function createBroadcastCelHorseVisual(
   const update = (gaitTime: number, speedFactor: number, cornerLean: number) => {
     const spd = Math.max(0, Math.min(1, speedFactor));
     if (spd <= 0.001) {
+      // 停止（再生していない）: A 案どおり脚・上下動を止める
       for (const l of legs) l.rotation.z = 0;
       bodyBob.position.y = 0;
       neck.rotation.z = 0;
-      jockeyPivot.position.y = 0;
-      tailPivot.rotation.z = 0;
     } else {
-      const phaseOffset = input.horseNumber * 0.7; // 馬番由来の固定 phase offset
+      // A 案 finalize の gait。全 14 頭で脚が完全同期しないよう馬番由来の phase offset のみ加える。
+      const phaseOffset = input.horseNumber * 0.7;
       const f = gaitTime * (3 + spd * 6) + phaseOffset;
       for (let i = 0; i < legs.length; i++) {
         legs[i].rotation.z = Math.sin(f + LEG_PHASES[i]) * 0.7 * (0.4 + spd);
       }
-      const bob = Math.abs(Math.sin(f)) * 0.08 * spd;
-      bodyBob.position.y = bob;
+      bodyBob.position.y = Math.abs(Math.sin(f)) * 0.08 * spd;
       neck.rotation.z = Math.sin(f) * 0.06 * spd;
-      jockeyPivot.position.y = -bob * 0.5; // 馬と逆位相で騎手が沈み込む
-      tailPivot.rotation.z = Math.sin(f * 0.8) * 0.18 * spd;
     }
-    // コーナー傾き（平滑化・frame-rate 非依存に近い緩和）
+    // コーナー傾き（本番付加・平滑化）。騎手/尾は bodyBob の子なので一緒に傾く。
     const targetLean = Math.max(-0.35, Math.min(0.35, cornerLean));
     leanCurrent += (targetLean - leanCurrent) * 0.15;
     bodyBob.rotation.z = leanCurrent;

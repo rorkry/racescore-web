@@ -10,6 +10,7 @@
  *  - HorseVisual 数 == 出走頭数
  *  - 毛色が単一固定でなく複数使われる（決定的割当）
  *  - res.dispose() 後に geometry が破棄される（unmount 相当）
+ *  - Visual Lab A 準拠: 騎手は 胴(torso) / 帽(helmet) / 顔(face) の独立メッシュ
  */
 import * as THREE from 'three';
 import {
@@ -41,16 +42,16 @@ for (const v of visuals) scene.add(v.root);
 check('visual数==頭数', visuals.length === N, `${visuals.length}`);
 check('scene children==頭数', scene.children.length === N, `${scene.children.length}`);
 
-// 2) geometry 共有: 全馬の胴コア geometry が同一参照
+// 2) geometry 共有: 全馬の胴 geometry が同一参照
 const bodyGeos = visuals.map((v) => {
   let g: THREE.BufferGeometry | null = null;
   v.root.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (m.isMesh && m.geometry === res.geo.bodyCore) g = m.geometry;
+    if (m.isMesh && m.geometry === res.geo.body) g = m.geometry;
   });
   return g;
 });
-check('胴コアgeometry共有', bodyGeos.every((g) => g === res.geo.bodyCore));
+check('胴geometry共有', bodyGeos.every((g) => g === res.geo.body));
 
 // 3) material キャッシュ: 同一 waku の silk material は同一参照
 function findSilk(v: (typeof visuals)[number]): THREE.Material | null {
@@ -104,11 +105,6 @@ check('speed>0で脚が動く', legPivot !== null);
 
 // 8) 停止時（speed=0）は脚が動かない
 v0.update(1.0, 0, 0);
-let movingAtStop = false;
-v0.root.traverse((o) => {
-  // bodyBob 配下の脚ピボット rotation.z がすべて 0 か
-});
-// 直接検証: 脚 rotation.z 合計
 let legRotSum = 0;
 // bodyBob(orient>bodyBob) の子で position.y≈1.15 の Group を脚とみなす
 v0.root.traverse((o) => {
@@ -116,24 +112,37 @@ v0.root.traverse((o) => {
 });
 check('停止時は脚 rotation=0', legRotSum < 1e-6, `sum=${legRotSum}`);
 
-// 8.5) 騎手（rider）が全頭に存在し、可視で、馬体上に突出している
+// 8.5) 騎手（rider）が独立メッシュ（胴/帽/顔）で全頭に存在し、可視で、馬体上に突出している
 function findMeshesByGeo(v: (typeof visuals)[number], geo: THREE.BufferGeometry): THREE.Mesh[] {
   const found: THREE.Mesh[] = [];
   v.root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry === geo) found.push(m); });
   return found;
 }
-// 全頭に騎手 torso + 顔（helmet は torso と同一 merged geo に含む）
-check('全頭に rider torso が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.jockey).length >= 1));
+// Visual Lab A 準拠: 胴・帽・顔は別 geometry の独立メッシュ
+check('騎手 胴/帽/顔は別 geometry', res.geo.jockeyTorso !== res.geo.helmet && res.geo.helmet !== res.geo.face && res.geo.jockeyTorso !== res.geo.face);
+check('全頭に rider torso が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.jockeyTorso).length >= 1));
+check('全頭に rider helmet が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.helmet).length >= 1));
 check('全頭に rider face が存在', visuals.every((v) => findMeshesByGeo(v, res.geo.face).length >= 1));
+// rider 各パーツの材質（胴/帽=枠色 silk・顔=skin）
+{
+  const jv = visuals[2]; // waku=2
+  const torso = findMeshesByGeo(jv, res.geo.jockeyTorso)[0];
+  const helmet = findMeshesByGeo(jv, res.geo.helmet)[0];
+  const faceM = findMeshesByGeo(jv, res.geo.face)[0];
+  const silk = Array.from(res.silkMats.values());
+  check('胴 material は silk(枠色)', silk.includes(torso.material as THREE.MeshToonMaterial));
+  check('帽 material は silk(枠色)', silk.includes(helmet.material as THREE.MeshToonMaterial));
+  check('顔 material は skin', faceM.material === res.mats.skin);
+  check('胴/帽 が同一 silk material 共有', torso.material === helmet.material);
+}
 // rider は root の子孫
 {
   const jv = visuals[3];
-  const jm = findMeshesByGeo(jv, res.geo.jockey)[0];
+  const jm = findMeshesByGeo(jv, res.geo.jockeyTorso)[0];
   let isDescendant = false;
   let o: THREE.Object3D | null = jm;
   while (o) { if (o === jv.root) { isDescendant = true; break; } o = o.parent; }
   check('rider が root の子孫', isDescendant);
-  // 可視 / opacity / scale
   const jmat = jm.material as THREE.Material;
   check('rider material visible', jmat.visible === true);
   check('rider material opacity>0', (jmat.opacity ?? 1) > 0);
@@ -145,9 +154,11 @@ check('全頭に rider face が存在', visuals.every((v) => findMeshesByGeo(v, 
   const jv = visuals[4];
   jv.root.updateMatrixWorld(true);
   const bodyBox = new THREE.Box3();
-  for (const m of findMeshesByGeo(jv, res.geo.bodyCore)) bodyBox.expandByObject(m);
+  for (const m of findMeshesByGeo(jv, res.geo.body)) bodyBox.expandByObject(m);
+  for (const m of findMeshesByGeo(jv, res.geo.rump)) bodyBox.expandByObject(m);
   const riderBox = new THREE.Box3();
-  for (const m of findMeshesByGeo(jv, res.geo.jockey)) riderBox.expandByObject(m);
+  for (const m of findMeshesByGeo(jv, res.geo.jockeyTorso)) riderBox.expandByObject(m);
+  for (const m of findMeshesByGeo(jv, res.geo.helmet)) riderBox.expandByObject(m);
   for (const m of findMeshesByGeo(jv, res.geo.face)) riderBox.expandByObject(m);
   check('rider が馬体トップより上に突出', riderBox.max.y > bodyBox.max.y + 0.3,
     `rider.max=${riderBox.max.y.toFixed(2)} body.max=${bodyBox.max.y.toFixed(2)}`);
@@ -159,15 +170,15 @@ check('全頭に rider face が存在', visuals.every((v) => findMeshesByGeo(v, 
 {
   const jv = visuals[5];
   jv.setSelected(true);
-  check('selected でも rider 可視', findMeshesByGeo(jv, res.geo.jockey)[0].visible === true);
+  check('selected でも rider 可視', findMeshesByGeo(jv, res.geo.jockeyTorso)[0].visible === true);
   jv.setSelected(false);
-  check('unselected でも rider 可視', findMeshesByGeo(jv, res.geo.jockey)[0].visible === true);
+  check('unselected でも rider 可視', findMeshesByGeo(jv, res.geo.jockeyTorso)[0].visible === true);
 }
 
 // 9) dispose: root が親から外れる。共有リソースは破棄されない
 v0.dispose();
 check('dispose後 root が scene から外れる', v0.root.parent === null);
-check('dispose後も共有geometry健在', (res.geo.bodyCore.attributes.position?.count ?? 0) > 0);
+check('dispose後も共有geometry健在', (res.geo.body.attributes.position?.count ?? 0) > 0);
 // 別の馬をさらに生成できる（共有リソース再利用）
 const extra = createBroadcastCelHorseVisual(res, { horseNumber: 99, waku: 3 });
 check('dispose後も新規visual生成可', extra.root.children.length > 0);
@@ -178,7 +189,7 @@ extra.setBlocked(true); extra.setBlocked(false);
 check('setSelected/setBlocked 例外なし', true);
 
 // 11) res.dispose()（unmount 相当）で geometry.dispose() が呼ばれる（dispose イベント発火）
-const geoRef = res.geo.bodyCore;
+const geoRef = res.geo.body;
 let geoDisposed = false;
 geoRef.addEventListener('dispose', () => { geoDisposed = true; });
 let matDisposed = false;
