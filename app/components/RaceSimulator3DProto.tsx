@@ -178,6 +178,8 @@ export default function RaceSimulator3DProto({
   // 中継カメラの現在デバッグ表示用（HUD）
   const [broadcastModeLabel, setBroadcastModeLabel] = useState<CameraMode | null>(null);
   const [showDebugPanel, setShowDebugPanel] = useState(true);
+  /** スマホ省スペースUI: カメラ切替/馬選択/デバッグ等の「詳細操作」の開閉（既定は閉じて縦幅を最小化）。PC表示には影響しない。 */
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
   const [showDebugHud, setShowDebugHud] = useState(false); // デバッグHUD表示制御（production + ?debug=1 または development）
   const lastTimeRef = useRef<number>(0);
   const currentTimeRef = useRef<number>(0); // 内部再生時刻（毎フレーム更新）
@@ -1760,6 +1762,8 @@ export default function RaceSimulator3DProto({
       
       {timeline && (
       <>
+      {/* PC（md以上）: 既存のフルコントロール（変更なし）。スマホは下の省スペース版に置き換え。 */}
+      <div className="hidden md:block space-y-4">
       {/* コントロールパネル */}
       <div className="bg-white border border-gray-300 rounded-lg p-4 space-y-4">
         {/* 再生ボタン */}
@@ -1920,6 +1924,167 @@ export default function RaceSimulator3DProto({
           )}
         </div>
       )}
+      </div>
+      {/* PC end */}
+
+      {/*
+        スマホ（md未満）: 省スペース版コントロール。
+        常時表示は 再生/一時停止・最初に戻る・速度・シークバー のみ。
+        カメラ切替・馬選択・デバッグ表示等は既定で閉じた「詳細操作」へ退避し、3D表示の縦幅を優先する。
+        シミュレーション/3D描画ロジックは一切変更せず、既存stateの表示のみを変えている。
+      */}
+      <div className="md:hidden rounded-lg border border-gray-300 bg-white p-2 space-y-1.5">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              if (!timelineValid) return;
+              setIsPlaying(!isPlaying);
+            }}
+            disabled={!timelineValid}
+            aria-label={isPlaying ? '一時停止' : '再生'}
+            className="rounded bg-blue-500 px-2.5 py-1.5 text-sm text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+          <button
+            onClick={() => {
+              currentTimeRef.current = 0;
+              setCurrentTime(0);
+              setIsPlaying(false);
+              leaderFinishTimeRef.current = null;
+              if (timeline) syncTrackingRows(timeline, 0);
+            }}
+            aria-label="最初に戻る"
+            className="rounded bg-gray-500 px-2 py-1.5 text-sm text-white"
+          >
+            ⏮
+          </button>
+          <div className="flex items-center gap-0.5">
+            {[0.5, 1.0, 2.0].map((speed) => (
+              <button
+                key={speed}
+                onClick={() => setPlaybackSpeed(speed)}
+                className={`rounded px-1.5 py-1.5 text-[11px] tabular-nums ${
+                  playbackSpeed === speed ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                }`}
+              >
+                {speed}x
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowMobileDetails((v) => !v)}
+            aria-expanded={showMobileDetails}
+            aria-controls="mobile-details-panel"
+            className="ml-auto rounded bg-gray-100 px-2 py-1.5 text-[11px] text-gray-700"
+          >
+            {showMobileDetails ? '詳細を閉じる ▲' : '詳細操作 ▼'}
+          </button>
+        </div>
+
+        <input
+          type="range"
+          min={0}
+          max={timelineValid && Number.isFinite(timeline.totalDuration) ? timeline.totalDuration : 0}
+          step={0.1}
+          value={currentTime}
+          disabled={!timelineValid}
+          onChange={(e) => {
+            const parsed = parseFloat(e.target.value);
+            const newTime = Number.isFinite(parsed) ? parsed : 0;
+            currentTimeRef.current = newTime;
+            setCurrentTime(newTime);
+            if (timeline) syncTrackingRows(timeline, newTime);
+          }}
+          className="w-full"
+        />
+        <div className="truncate text-[10px] text-gray-500 tabular-nums">
+          {currentTime.toFixed(1)}秒 ・ {currentState?.phase || '-'}
+          {currentState && ` ・ 残り${(timeline.courseDistance - Math.max(...currentState.horses.map((h) => h.currentDistance))).toFixed(0)}m`}
+        </div>
+
+        {showMobileDetails && (
+          <div id="mobile-details-panel" className="space-y-2 border-t border-gray-200 pt-2">
+            {/* カメラ + デバッグ */}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-[11px] text-gray-500">カメラ:</span>
+              <button
+                onClick={() => setCameraMode('broadcast')}
+                className={`rounded px-2 py-1 text-[11px] ${
+                  cameraMode === 'broadcast' ? 'bg-green-500 text-white' : 'bg-gray-200'
+                }`}
+              >
+                中継
+              </button>
+              <button
+                onClick={() => setCameraMode('overview')}
+                className={`rounded px-2 py-1 text-[11px] ${
+                  cameraMode === 'overview' ? 'bg-green-500 text-white' : 'bg-gray-200'
+                }`}
+              >
+                俯瞰
+              </button>
+              <button
+                onClick={() => setCameraMode('follow')}
+                disabled={selectedHorse === null}
+                className={`rounded px-2 py-1 text-[11px] ${
+                  cameraMode === 'follow' ? 'bg-green-500 text-white' : 'bg-gray-200 disabled:opacity-50'
+                }`}
+              >
+                追従
+              </button>
+              <button
+                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                className="ml-auto rounded bg-gray-100 px-2 py-1 text-[11px] text-gray-700"
+              >
+                {showDebugPanel ? 'デバッグ非表示' : 'デバッグ表示'}
+              </button>
+            </div>
+
+            {/* 馬選択（追従カメラ用）: 省スペース版はコンパクトチップ + 縦スクロール上限 */}
+            <div>
+              <div className="mb-1 text-[11px] font-semibold text-gray-600">馬選択（追従カメラ用）</div>
+              <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto">
+                {currentState?.horses.map((horse) => (
+                  <button
+                    key={horse.horseNumber}
+                    onClick={() => setSelectedHorse(horse.horseNumber)}
+                    className={`rounded px-2 py-1 text-[11px] tabular-nums ${
+                      selectedHorse === horse.horseNumber ? 'bg-blue-500 text-white' : 'bg-gray-200'
+                    }`}
+                  >
+                    {horse.position}位 {horse.horseNumber}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* デバッグパネル */}
+            {showDebugPanel && selectedHorseState && (
+              <div className="rounded border border-gray-200 p-2">
+                <h4 className="mb-1 text-[11px] font-bold">
+                  デバッグ情報: {selectedHorseState.horseName} ({selectedHorseState.horseNumber}番)
+                </h4>
+                <div className="grid grid-cols-2 gap-1 text-[10px]">
+                  <div><span className="font-medium">順位:</span> {selectedHorseState.position}</div>
+                  <div><span className="font-medium">距離:</span> {selectedHorseState.currentDistance.toFixed(1)}m</div>
+                  <div><span className="font-medium">速度:</span> {selectedHorseState.currentVelocity.toFixed(1)}m/s</div>
+                  <div><span className="font-medium">横位置:</span> {selectedHorseState.lateralPosition.toFixed(1)}m</div>
+                  <div><span className="font-medium">スタミナ:</span> {selectedHorseState.staminaRemaining.toFixed(0)}%</div>
+                  <div><span className="font-medium">先頭差:</span> {selectedHorseState.distanceFromLeader.toFixed(1)}m</div>
+                  <div><span className="font-medium">ブロック:</span> {selectedHorseState.blocked ? 'あり' : 'なし'}</div>
+                  <div><span className="font-medium">加速:</span> {selectedHorseState.accelerationStarted ? 'あり' : 'なし'}</div>
+                </div>
+                {currentState?.eventReason && (
+                  <div className="mt-1 rounded border border-yellow-200 bg-yellow-50 p-1 text-[10px]">
+                    <span className="font-medium">イベント:</span> {currentState.eventReason}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       </>
       )}
     </div>

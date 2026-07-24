@@ -42,13 +42,17 @@ export function RaceTrackingPanelDesktop({ rows, selectedHorse, onSelect }: Race
 /**
  * スマホ: 3D viewport の外側・下に配置する横帯（通常フロー・非 absolute）。
  * viewport の高さ計算に混ざらないよう、呼び出し側で viewport の兄弟要素として配置すること。
+ *
+ * 省スペース化（1行横スクロール・高さ 48px 固定）: 1頭あたり 枠色（背景）/ 馬番 / 順位 / 先頭差
+ * のみを表示し、走破距離は表示しない（3D 表示の視認を優先）。データ内容は tracking-rows.ts の
+ * 計算結果をそのまま使い、見せ方（フォーマット）のみをこの層で変えている。
  */
 export function RaceTrackingPanelMobile({ rows, selectedHorse, onSelect }: RaceTrackingPanelProps) {
   if (!rows || rows.length === 0) return null;
 
   return (
     <div
-      className="flex h-[58px] flex-row gap-1 overflow-x-auto rounded-lg bg-slate-900 px-2 py-1.5 md:hidden"
+      className="flex h-12 flex-row items-center gap-1 overflow-x-auto rounded-lg bg-slate-900 px-1.5 py-1 md:hidden"
       aria-label="出走馬トラッキング"
     >
       {rows.map((r) => (
@@ -57,7 +61,7 @@ export function RaceTrackingPanelMobile({ rows, selectedHorse, onSelect }: RaceT
           row={r}
           selected={selectedHorse === r.horseNumber}
           onSelect={onSelect}
-          layout="horizontal"
+          layout="compact"
         />
       ))}
     </div>
@@ -73,26 +77,27 @@ function TrackingChip({
   row: TrackingRow;
   selected: boolean;
   onSelect: (horseNumber: number) => void;
-  layout: 'vertical' | 'horizontal';
+  layout: 'vertical' | 'compact';
 }) {
   const ring = selected ? 'ring-2 ring-white' : 'ring-1 ring-black/30';
   const runShort = row.runLabel;
   const gapShort = row.gapLabel;
 
-  if (layout === 'horizontal') {
+  if (layout === 'compact') {
+    // スマホ省スペース版: 枠色(背景) / 馬番 / 順位 / 先頭差 のみ。走破距離は非表示。1行固定。
+    const gapCompact = row.position === 1 ? '先頭' : `+${row.leaderGapMeters.toFixed(1)}m`;
     return (
       <button
         type="button"
         onClick={() => onSelect(row.horseNumber)}
-        aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel} 走破${row.runLabel}${row.remainingLabel ? ` ${row.remainingLabel}` : ''}`}
+        aria-label={`${row.horseNumber}番 ${row.name || ''} ${row.position}位 ${row.gapLabel}`}
         aria-pressed={selected}
-        className={`pointer-events-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 ${ring}`}
+        className={`pointer-events-auto flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[11px] leading-none ${ring}`}
         style={{ background: row.color, color: row.textColor }}
       >
-        <span className="text-[11px] font-bold leading-none opacity-80 tabular-nums">{row.position}</span>
-        <span className="text-sm font-bold leading-none tabular-nums">{row.horseNumber}</span>
-        <span className="text-[10px] leading-none opacity-90 tabular-nums">{gapShort}</span>
-        <span className="text-[9px] leading-none opacity-80 tabular-nums">{runShort}</span>
+        <span className="font-bold opacity-80 tabular-nums">{row.position}</span>
+        <span className="text-xs font-bold tabular-nums">{row.horseNumber}</span>
+        <span className="opacity-90 tabular-nums">{gapCompact}</span>
       </button>
     );
   }
