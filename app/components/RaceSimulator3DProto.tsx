@@ -480,19 +480,23 @@ export default function RaceSimulator3DProto({
             layout.geometry.trackWidth,
           )
         : null;
-    const mixedSurfaceSeg = layout
-      ? getSurfaceProfile(layout.geometry.id, layout.raceDistance)
-      : null;
     console.log('[3DSimulator] layout/dynamics:', {
       layout: layout ? layout.routeId : 'null(旧描画へfallback)',
       dynamics: dynamics ? `${dynamics.frames.length}frames/${dynamics.totalTime}s` : 'null',
       startMarkerFallback: layout?.startMarkerIsFallback,
       forecastGoal: forecastLayoutsRef.current?.goal?.length ?? 0,
-      // 芝スタート近似表示の有無（開発確認用）
-      mixedSurface: mixedSurfaceSeg
-        ? `芝スタート区間あり(${mixedSurfaceSeg.find((s) => s.surface === 'turf')?.toRaceProgress ?? '?'}m, ${mixedSurfaceSeg.find((s) => s.surface === 'turf')?.provenance})`
-        : 'なし(単一路面)',
     });
+    // 芝スタート近似表示の有無（開発確認用・本番では出さない）
+    if (process.env.NODE_ENV !== 'production') {
+      const mixedSurfaceSeg = layout
+        ? getSurfaceProfile(layout.geometry.id, layout.raceDistance)
+        : null;
+      const turfSeg = mixedSurfaceSeg?.find((s) => s.surface === 'turf');
+      console.log(
+        '[3DSimulator] mixedSurface:',
+        turfSeg ? `芝スタート区間あり(${turfSeg.toRaceProgress}m, ${turfSeg.provenance})` : 'なし(単一路面)'
+      );
+    }
 
     // 地面（背景）
     const groundGeom = new THREE.PlaneGeometry(4000, 4000);
