@@ -103,6 +103,7 @@ export default function VisualLabScene() {
   const [taskState, setTaskState] = useState<{ active: boolean; target: number; index: number; total: number; done: boolean }>({ active: false, target: 0, index: 0, total: 0, done: false });
   const [taskJson, setTaskJson] = useState('');
   const [captureSize, setCaptureSize] = useState<[number, number] | null>(null);
+  const [webglError, setWebglError] = useState<string | null>(null);
 
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { captureRef.current = capture; }, [capture]);
@@ -119,7 +120,13 @@ export default function VisualLabScene() {
     if (init.capture) { captureRef.current = true; setCapture(true); }
     labelMgrRef.current.hysteresis = settingsRef.current.hysteresis;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+    } catch (e) {
+      setWebglError((e as Error)?.message || 'WebGLコンテキストを作成できません');
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.shadowMap.enabled = true;
@@ -636,7 +643,14 @@ export default function VisualLabScene() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div ref={stageRef} className="relative mx-auto w-full overflow-hidden rounded-lg border border-gray-300 bg-black" style={{ height: '68dvh' }}>
+      <div ref={stageRef} className="relative mx-auto min-h-[520px] w-full overflow-hidden rounded-lg border border-gray-300 bg-black" style={{ height: '68dvh' }}>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4 text-center">
+          <div className="rounded bg-black/60 px-4 py-3 text-sm text-white">
+            {webglError
+              ? `WebGLエラー: ${webglError}（ブラウザのハードウェアアクセラレーションが無効かもしれません）`
+              : '3Dビュー初期化中…（この枠が黒く表示されていれば領域はOK。数秒でコースと馬が出ます）'}
+          </div>
+        </div>
         <div ref={mountRef} className="absolute inset-0" />
         <div ref={labelLayerRef} className="pointer-events-none absolute inset-0" />
 
