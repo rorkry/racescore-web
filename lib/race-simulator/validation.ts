@@ -119,7 +119,10 @@ export function validateSimulation(result: SimulationResult, expectedDistance: n
         const lateralDiff = Math.abs(h1.lateralPosition - h2.lateralPosition);
         
         if (distanceDiff < 0.5 && lateralDiff < 0.5) {
-          warnings.push(`${phase.phaseName}: 馬${h1.horseNumber}と馬${h2.horseNumber}が重複 (距離差=${distanceDiff.toFixed(2)}m, 横差=${lateralDiff.toFixed(2)}m)`);
+          // [旧2D内部診断・3D表示には直接影響なし]
+          // ここで検出する重複は旧phasesエンジン内部の座標のみ。3D描画(dynamics/display frame)は
+          // finishGapMeters等で分離されており、この重複がそのまま画面に出るわけではない。
+          warnings.push(`[旧2D内部診断・3D表示には直接影響なし] ${phase.phaseName}: 馬${h1.horseNumber}と馬${h2.horseNumber}が重複 (距離差=${distanceDiff.toFixed(2)}m, 横差=${lateralDiff.toFixed(2)}m)`);
         }
       }
     }

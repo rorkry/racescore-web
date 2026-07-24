@@ -42,6 +42,12 @@ import {
 import { RaceTrackingPanelDesktop, RaceTrackingPanelMobile } from './RaceTrackingPanel';
 import { buildTrackingRows, trackingInputsFromDynamics, type TrackingRow } from '@/lib/race-simulator/tracking-rows';
 import { computeRendererSize, applyViewportSizeToCamera } from '@/lib/race-simulator/viewport-size';
+import {
+  resolveDisplayFrame,
+  resolveLeaderHorseNumber,
+  resolveHorseWorldPose,
+  type DisplayHorseFrame,
+} from '@/lib/race-simulator/display-frame';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -805,6 +811,40 @@ export default function RaceSimulator3DProto({
   
   // トラッキング行を 3D と同じ補間済み状態から組み立てる（100〜200ms throttle 前提）。
   // dynamics があるときは raceProgress/rank を正本にし、無ければ timeline の走破距離から算出する。
+  /**
+   * 現在フレームの馬状態を「実際の描画と同一の正本」から取得する共通関数。
+   * 馬メッシュ配置・broadcastカメラ・followカメラ・先頭ラベル・trackingが
+   * 全て同じ座標源（dynamics優先）を参照するための入口。
+   * dynamics が無い場合のみ旧timeline補間値（currentState.horses）へ fallback する。
+   * race dynamics / 予想着順ロジック自体はここでは変更しない（値を読むだけ）。
+   */
+  const getDisplayFrame = (currentState: RaceTimelineKeyframe): DisplayHorseFrame[] => {
+    const dynamics = dynamicsRef.current;
+    const dur = timeline && timeline.totalDuration > 0 ? timeline.totalDuration : 1;
+    const dynamicsTime = dynamics ? (currentTimeRef.current / dur) * dynamics.totalTime : 0;
+    return resolveDisplayFrame({
+      dynamics,
+      dynamicsTime,
+      forecastLayouts: forecastLayoutsRef.current,
+      fallbackHorses: currentState.horses.map((h) => ({
+        horseNumber: h.horseNumber,
+        currentDistance: h.currentDistance,
+        lateralPosition: h.lateralPosition,
+        blocked: h.blocked,
+      })),
+    });
+  };
+
+  /** display frame 基準の先頭馬（トラッキングと同一アルゴリズムで算出）。frame が空なら null */
+  const getLeaderHorseNumber = (frame: DisplayHorseFrame[]): number | null => {
+    const layout = layoutRef.current;
+    const raceDistance =
+      layout?.raceDistance ??
+      (timeline && Number.isFinite(timeline.courseDistance) ? timeline.courseDistance : 0) ??
+      0;
+    return resolveLeaderHorseNumber(frame, raceDistance);
+  };
+
   const syncTrackingRows = (tl: RaceTimeline, time: number) => {
     const dynamics = dynamicsRef.current;
     const layout = layoutRef.current;
@@ -889,33 +929,20 @@ export default function RaceSimulator3DProto({
         
         if (currentState) {
           const layout = layoutRef.current;
-          const dynamics = dynamicsRef.current;
           // 馬の位置更新（優先: 新geometry+dynamics / 次: 新geometry+既存distance / 最後: 旧描画）
+          // getDisplayFrame が dynamics優先・無ければ旧timelineへのfallbackを内部で判定する。
           if (layout) {
-            const dur = timeline.totalDuration > 0 ? timeline.totalDuration : 1;
-            if (dynamics) {
-              const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
-              const frame = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current);
-              positionHorsesOnGeometry(
-                layout,
-                frame.map((h) => ({
-                  horseNumber: h.horseNumber,
-                  progressMeters: h.raceProgress,
-                  lateral: h.lateralPosition,
-                  blocked: h.blocked,
-                  finished: h.finished,
-                }))
-              );
-            } else {
-              positionHorsesOnGeometry(
-                layout,
-                currentState.horses.map((h) => ({
-                  horseNumber: h.horseNumber,
-                  progressMeters: h.currentDistance,
-                  lateral: h.lateralPosition,
-                }))
-              );
-            }
+            const frame = getDisplayFrame(currentState);
+            positionHorsesOnGeometry(
+              layout,
+              frame.map((h) => ({
+                horseNumber: h.horseNumber,
+                progressMeters: h.raceProgress,
+                lateral: h.lateralPosition,
+                blocked: h.blocked,
+                finished: h.finished,
+              }))
+            );
           } else {
             updateHorses(currentState);
           }
@@ -1334,8 +1361,10 @@ export default function RaceSimulator3DProto({
     const h = renderer.domElement.clientHeight;
     if (w === 0 || h === 0) return;
 
-    let leader: number | null = null;
-    for (const hh of currentState.horses) { if (hh.position === 1) { leader = hh.horseNumber; break; } }
+    // 先頭馬は「実際の描画と同一の正本」(dynamics優先のdisplay frame)から、
+    // trackingパネルと同じアルゴリズム(trackingInputsFromDynamics)で判定する。
+    // 旧timelineのposition(旧phasesのrank)へは戻さない。
+    const leader = getLeaderHorseNumber(getDisplayFrame(currentState));
     const selected = selectedHorseRef.current;
     const hover = hoverHorseRef.current;
     const showAll = labelsModeRef.current === 'all';
@@ -1497,14 +1526,14 @@ export default function RaceSimulator3DProto({
     if (!camera) return;
     const aspect = camera.aspect && Number.isFinite(camera.aspect) ? camera.aspect : 16 / 9;
     const layout = layoutRef.current;
-    const dynamics = dynamicsRef.current;
 
     if (layout) {
       const raceDistance = layout.raceDistance;
       const geometry = layout.geometry;
       const startPathDistance = layout.startMarker.pathDistance;
-      const dur = timeline && timeline.totalDuration > 0 ? timeline.totalDuration : 1;
 
+      // getDisplayFrame が dynamics優先・無ければ旧timelineへのfallbackを内部で判定する
+      // （馬メッシュ配置・followカメラ・先頭ラベルと同じ座標源）。挙動は既存のまま。
       let horses: Array<{
         horseNumber: number;
         progressMeters: number;
@@ -1512,22 +1541,13 @@ export default function RaceSimulator3DProto({
         finished?: boolean;
         finishTime?: number;
       }>;
-      if (dynamics) {
-        const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
-        horses = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current).map((h) => ({
-          horseNumber: h.horseNumber,
-          progressMeters: h.raceProgress,
-          lateral: h.lateralPosition,
-          finished: h.finished,
-          finishTime: h.finishTime,
-        }));
-      } else {
-        horses = currentState.horses.map((h) => ({
-          horseNumber: h.horseNumber,
-          progressMeters: h.currentDistance,
-          lateral: h.lateralPosition ?? 0,
-        }));
-      }
+      horses = getDisplayFrame(currentState).map((h) => ({
+        horseNumber: h.horseNumber,
+        progressMeters: h.raceProgress,
+        lateral: h.lateralPosition,
+        finished: h.finished,
+        finishTime: h.finishTime,
+      }));
 
       let sum = 0, min = Infinity, max = -Infinity, lsum = 0, lmin = Infinity, lmax = -Infinity, c = 0;
       let leaderProgress = -1;
@@ -1633,11 +1653,36 @@ export default function RaceSimulator3DProto({
   };
 
   // 追従カメラ更新
+  // 選択馬の座標は「実際の馬メッシュ配置」と同じ getDisplayFrame(dynamics優先)から
+  // horseNumber で取得する（配列indexで対応しない）。layout(新geometry)がある場合は
+  // sampleRaceProgressPose を使い、馬メッシュ配置(positionHorsesOnGeometry)と同一の
+  // pose計算式にすることで camera target と実際の馬メッシュ位置を一致させる。
+  // layout が無い場合のみ旧 VisualCourseCurve へ fallback する。
   const updateFollowCamera = (currentState: RaceTimelineKeyframe) => {
-    const horse = currentState.horses.find(h => h.horseNumber === selectedHorseRef.current);
-    if (!horse || !cameraRef.current || !visualCurveRef.current) return;
-    
-    // Visual Step 1B: sampleRacePose で座標取得
+    const camera = cameraRef.current;
+    const selected = selectedHorseRef.current;
+    if (!camera || selected == null) return;
+    const layout = layoutRef.current;
+
+    if (layout) {
+      const frame = getDisplayFrame(currentState);
+      const pose = resolveHorseWorldPose(layout, frame, selected);
+      if (!pose) return;
+      try {
+        const cameraOffset = new THREE.Vector3(-pose.tangent.x * 15, 10, -pose.tangent.z * 15);
+        const targetPos = new THREE.Vector3(pose.position.x, pose.position.y + 2, pose.position.z);
+        const cameraPos = targetPos.clone().add(cameraOffset);
+        camera.position.lerp(cameraPos, 0.1);
+        camera.lookAt(targetPos);
+      } catch {
+        return;
+      }
+      return;
+    }
+
+    // fallback: layout(新geometry)未解決時のみ旧 VisualCourseCurve 経路
+    const horse = currentState.horses.find((h) => h.horseNumber === selected);
+    if (!horse || !visualCurveRef.current) return;
     try {
       const pose = sampleRacePose(visualCurveRef.current, horse.currentDistance, horse.lateralPosition);
       
