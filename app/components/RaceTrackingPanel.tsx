@@ -5,7 +5,9 @@ import type { TrackingRow } from '@/lib/race-simulator/tracking-rows';
 /**
  * 画面端トラッキングパネル（全頭の識別を保証する常設 UI）。
  *
- * - PC（md 以上）は右端縦帯、狭幅は下端横帯
+ * - PC（md 以上）: 3D viewport 内側・右端の縦帯（absolute overlay）。viewport の高さ計算には影響しない。
+ * - スマホ（md 未満）: 3D viewport の外側・下に続く横帯（通常フロー）。canvas の高さ計算に混ぜない
+ *   ため、viewport とは別コンポーネントとして分離している（呼び出し側で並べる）。
  * - 順位 / 先頭差（先頭 or +Xm） / 走破距離 を明示（曖昧な「0m」は出さない）
  * - チップクリック ↔ 3D 選択の双方向同期
  */
@@ -15,43 +17,50 @@ export interface RaceTrackingPanelProps {
   onSelect: (horseNumber: number) => void;
 }
 
-export default function RaceTrackingPanel({ rows, selectedHorse, onSelect }: RaceTrackingPanelProps) {
+/** PC: 3D viewport 内側・右端の縦帯（absolute overlay）。呼び出し側は containerRef 内に配置すること。 */
+export function RaceTrackingPanelDesktop({ rows, selectedHorse, onSelect }: RaceTrackingPanelProps) {
   if (!rows || rows.length === 0) return null;
 
   return (
-    <>
-      {/* PC: 右端 縦帯 */}
-      <div
-        className="pointer-events-none absolute right-0 top-0 z-40 hidden h-full w-[88px] flex-col gap-1 overflow-y-auto bg-black/35 px-1.5 py-2 backdrop-blur-sm md:flex"
-        aria-label="出走馬トラッキング"
-      >
-        {rows.map((r) => (
-          <TrackingChip
-            key={r.horseNumber}
-            row={r}
-            selected={selectedHorse === r.horseNumber}
-            onSelect={onSelect}
-            layout="vertical"
-          />
-        ))}
-      </div>
+    <div
+      className="pointer-events-none absolute right-0 top-0 z-40 hidden h-full w-[88px] flex-col gap-1 overflow-y-auto bg-black/35 px-1.5 py-2 backdrop-blur-sm md:flex"
+      aria-label="出走馬トラッキング"
+    >
+      {rows.map((r) => (
+        <TrackingChip
+          key={r.horseNumber}
+          row={r}
+          selected={selectedHorse === r.horseNumber}
+          onSelect={onSelect}
+          layout="vertical"
+        />
+      ))}
+    </div>
+  );
+}
 
-      {/* 狭幅: 下端 横帯 */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-40 flex h-[58px] flex-row gap-1 overflow-x-auto bg-black/35 px-2 py-1.5 backdrop-blur-sm md:hidden"
-        aria-label="出走馬トラッキング"
-      >
-        {rows.map((r) => (
-          <TrackingChip
-            key={r.horseNumber}
-            row={r}
-            selected={selectedHorse === r.horseNumber}
-            onSelect={onSelect}
-            layout="horizontal"
-          />
-        ))}
-      </div>
-    </>
+/**
+ * スマホ: 3D viewport の外側・下に配置する横帯（通常フロー・非 absolute）。
+ * viewport の高さ計算に混ざらないよう、呼び出し側で viewport の兄弟要素として配置すること。
+ */
+export function RaceTrackingPanelMobile({ rows, selectedHorse, onSelect }: RaceTrackingPanelProps) {
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <div
+      className="flex h-[58px] flex-row gap-1 overflow-x-auto rounded-lg bg-slate-900 px-2 py-1.5 md:hidden"
+      aria-label="出走馬トラッキング"
+    >
+      {rows.map((r) => (
+        <TrackingChip
+          key={r.horseNumber}
+          row={r}
+          selected={selectedHorse === r.horseNumber}
+          onSelect={onSelect}
+          layout="horizontal"
+        />
+      ))}
+    </div>
   );
 }
 

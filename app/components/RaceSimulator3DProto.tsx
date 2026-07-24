@@ -34,8 +34,9 @@ import {
   type LabelInput,
   type LabelOut,
 } from '@/lib/race-simulator/horse-labels';
-import RaceTrackingPanel from './RaceTrackingPanel';
+import { RaceTrackingPanelDesktop, RaceTrackingPanelMobile } from './RaceTrackingPanel';
 import { buildTrackingRows, trackingInputsFromDynamics, type TrackingRow } from '@/lib/race-simulator/tracking-rows';
+import { computeRendererSize, applyViewportSizeToCamera } from '@/lib/race-simulator/viewport-size';
 
 interface RaceSimulator3DProtoProps {
   simulationResult: any;
@@ -131,6 +132,8 @@ export default function RaceSimulator3DProto({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  /** 3D viewport（containerRef）の実測サイズのみを監視。tracking panel 等の高さは含めない。 */
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const horseMeshesRef = useRef<Map<number, THREE.Group>>(new Map());
   // Broadcast Cel: 共有リソース（renderer/コンポーネント生存中は保持し、unmount時のみ dispose）
@@ -358,6 +361,28 @@ export default function RaceSimulator3DProto({
     }
   }, [courseInfo]);
   
+  /**
+   * 3D viewport（containerRef）の実測 width/height に renderer・camera を合わせる。
+   * - CSS 側（aspect-video / md:h-[600px] 等）が表示サイズの正本。canvas の内部解像度と
+   *   CSS 表示サイズを混同しないよう、canvas.style は 100%/100% に固定し、setSize は
+   *   updateStyle=false で内部解像度のみ更新する。
+   * - tracking panel はこの container の中身（PC=absolute overlay）か外側（mobile=兄弟要素）
+   *   のため、ここでの height 計算には混ざらない。
+   */
+  const applyViewportSize = useCallback(() => {
+    const container = containerRef.current;
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    if (!container || !renderer || !camera) return;
+    const size = computeRendererSize(container.clientWidth, container.clientHeight);
+    if (!size) return; // 実測サイズ不正時は前回サイズを維持（黒画面・warp防止）
+    renderer.setSize(size.width, size.height, false);
+    const canvas = renderer.domElement;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    applyViewportSizeToCamera(camera, size.width, size.height);
+  }, []);
+
   // Three.js初期化（raceSignature が変わったときだけ再構築）
   useEffect(() => {
     if (!containerRef.current || !simulationResult) return;
@@ -378,10 +403,12 @@ export default function RaceSimulator3DProto({
     scene.background = new THREE.Color(0x87CEEB); // 空色
     sceneRef.current = scene;
     
-    // カメラ
+    // カメラ（初期 aspect は fallback。実サイズは直後の applyViewportSize で確定）
+    const initWidth = containerRef.current.clientWidth || 16;
+    const initHeight = containerRef.current.clientHeight || 9;
     const camera = new THREE.PerspectiveCamera(
       60,
-      containerRef.current.clientWidth / containerRef.current.clientHeight,
+      initWidth / initHeight,
       0.1,
       10000
     );
@@ -389,12 +416,21 @@ export default function RaceSimulator3DProto({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
     
-    // レンダラー
+    // レンダラー（表示サイズは CSS のアスペクト比が正本。内部解像度のみ applyViewportSize で合わせる）
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 上限設定
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+    applyViewportSize();
+
+    // viewport（containerRef）自体の実測サイズ変化のみを監視（tracking panel 等は含めない）
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => {
+        applyViewportSize();
+      });
+      ro.observe(containerRef.current);
+      resizeObserverRef.current = ro;
+    }
     
     // コントロール
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -613,6 +649,11 @@ export default function RaceSimulator3DProto({
       // このシーンを無効化（旧世代の animate ループが触れないように）
       sceneGenerationRef.current++;
       
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         animationFrameRef.current = null;
@@ -1625,18 +1666,23 @@ export default function RaceSimulator3DProto({
         </div>
       )}
       
+      {/*
+        Simulator wrapper: 3D viewport（常に横長 16:9 / PC は既存比率）と tracking panel を分離。
+        スマホでは tracking panel を viewport の外側・下に配置し、canvas の高さ計算に混ぜない。
+      */}
+      <div className="w-full">
       {/* 3Dビュー: timeline の有無に関わらず常時マウント（container 未マウントで init が bail するのを防ぐ） */}
       <div 
         ref={containerRef}
-        className="w-full h-[600px] border border-gray-300 rounded-lg overflow-hidden bg-black relative"
+        className="relative w-full max-w-full aspect-video overflow-hidden rounded-lg border border-gray-300 bg-black md:aspect-auto md:h-[600px]"
         style={{ touchAction: 'none' }}
       >
         {/* Broadcast Cel: 頭上ラベル層（screen-space・pointer-events なし。canvas 操作を妨げない） */}
         <div ref={labelLayerRef} className="pointer-events-none absolute inset-0 z-30" />
 
-        {/* 画面端トラッキング（全頭の識別を保証）: PC=右端縦帯 / 狭幅=下端横帯。3D 選択と双方向同期。 */}
+        {/* PC: viewport 内側・右端の縦帯（absolute overlay）。viewport の高さには影響しない。 */}
         {timeline && trackingRows.length > 0 && (
-          <RaceTrackingPanel
+          <RaceTrackingPanelDesktop
             rows={trackingRows}
             selectedHorse={selectedHorse}
             onSelect={setSelectedHorse}
@@ -1698,6 +1744,18 @@ export default function RaceSimulator3DProto({
             ))}
           </div>
         )}
+      </div>
+
+      {/* スマホ: viewport の外側・下に続く横帯（通常フロー）。canvas の高さ計算には混ざらない。 */}
+      {timeline && trackingRows.length > 0 && (
+        <div className="mt-1.5 md:hidden">
+          <RaceTrackingPanelMobile
+            rows={trackingRows}
+            selectedHorse={selectedHorse}
+            onSelect={setSelectedHorse}
+          />
+        </div>
+      )}
       </div>
       
       {timeline && (
