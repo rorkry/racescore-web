@@ -13,6 +13,8 @@ export const hakodateGeometries: RacecourseGeometry[] = [
     direction: 'clockwise',
     loopLength: 1626.6,
     homeStraightLength: 262.1,
+    trackWidth: 29,
+    trackWidthSourceNote: 'JRA公式Aコース幅員29m',
     elevationRange: 3.5,
     // home(0) 低 → 向正面〜4角にかけて上り → home 手前で下り、の概略
     elevationFracs: [[0, 0], [0.25, 3.5], [0.5, 3.2], [0.7, 2.0], [0.9, 0.5], [1, 0]],
@@ -25,6 +27,8 @@ export const hakodateGeometries: RacecourseGeometry[] = [
     direction: 'clockwise',
     loopLength: 1475.8,
     homeStraightLength: 260.3,
+    trackWidth: 20,
+    trackWidthSourceNote: 'JRA公式ダートコース幅員20m',
     elevationRange: 3.5,
     elevationFracs: [[0, 0], [0.25, 3.5], [0.5, 3.2], [0.7, 2.0], [0.9, 0.5], [1, 0]],
     distances: [1000, 1700, 2400],

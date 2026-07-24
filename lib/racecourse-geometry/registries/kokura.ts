@@ -10,6 +10,8 @@ export const kokuraGeometries: RacecourseGeometry[] = [
     direction: 'clockwise',
     loopLength: 1615.1,
     homeStraightLength: 293,
+    trackWidth: 30,
+    trackWidthSourceNote: 'JRA公式Aコース幅員30m',
     elevationRange: 3.0,
     // 2コーナー付近（back手前）の丘（概略）
     elevationFracs: [[0, 0], [0.35, 3.0], [0.5, 2.5], [0.75, 0.8], [1, 0]],
@@ -22,6 +24,8 @@ export const kokuraGeometries: RacecourseGeometry[] = [
     direction: 'clockwise',
     loopLength: 1445.4,
     homeStraightLength: 291.3,
+    trackWidth: 24,
+    trackWidthSourceNote: 'JRA公式ダートコース幅員24m',
     elevationRange: 2.9,
     elevationFracs: [[0, 0], [0.35, 2.9], [0.5, 2.4], [0.75, 0.8], [1, 0]],
     distances: [1000, 1700, 2400],

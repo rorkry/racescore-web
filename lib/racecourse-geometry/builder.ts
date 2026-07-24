@@ -39,8 +39,11 @@ export interface StadiumConfig {
   loopLength: number;
   /** 公式ホームストレッチ長(m) */
   homeStraightLength: number;
-  /** 走路幅(m) */
+  /** 走路幅(m)。距離ごとには分けない代表値 */
   trackWidth: number;
+  trackWidthMinMeters?: number;
+  trackWidthMaxMeters?: number;
+  trackWidthSourceNote?: string;
   /** 公式高低差(m) */
   elevationRange: number;
   elevationProfile?: ElevationKeyframe[];
@@ -58,6 +61,9 @@ export interface StraightConfig {
   /** 直線コースの全長(m) */
   pathLength: number;
   trackWidth: number;
+  trackWidthMinMeters?: number;
+  trackWidthMaxMeters?: number;
+  trackWidthSourceNote?: string;
   elevationRange: number;
   elevationProfile?: ElevationKeyframe[];
   startMarkers?: Record<string, StartMarker>;
@@ -151,6 +157,9 @@ export function buildStadiumGeometry(cfg: StadiumConfig): RacecourseGeometry {
     pathLength: L,
     finishPathDistance,
     trackWidth: cfg.trackWidth,
+    trackWidthMinMeters: cfg.trackWidthMinMeters,
+    trackWidthMaxMeters: cfg.trackWidthMaxMeters,
+    trackWidthSourceNote: cfg.trackWidthSourceNote,
     homeStraightLength: Hs,
     elevationRange: cfg.elevationRange,
     elevationProfile: cfg.elevationProfile ?? [],
@@ -183,6 +192,9 @@ export function buildStraightGeometry(cfg: StraightConfig): RacecourseGeometry {
     pathLength: len,
     finishPathDistance: len, // 終端がゴール
     trackWidth: cfg.trackWidth,
+    trackWidthMinMeters: cfg.trackWidthMinMeters,
+    trackWidthMaxMeters: cfg.trackWidthMaxMeters,
+    trackWidthSourceNote: cfg.trackWidthSourceNote,
     homeStraightLength: len,
     elevationRange: cfg.elevationRange,
     elevationProfile: cfg.elevationProfile ?? [],

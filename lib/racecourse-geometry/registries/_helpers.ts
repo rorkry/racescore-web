@@ -50,7 +50,14 @@ export interface StadiumSpec {
   direction: Exclude<RacecourseDirection, 'straight'>;
   loopLength: number;
   homeStraightLength: number;
+  /** 走路幅(m)の代表値。競馬場・芝ダート・内外区分ごとの基本属性（距離ごとには分けない） */
   trackWidth?: number;
+  /** 公式資料の幅員レンジ最小値(m) */
+  trackWidthMinMeters?: number;
+  /** 公式資料の幅員レンジ最大値(m) */
+  trackWidthMaxMeters?: number;
+  /** 幅員の採用根拠 */
+  trackWidthSourceNote?: string;
   elevationRange: number;
   /** [frac, elevation] のプロファイル（省略時は elevationRange から簡易生成） */
   elevationFracs?: Array<[number, number]>;
@@ -64,6 +71,11 @@ export function makeStadium(spec: StadiumSpec): RacecourseGeometry {
   const id = `${spec.venue}:${spec.surface}:${spec.route}`;
   const sourceUrl = JRA_COURSE_URL[spec.venue] ?? '';
   const trackWidth = spec.trackWidth ?? (spec.surface === 'turf' ? 27 : 24);
+  const trackWidthSourceNote =
+    spec.trackWidthSourceNote ??
+    (spec.trackWidth != null
+      ? undefined
+      : '公式幅員未反映のため既定値(芝27m/ダート24m)を継続使用（estimated）');
   const provenance = spec.provenance ?? 'official-adjusted';
 
   const elevationFracs =
@@ -89,6 +101,9 @@ export function makeStadium(spec: StadiumSpec): RacecourseGeometry {
     loopLength: spec.loopLength,
     homeStraightLength: spec.homeStraightLength,
     trackWidth,
+    trackWidthMinMeters: spec.trackWidthMinMeters,
+    trackWidthMaxMeters: spec.trackWidthMaxMeters,
+    trackWidthSourceNote,
     elevationRange: spec.elevationRange,
     elevationProfile: fracProfile(spec.loopLength, elevationFracs),
     sourceUrls: [sourceUrl],
@@ -105,6 +120,9 @@ export interface StraightSpec {
   surface: RacecourseSurface;
   pathLength: number;
   trackWidth?: number;
+  trackWidthMinMeters?: number;
+  trackWidthMaxMeters?: number;
+  trackWidthSourceNote?: string;
   elevationRange: number;
   elevationFracs?: Array<[number, number]>;
   distances: number[];
@@ -116,6 +134,9 @@ export function makeStraight(spec: StraightSpec): RacecourseGeometry {
   const id = `${spec.venue}:${spec.surface}:straight`;
   const sourceUrl = JRA_COURSE_URL[spec.venue] ?? '';
   const trackWidth = spec.trackWidth ?? 25;
+  const trackWidthSourceNote =
+    spec.trackWidthSourceNote ??
+    (spec.trackWidth != null ? undefined : '公式幅員未反映のため既定値(25m)を継続使用（estimated）');
   const provenance = spec.provenance ?? 'official-adjusted';
 
   const elevationFracs =
@@ -132,6 +153,9 @@ export function makeStraight(spec: StraightSpec): RacecourseGeometry {
     route: 'straight',
     pathLength: spec.pathLength,
     trackWidth,
+    trackWidthMinMeters: spec.trackWidthMinMeters,
+    trackWidthMaxMeters: spec.trackWidthMaxMeters,
+    trackWidthSourceNote,
     elevationRange: spec.elevationRange,
     elevationProfile: fracProfile(spec.pathLength, elevationFracs),
     sourceUrls: [sourceUrl],

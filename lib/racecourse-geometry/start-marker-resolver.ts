@@ -143,6 +143,35 @@ export function buildBackCalculatedMarkers(
 }
 
 /**
+ * ゴールから「残りremainingMeters」の地点の pathDistance を返す（距離標用）。
+ * 発走距離(raceDistance)に依存しない、コース固有の物理位置。
+ * closed-loop: ゴールから進行方向を遡って remainingMeters 手前（wrap）。
+ * open-path  : ゴール(=pathLength)から remainingMeters 手前。0未満はクランプ。
+ *
+ * 数式は backCalculateStartMarker と同じ「finish - sign*距離」だが、
+ * StartMarker（レース距離に紐づく発走点）とは意味が異なるため別関数として持つ。
+ */
+export function pathDistanceAtRemaining(
+  geometry: RacecourseGeometry,
+  remainingMeters: number
+): number {
+  const closed = geometry.pathKind === 'closed-loop';
+  if (closed) {
+    const sign = directionSign(geometry);
+    return normalizePathDistance(
+      geometry.finishPathDistance - sign * remainingMeters,
+      geometry.pathLength,
+      true
+    );
+  }
+  return normalizePathDistance(
+    geometry.finishPathDistance - remainingMeters,
+    geometry.pathLength,
+    false
+  );
+}
+
+/**
  * 検算: start(raceProgress=0) と finish(raceProgress=raceDistance) の
  * pathDistance が期待どおりかを測る。closed-loop は「実際に走る弧長」も返す。
  */

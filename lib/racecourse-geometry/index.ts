@@ -19,6 +19,7 @@ export {
   backCalculateStartMarker,
   buildBackCalculatedMarkers,
   sampleRaceProgressPose,
+  pathDistanceAtRemaining,
   verifyStartFinish,
 } from './start-marker-resolver';
 export { validateGeometry, type GeometryValidationResult } from './validation';
