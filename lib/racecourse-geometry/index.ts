@@ -38,3 +38,14 @@ export {
   GEOMETRIES_BY_VENUE,
   VENUE_IDS,
 } from './registries';
+export {
+  getSurfaceProfile,
+  hasMixedSurface,
+  resolveSurfaceAtRaceProgress,
+  type SurfaceType,
+  type SurfaceSegment,
+  type SurfaceSegmentProvenance,
+  type SurfaceProfileByDistance,
+  type ResolveSurfaceInput,
+  type SurfaceResolution,
+} from './surface-profiles';

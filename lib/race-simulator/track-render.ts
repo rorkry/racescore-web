@@ -15,11 +15,30 @@
 
 import * as THREE from 'three';
 import type { RacecourseGeometry, StartMarker } from '../racecourse-geometry/types';
-import { samplePathPose, pathDistanceAtRemaining } from '../racecourse-geometry';
+import {
+  samplePathPose,
+  pathDistanceAtRemaining,
+  directionSign,
+  raceProgressToPathDistance,
+  normalizePathDistance,
+  getSurfaceProfile,
+  resolveSurfaceAtRaceProgress,
+} from '../racecourse-geometry';
 
 export interface TrackRenderResult {
   group: THREE.Group;
   dispose: () => void;
+}
+
+/**
+ * 芝スタート近似表示のためのオーバーレイ指定。
+ * アクティブレースの発走点(startPathDistance)とレース距離を渡すと、
+ * surface profile が登録された距離のみ、発走からの芝区間を芝色で描画する（近似表示）。
+ * 馬の走行 path / raceProgress / finish 判定には影響しない（描画専用）。
+ */
+export interface SurfaceStartOverlay {
+  startPathDistance: number;
+  raceDistance: number;
 }
 
 export interface TrackRenderOptions {
@@ -27,6 +46,8 @@ export interface TrackRenderOptions {
   active: boolean;
   /** サンプル分割数（既定 240） */
   segments?: number;
+  /** 芝スタート近似表示（アクティブ走路のみ有効） */
+  surfaceStart?: SurfaceStartOverlay;
 }
 
 const TURF_BASE = 0x2f8f3f;
@@ -83,13 +104,52 @@ export function buildTrackGroup(
   const stripeColor = new THREE.Color(
     isTurf ? (opts.active ? TURF_ACTIVE_STRIPE : TURF_STRIPE) : opts.active ? DIRT_ACTIVE_STRIPE : DIRT_STRIPE
   );
+
+  // 芝スタート近似表示: アクティブ走路かつ surface profile 登録距離のときのみ、
+  // 各頂点の路面(turf/dirt)を解決して頂点カラーを差し替える（内外差は頂点単位で対角境界になる）。
+  const overlay = opts.surfaceStart;
+  const surfaceSegments =
+    opts.active && overlay ? getSurfaceProfile(geometry.id, overlay.raceDistance) : null;
+  const useSurfaceOverlay = !!overlay && !!surfaceSegments && surfaceSegments.length > 0;
+  const startPD = overlay?.startPathDistance ?? 0;
+  const sign = directionSign(geometry);
+  // アクティブ路面のturf/dirt両色（stripe込み）
+  const turfBaseCol = new THREE.Color(opts.active ? TURF_ACTIVE_BASE : TURF_BASE);
+  const turfStripeCol = new THREE.Color(opts.active ? TURF_ACTIVE_STRIPE : TURF_STRIPE);
+  const dirtBaseCol = new THREE.Color(opts.active ? DIRT_ACTIVE_BASE : DIRT_BASE);
+  const dirtStripeCol = new THREE.Color(opts.active ? DIRT_ACTIVE_STRIPE : DIRT_STRIPE);
+  const colorFor = (surface: 'turf' | 'dirt', useStripe: boolean): THREE.Color => {
+    if (surface === 'turf') return useStripe ? turfStripeCol : turfBaseCol;
+    return useStripe ? dirtStripeCol : dirtBaseCol;
+  };
+
   for (let i = 0; i <= ringCount; i++) {
     const useStripe = Math.floor(i / STRIPE_EVERY) % 2 === 1;
-    const col = useStripe ? stripeColor : baseColor;
+    let innerCol = useStripe ? stripeColor : baseColor;
+    let outerCol = innerCol;
+    if (useSurfaceOverlay) {
+      const d = (i / ringCount) * total;
+      // 絶対 pathDistance → レース相対走破距離(0..L)。方向符号を反映
+      const relProgress = normalizePathDistance(sign * (d - startPD), total, true);
+      const inRes = resolveSurfaceAtRaceProgress({
+        geometry,
+        raceDistance: overlay!.raceDistance,
+        raceProgress: relProgress,
+        lateralPosition: -halfWidth, // 内ラチ側
+      });
+      const outRes = resolveSurfaceAtRaceProgress({
+        geometry,
+        raceDistance: overlay!.raceDistance,
+        raceProgress: relProgress,
+        lateralPosition: halfWidth, // 外ラチ側
+      });
+      innerCol = colorFor(inRes.surface, useStripe);
+      outerCol = colorFor(outRes.surface, useStripe);
+    }
     positions.push(inner[i].x, inner[i].y, inner[i].z);
-    colors.push(col.r, col.g, col.b);
+    colors.push(innerCol.r, innerCol.g, innerCol.b);
     positions.push(outer[i].x, outer[i].y, outer[i].z);
-    colors.push(col.r, col.g, col.b);
+    colors.push(outerCol.r, outerCol.g, outerCol.b);
   }
   const trackGeom = new THREE.BufferGeometry();
   trackGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -113,6 +173,45 @@ export function buildTrackGroup(
   trackMesh.renderOrder = 0;
   group.add(trackMesh);
   track(trackGeom); track(trackMat);
+
+  // ---- 芝→ダート境界線（近似表示）----
+  // 芝区間の終端（内ラチ側=toRaceProgress, 外ラチ側=outerToRaceProgress）を結ぶ細い線。
+  // 内外差があれば対角、無ければ幅方向に垂直な線になる。estimated は控えめに。
+  if (useSurfaceOverlay) {
+    const turfSeg = surfaceSegments!.find((s) => s.surface === 'turf');
+    if (turfSeg) {
+      const innerEnd = turfSeg.toRaceProgress;
+      const outerEnd = turfSeg.outerToRaceProgress ?? turfSeg.toRaceProgress;
+      const pdInner = raceProgressToPathDistance(geometry, startPD, innerEnd);
+      const pdOuter = raceProgressToPathDistance(geometry, startPD, outerEnd);
+      const poseI = samplePathPose(geometry, pdInner, 0);
+      const poseO = samplePathPose(geometry, pdOuter, 0);
+      const nrmI = new THREE.Vector3(poseI.normal.x, 0, poseI.normal.z);
+      const nrmO = new THREE.Vector3(poseO.normal.x, 0, poseO.normal.z);
+      const pInner = new THREE.Vector3(
+        poseI.position.x,
+        poseI.position.y + 0.12,
+        poseI.position.z
+      ).addScaledVector(nrmI, -halfWidth);
+      const pOuter = new THREE.Vector3(
+        poseO.position.x,
+        poseO.position.y + 0.12,
+        poseO.position.z
+      ).addScaledVector(nrmO, halfWidth);
+      const estimated = turfSeg.provenance === 'estimated';
+      const boundaryGeom = new THREE.BufferGeometry().setFromPoints([pInner, pOuter]);
+      const boundaryMat = new THREE.LineBasicMaterial({
+        color: estimated ? 0xbbbbbb : 0xffffff,
+        transparent: true,
+        opacity: estimated ? 0.45 : 0.85, // estimated は控えめ
+      });
+      const boundaryLine = new THREE.Line(boundaryGeom, boundaryMat);
+      boundaryLine.renderOrder = 2;
+      group.add(boundaryLine);
+      track(boundaryGeom);
+      track(boundaryMat);
+    }
+  }
 
   // ---- 柵（Line） ----
   const railMat = new THREE.LineBasicMaterial({ color: RAIL_COLOR });
