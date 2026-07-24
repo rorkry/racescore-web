@@ -385,6 +385,7 @@ async function importWakujun(client: any, data: any[]): Promise<{ count: number;
  * 45: dam - 母馬
  * 46: lap_time - ワーク1（ラップタイム）
  * 47: work_2 - ワーク2
+ * 63: keiro - 毛色（BL列。64列フォーマットのみ。無い場合は空）
  */
 async function importUmadata(client: any, data: any[]): Promise<{ count: number; inserted: number }> {
   console.log(`[importUmadata] 開始: ${data.length}行`);
@@ -399,6 +400,9 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
 
   let errors: string[] = [];
   
+  // 毛色列（BL列=CSV idx63）を保存できるよう、無ければ追加する（冪等・既存データ非破壊）
+  await client.query('ALTER TABLE umadata ADD COLUMN IF NOT EXISTS keiro TEXT');
+
   try {
     await client.query('BEGIN');
     
@@ -424,13 +428,15 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
                 finish_time, race_count, margin, win_odds, place_odds_low,
                 place_odds_high, win_payout, place_payout, rpci, pci, good_run,
                 pci3, horse_mark, corner_1, corner_2, corner_3, corner_4,
-                gender, age, jockey, multi_entry, affiliation, trainer, sire, dam, lap_time, work_2
+                gender, age, jockey, multi_entry, affiliation, trainer, sire, dam, lap_time, work_2,
+                keiro
               ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
                 $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-                $41, $42, $43, $44, $45, $46, $47, $48
+                $41, $42, $43, $44, $45, $46, $47, $48,
+                $49
               )
             `, [
               (row[0] || '').trim(),   // race_id
@@ -480,7 +486,8 @@ async function importUmadata(client: any, data: any[]): Promise<{ count: number;
               (row[44] || '').trim(),  // sire
               (row[45] || '').trim(),  // dam
               (row[46] || '').trim(),  // lap_time
-              (row[47] || '').trim()   // work_2
+              (row[47] || '').trim(),  // work_2
+              (row[63] || '').trim()   // keiro（毛色・BL列。64列フォーマットのみ。無い場合は空）
             ]);
             
             await client.query(`RELEASE SAVEPOINT ${rowId}`);

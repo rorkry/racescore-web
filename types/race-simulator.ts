@@ -108,6 +108,9 @@ export interface HorseState {
   waku: number;
   weight: number;             // 斤量（kg）
   trackBiasEffect: number;    // 馬場バイアス効果 (-10 〜 +10)
+
+  // 見た目用（simulation には影響しない）
+  keiro?: string | null;      // 毛色名（umadata BL列。例: "鹿毛"。未取得時は null/undefined）
 }
 
 export interface HorseCapabilities {

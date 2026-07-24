@@ -45,6 +45,71 @@ export interface HorseIndices {
   };
 }
 
+// umadata に keiro（毛色）列が存在するか（プロセス内キャッシュ）。
+// 列が無い環境（未マイグレーション）でも SELECT keiro でエラーにしないための事前判定。
+let _umadataKeiroColumnExists: boolean | null = null;
+
+/** テスト専用: keiro 列存在キャッシュをリセットする。 */
+export function __resetCoatColumnCacheForTest(): void {
+  _umadataKeiroColumnExists = null;
+}
+
+async function umadataHasKeiroColumn(db: any): Promise<boolean> {
+  if (_umadataKeiroColumnExists !== null) return _umadataKeiroColumnExists;
+  try {
+    const rows = await db
+      .prepare(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'umadata' AND column_name = 'keiro' LIMIT 1`
+      )
+      .all();
+    _umadataKeiroColumnExists = Array.isArray(rows) && rows.length > 0;
+  } catch {
+    _umadataKeiroColumnExists = false;
+  }
+  return _umadataKeiroColumnExists;
+}
+
+/**
+ * 出走馬の毛色（keiro）を umadata から取得する。
+ *
+ * - 各馬の最新レコード（race_id DESC）の毛色を採用（毛色は馬固有属性のため実質不変）。
+ * - umadata に keiro 列が無い環境では空 Map を返す（呼び出し側は決定的パレットへフォールバック）。
+ * - simulation ロジックには一切影響しない（見た目の毛色決定のみに使用）。
+ *
+ * @returns horse_name（トリム済み）→ 毛色名（例: "鹿毛"）の Map
+ */
+export async function fetchCoatColors(
+  db: any,
+  horseNames: string[]
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const names = Array.from(
+    new Set(horseNames.map((n) => (n ?? '').trim()).filter((n) => n.length > 0))
+  );
+  if (names.length === 0) return result;
+  if (!(await umadataHasKeiroColumn(db))) return result;
+
+  try {
+    const rows = (await db
+      .prepare(
+        `SELECT DISTINCT ON (horse_name) horse_name, keiro
+         FROM umadata
+         WHERE horse_name = ANY($1::text[]) AND keiro IS NOT NULL AND keiro <> ''
+         ORDER BY horse_name, race_id DESC`
+      )
+      .all(names)) as Array<{ horse_name: string; keiro: string }>;
+    for (const r of rows) {
+      const key = (r.horse_name ?? '').trim();
+      const val = (r.keiro ?? '').trim();
+      if (key && val) result.set(key, val);
+    }
+  } catch {
+    // 取得失敗時は空のまま（決定的パレットへフォールバック）
+  }
+  return result;
+}
+
 /**
  * indicesテーブルから全指数を取得
  */

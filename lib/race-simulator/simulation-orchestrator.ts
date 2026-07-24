@@ -10,7 +10,7 @@ import type {
   HorseState, 
   TrackBias
 } from '@/types/race-simulator';
-import { fetchHorseIndices, calculateLeadingIntention, getPastPositionPattern } from './data-fetcher';
+import { fetchHorseIndices, fetchCoatColors, calculateLeadingIntention, getPastPositionPattern } from './data-fetcher';
 import { analyzeCapabilities, logCapabilities } from './capability-analyzer';
 import { resolveCourseLayout } from './course-resolver';
 import { executeStartPhase } from './engines/start-phase';
@@ -110,6 +110,9 @@ export async function runRaceSimulation(
   // ========================================
   // 3. 各馬のデータを取得＆能力分析
   // ========================================
+  // 毛色（見た目用・simには影響しない）を umadata から一括取得。列が無ければ空 Map。
+  const coatColors = await fetchCoatColors(db, horses.map(h => h.umamei));
+
   const horseStates: HorseState[] = [];
   
   for (const horse of horses) {
@@ -166,6 +169,8 @@ export async function runRaceSimulation(
       waku,
       weight,
       trackBiasEffect: 0,
+      // 見た目用の毛色（simには不使用）。未取得時は null → 決定的パレットへフォールバック
+      keiro: coatColors.get((horseName ?? '').trim()) ?? null,
     };
     
     horseStates.push(horseState);
