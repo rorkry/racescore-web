@@ -16,7 +16,7 @@ import {
   type RacecourseLayout,
   type ForecastLayouts3D,
 } from '@/lib/race-simulator/race-3d-integration';
-import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE } from '@/lib/racecourse-geometry';
+import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE, getSurfaceProfile } from '@/lib/racecourse-geometry';
 import {
   buildTrackGroup,
   buildStartFinishGroup,
@@ -486,6 +486,17 @@ export default function RaceSimulator3DProto({
       startMarkerFallback: layout?.startMarkerIsFallback,
       forecastGoal: forecastLayoutsRef.current?.goal?.length ?? 0,
     });
+    // 芝スタート近似表示の有無（開発確認用・本番では出さない）
+    if (process.env.NODE_ENV !== 'production') {
+      const mixedSurfaceSeg = layout
+        ? getSurfaceProfile(layout.geometry.id, layout.raceDistance)
+        : null;
+      const turfSeg = mixedSurfaceSeg?.find((s) => s.surface === 'turf');
+      console.log(
+        '[3DSimulator] mixedSurface:',
+        turfSeg ? `芝スタート区間あり(${turfSeg.toRaceProgress}m, ${turfSeg.provenance})` : 'なし(単一路面)'
+      );
+    }
 
     // 地面（背景）
     const groundGeom = new THREE.PlaneGeometry(4000, 4000);
@@ -503,7 +514,17 @@ export default function RaceSimulator3DProto({
         const venueGeoms = GEOMETRIES_BY_VENUE.get(layout.geometry.venue) ?? [layout.geometry];
         for (const g of venueGeoms) {
           const isActive = g.id === layout.geometry.id;
-          const tr = buildTrackGroup(g, { active: isActive });
+          // 芝スタート近似表示: アクティブ走路のみ、発走点とレース距離を渡す
+          // （surface profile 未登録の距離では既存の単一路面のまま）
+          const tr = buildTrackGroup(g, {
+            active: isActive,
+            surfaceStart: isActive
+              ? {
+                  startPathDistance: layout.startMarker.pathDistance,
+                  raceDistance: layout.raceDistance,
+                }
+              : undefined,
+          });
           scene.add(tr.group);
           trackGroupsRef.current.push(tr);
         }
