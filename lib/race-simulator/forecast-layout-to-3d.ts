@@ -113,3 +113,135 @@ export function orderByLateralInnerFirst(
     })
     .map((p) => p.horseNumber);
 }
+
+/** ゴール前 forecast blend の進行度区間（0..1） */
+export const GOAL_BLEND_START = 0.70;
+export const GOAL_BLEND_PEAK = 0.88;
+export const FINISH_CONVERGE_START = 0.88;
+export const FINISH_CONVERGE_END = 0.98;
+
+export interface GoalForecastInputHorse {
+  horseNumber: number;
+  /** スタート後位置（expectedPosition2C / start.position）。小さいほど先頭 */
+  startPosition: number;
+  waku: number;
+  /** 競うスコア相当（高いほど前）。無ければ 0 */
+  kisoScore?: number;
+  /** L4F 相当（高いほど前）。無ければ 0 */
+  l4fScore?: number;
+  runningStyle?: string;
+}
+
+/**
+ * 旧2D CourseStyleRacePace のゴール位置式を純粋関数化したもの。
+ *
+ * ゴール位置 = スタート×0.3 + スコア順位影響×0.5 + L4F影響×0.2
+ * （小さいほど先頭）
+ *
+ * 2D UI 自体は変更しない。3D が同じ式を共有するための抽出。
+ */
+export function computeExpectedGoalPositions(
+  horses: GoalForecastInputHorse[],
+): Array<{ horseNumber: number; expectedPositionGoal: number; waku: number }> {
+  const n = horses.length;
+  if (n === 0) return [];
+
+  const byScore = [...horses].sort((a, b) => (b.kisoScore ?? 0) - (a.kisoScore ?? 0));
+  const scorePct = new Map<number, number>();
+  byScore.forEach((h, idx) => {
+    scorePct.set(h.horseNumber, n > 1 ? (idx / (n - 1)) * 100 : 50);
+  });
+
+  const withL4 = horses.filter((h) => (h.l4fScore ?? 0) > 0);
+  const byL4 = [...withL4].sort((a, b) => (b.l4fScore ?? 0) - (a.l4fScore ?? 0));
+  const l4Pct = new Map<number, number>();
+  byL4.forEach((h, idx) => {
+    l4Pct.set(h.horseNumber, byL4.length > 1 ? (idx / (byL4.length - 1)) * 100 : 50);
+  });
+
+  return horses.map((h) => {
+    const startInfluence = h.startPosition * 0.3;
+    const scoreInfluence = ((scorePct.get(h.horseNumber) ?? 50) / 100) * n * 0.5;
+    const l4Influence = ((l4Pct.get(h.horseNumber) ?? 50) / 100) * n * 0.2;
+    let goal = startInfluence + scoreInfluence + l4Influence;
+    goal = Math.max(1, Math.min(n + 1, goal));
+    return {
+      horseNumber: h.horseNumber,
+      expectedPositionGoal: goal,
+      waku: h.waku,
+    };
+  });
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  if (edge1 <= edge0) return x >= edge1 ? 1 : 0;
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 先頭馬の raceProgress から、ゴール予想への blend 率と最終着順への収束率を求める。
+ * - blendToGoal: 0..1（dynamics → 旧2Dゴール配置）
+ * - convergeToFinish: 0..1（ゴール予想 → 実着順配置）
+ */
+export function computeGoalBlendWeights(leaderProgress01: number): {
+  blendToGoal: number;
+  convergeToFinish: number;
+} {
+  const p = Math.max(0, Math.min(1, leaderProgress01));
+  const blendToGoal = smoothstep(GOAL_BLEND_START, GOAL_BLEND_PEAK, p);
+  const convergeToFinish = smoothstep(FINISH_CONVERGE_START, FINISH_CONVERGE_END, p);
+  return { blendToGoal, convergeToFinish };
+}
+
+export interface BlendableHorse {
+  horseNumber: number;
+  raceProgress: number;
+  lateralPosition: number;
+}
+
+/**
+ * dynamics フレームを旧2Dゴール配置・最終着順配置へ滑らかにブレンドする。
+ * horseNumber で対応（配列 index 禁止）。急ワープしないよう weight は呼び出し側の smoothstep。
+ *
+ * targetProgress = lerp(dyn, goal, blendToGoal)
+ * その後 targetProgress = lerp(targetProgress, finish, convergeToFinish)
+ * lateral も同様。
+ */
+export function blendFrameTowardForecastLayouts<T extends BlendableHorse>(
+  frame: T[],
+  opts: {
+    raceDistance: number;
+    goalLayout: Layout3DPose[];
+    finishLayout: Layout3DPose[];
+    blendToGoal: number;
+    convergeToFinish: number;
+  },
+): T[] {
+  const rd = opts.raceDistance > 0 ? opts.raceDistance : 1;
+  const goalMap = new Map(opts.goalLayout.map((p) => [p.horseNumber, p]));
+  const finishMap = new Map(opts.finishLayout.map((p) => [p.horseNumber, p]));
+  const bg = Math.max(0, Math.min(1, opts.blendToGoal));
+  const cf = Math.max(0, Math.min(1, opts.convergeToFinish));
+
+  return frame.map((h) => {
+    const g = goalMap.get(h.horseNumber);
+    const f = finishMap.get(h.horseNumber);
+    // dynamics の raceProgress はメートル（0..raceDistance）
+    let progress = h.raceProgress;
+    let lateral = h.lateralPosition;
+
+    if (g && bg > 0) {
+      const gMeters = Math.max(0, Math.min(rd, g.currentDistance));
+      progress = progress + (gMeters - progress) * bg;
+      lateral = lateral + (g.lateralPosition - lateral) * bg;
+    }
+    if (f && cf > 0) {
+      const fMeters = Math.max(0, Math.min(rd, f.currentDistance));
+      progress = progress + (fMeters - progress) * cf;
+      lateral = lateral + (f.lateralPosition - lateral) * cf;
+    }
+
+    return { ...h, raceProgress: progress, lateralPosition: lateral };
+  });
+}

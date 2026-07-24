@@ -159,32 +159,42 @@ export function buildTrackingRows(
 }
 
 /**
- * dynamics フレーム（raceProgress）から TrackingHorseInput を作る。
- * raceDistance があれば m 単位の走破距離・先頭差へ換算する。
+ * dynamics フレーム（raceProgress はメートル）から TrackingHorseInput を作る。
+ * 順位・先頭差は表示距離から算出（3D 位置関係と一致）。タイは finishTime → 馬番。
  */
 export function trackingInputsFromDynamics(
   frame: Array<{
     horseNumber: number;
     raceProgress: number;
-    rank: number;
+    rank?: number;
+    finished?: boolean;
+    finishTime?: number;
     horseId?: string;
   }>,
   raceDistance: number,
   nameOf?: (horseNumber: number) => string | undefined,
 ): TrackingHorseInput[] {
   const rd = raceDistance > 0 ? raceDistance : 1;
-  const dists = frame.map((h) => ({
-    horseNumber: h.horseNumber,
-    dist: Math.max(0, Math.min(rd, h.raceProgress * rd)),
-    rank: h.rank,
-  }));
-  const leaderDist = dists.reduce((m, x) => Math.max(m, x.dist), 0);
-  return dists.map((x) => ({
-    horseNumber: x.horseNumber,
-    position: x.rank,
-    horseName: nameOf?.(x.horseNumber),
-    currentDistance: x.dist,
-    raceProgress: x.dist / rd,
-    distanceFromLeader: Math.max(0, leaderDist - x.dist),
-  }));
+  const sorted = [...frame].sort((a, b) => {
+    const da = Math.max(0, Math.min(rd, a.raceProgress));
+    const db = Math.max(0, Math.min(rd, b.raceProgress));
+    if (db !== da) return db - da;
+    if (a.finished && b.finished) {
+      return (a.finishTime ?? Infinity) - (b.finishTime ?? Infinity);
+    }
+    if (a.finished !== b.finished) return a.finished ? -1 : 1;
+    return a.horseNumber - b.horseNumber;
+  });
+  const leaderDist = sorted.length > 0 ? Math.max(0, Math.min(rd, sorted[0].raceProgress)) : 0;
+  return sorted.map((h, i) => {
+    const dist = Math.max(0, Math.min(rd, h.raceProgress));
+    return {
+      horseNumber: h.horseNumber,
+      position: i + 1,
+      horseName: nameOf?.(h.horseNumber),
+      currentDistance: dist,
+      // buildTrackingRows の raceProgress は 0..1 解釈なので距離は currentDistance を正本にする
+      distanceFromLeader: Math.max(0, leaderDist - dist),
+    };
+  });
 }

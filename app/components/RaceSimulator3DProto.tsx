@@ -11,8 +11,10 @@ import { shouldShowDebugHud } from '@/lib/race-simulator/hud-visibility';
 import {
   resolveRacecourseLayout,
   runRaceDynamicsForRace,
-  interpolateDynamics,
+  interpolateDynamicsForDisplay,
+  buildForecastLayoutsFromSimulation,
   type RacecourseLayout,
+  type ForecastLayouts3D,
 } from '@/lib/race-simulator/race-3d-integration';
 import { sampleRaceProgressPose, GEOMETRIES_BY_VENUE } from '@/lib/racecourse-geometry';
 import { buildTrackGroup, buildStartFinishGroup, type TrackRenderResult } from '@/lib/race-simulator/track-render';
@@ -192,6 +194,8 @@ export default function RaceSimulator3DProto({
   // Phase B: 公式ジオメトリ + レースダイナミクス接続（位置とレース進行の正本）
   const layoutRef = useRef<RacecourseLayout | null>(null);
   const dynamicsRef = useRef<RaceDynamicsResult | null>(null);
+  /** Old-2D start/goal layouts for goal-approach display blend (meters). */
+  const forecastLayoutsRef = useRef<ForecastLayouts3D | null>(null);
   const trackGroupsRef = useRef<TrackRenderResult[]>([]);
   const groundRef = useRef<THREE.Mesh | null>(null);
   // レース切替の安全化: シーン世代。init のたびに +1 し、
@@ -419,10 +423,15 @@ export default function RaceSimulator3DProto({
       }
     }
     dynamicsRef.current = dynamics;
+    forecastLayoutsRef.current =
+      layout && simulationResult
+        ? buildForecastLayoutsFromSimulation(simulationResult, layout.raceDistance)
+        : null;
     console.log('[3DSimulator] layout/dynamics:', {
       layout: layout ? layout.routeId : 'null(旧描画へfallback)',
       dynamics: dynamics ? `${dynamics.frames.length}frames/${dynamics.totalTime}s` : 'null',
       startMarkerFallback: layout?.startMarkerIsFallback,
+      forecastGoal: forecastLayoutsRef.current?.goal?.length ?? 0,
     });
 
     // 地面（背景）
@@ -498,7 +507,7 @@ export default function RaceSimulator3DProto({
       const wakuOf = (hn: number) => horseMetaRef.current.get(hn)?.waku;
       const nameOf = (hn: number) => horseNameRef.current.get(hn);
       if (dynamics && raceDistance > 0) {
-        const frame = interpolateDynamics(dynamics, 0);
+        const frame = interpolateDynamicsForDisplay(dynamics, 0, forecastLayoutsRef.current);
         setTrackingRows(
           buildTrackingRows(trackingInputsFromDynamics(frame, raceDistance, nameOf), { wakuOf, raceDistance }),
         );
@@ -582,7 +591,7 @@ export default function RaceSimulator3DProto({
         const startFrame = renderer.info.render.frame;
         window.setTimeout(() => {
           try {
-            console.log('[BlackScreenDiag] D 1s後', { renderFrame: renderer.info.render.frame, 増加: renderer.info.render.frame > startFrame, contextLost: renderer.getContext().isContextLost() });
+            console.log('[BlackScreenDiag] D 1s later', { renderFrame: renderer.info.render.frame, advanced: renderer.info.render.frame > startFrame, contextLost: renderer.getContext().isContextLost() });
           } catch { /* renderer 破棄後は無視 */ }
         }, 1000);
         const dom = renderer.domElement;
@@ -692,6 +701,7 @@ export default function RaceSimulator3DProto({
       // 参照を明示クリア（dispose 済みオブジェクトへの後続アクセスを防ぐ）
       layoutRef.current = null;
       dynamicsRef.current = null;
+      forecastLayoutsRef.current = null;
       rendererRef.current = null;
       controlsRef.current = null;
       sceneRef.current = null;
@@ -753,7 +763,7 @@ export default function RaceSimulator3DProto({
     if (dynamics && raceDistance > 0) {
       const dur = tl.totalDuration > 0 ? tl.totalDuration : 1;
       const dynTime = (time / dur) * dynamics.totalTime;
-      const frame = interpolateDynamics(dynamics, dynTime);
+      const frame = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current);
       const inputs = trackingInputsFromDynamics(frame, raceDistance, nameOf);
       setTrackingRows(buildTrackingRows(inputs, { wakuOf, raceDistance }));
       return;
@@ -830,7 +840,7 @@ export default function RaceSimulator3DProto({
             const dur = timeline.totalDuration > 0 ? timeline.totalDuration : 1;
             if (dynamics) {
               const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
-              const frame = interpolateDynamics(dynamics, dynTime);
+              const frame = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current);
               positionHorsesOnGeometry(
                 layout,
                 frame.map((h) => ({
@@ -1449,7 +1459,7 @@ export default function RaceSimulator3DProto({
       }>;
       if (dynamics) {
         const dynTime = (currentTimeRef.current / dur) * dynamics.totalTime;
-        horses = interpolateDynamics(dynamics, dynTime).map((h) => ({
+        horses = interpolateDynamicsForDisplay(dynamics, dynTime, forecastLayoutsRef.current).map((h) => ({
           horseNumber: h.horseNumber,
           progress: h.raceProgress,
           lateral: h.lateralPosition,
@@ -1459,7 +1469,7 @@ export default function RaceSimulator3DProto({
       } else {
         horses = currentState.horses.map((h) => ({
           horseNumber: h.horseNumber,
-          progress: raceDistance > 0 ? h.currentDistance / raceDistance : 0,
+          progress: h.currentDistance, // meters
           lateral: h.lateralPosition ?? 0,
         }));
       }
@@ -1485,11 +1495,14 @@ export default function RaceSimulator3DProto({
 
       const avg = sum / c;
       const avgL = lsum / c;
-      const spread = (max - min) * (raceDistance > 0 ? raceDistance : 1);
+      const spread = Math.max(0, max - min); // meters
       const laneSpread = lmax - lmin;
-      const leaderProgress01 = Math.min(1, Math.max(0, leaderProgress));
+      const leaderProgress01 = raceDistance > 0 ? Math.min(1, Math.max(0, leaderProgress / raceDistance)) : 0;
 
       // 先頭入線時刻を記録（currentTimeRef 基準）
+      if (leaderProgress01 < 0.94 && !leaderFinished) {
+        leaderFinishTimeRef.current = null;
+      }
       if (leaderFinished && leaderFinishTimeRef.current == null) {
         leaderFinishTimeRef.current = currentTimeRef.current;
       }
@@ -1513,7 +1526,7 @@ export default function RaceSimulator3DProto({
         const leaderPose = sampleRaceProgressPose(
           geometry,
           startPathDistance,
-          Math.min(raceDistance, Math.max(0, leaderProgress01 * raceDistance)),
+          Math.min(raceDistance, Math.max(0, leaderProgress)),
           leaderLat,
         );
         const leaderPos = new THREE.Vector3(
@@ -1534,7 +1547,7 @@ export default function RaceSimulator3DProto({
 
       // 通常: 馬群中心を追従（ゴール固定カメラにはしない）
       // horses.progress は dynamics/timeline とも 0..1 に正規化済み
-      const packProgressM = Math.min(raceDistance, Math.max(0, avg * raceDistance));
+      const packProgressM = Math.min(raceDistance, Math.max(0, avg)); // avg is meters
       const cp = sampleRaceProgressPose(geometry, startPathDistance, packProgressM, avgL);
       const center = new THREE.Vector3(cp.position.x, cp.position.y, cp.position.z);
       const tangent = new THREE.Vector3(cp.tangent.x, 0, cp.tangent.z).normalize();

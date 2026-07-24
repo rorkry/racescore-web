@@ -9,8 +9,14 @@ import {
   convertForecastLayoutTo3D,
   diffRankOrder,
   orderByLateralInnerFirst,
+  computeGoalBlendWeights,
 } from './forecast-layout-to-3d';
-import { buildHorseInputsFromSimulation } from './race-3d-integration';
+import {
+  buildHorseInputsFromSimulation,
+  buildForecastLayoutsFromSimulation,
+  interpolateDynamics,
+  interpolateDynamicsForDisplay,
+} from './race-3d-integration';
 import { simulateRaceDynamics } from '../race-dynamics';
 
 let pass = 0, fail = 0;
@@ -85,6 +91,7 @@ for (const n of [8, 14, 18]) {
     raceKey: 'test_layout',
     raceDistance: 1600,
     phases: { start: { horses: field } },
+    finalStandings: field.map((h, i) => ({ ...h, position: field.length - i })),
   };
   const inputs = buildHorseInputsFromSimulation(sim);
   check('initialLateral が渡る', inputs.every((h) => h.initialLateralPosition != null));
@@ -103,18 +110,43 @@ for (const n of [8, 14, 18]) {
     seed: 42,
   });
   const f0 = dyn.frames[0].horses;
-  // frame0 の progress 降順 rank と start position の相関（完全一致は dynamics の微小差で崩れる場合があるので上位一致を見る）
   const startOrder = field.map((h) => h.horseNumber);
   const dynOrder = [...f0].sort((a, b) => b.raceProgress - a.raceProgress).map((h) => h.horseNumber);
   check('frame0 先頭が start 先頭と一致', dynOrder[0] === startOrder[0], `dyn=${dynOrder[0]} start=${startOrder[0]}`);
 
-  // 横位置: start lateral を踏襲（horseNumber 単位）
   let latOk = 0;
   for (const h of field) {
     const d = f0.find((x) => x.horseNumber === h.horseNumber);
     if (d && Math.abs(d.lateralPosition - h.lateralPosition) < 0.01) latOk++;
   }
   check('frame0 横位置が start lateral を踏襲', latOk === field.length, `ok=${latOk}/${field.length}`);
+}
+
+// ゴール前 blend が display 経路で接続される
+{
+  const field = makeField(14);
+  const finish = [...field].reverse().map((h, i) => ({ ...h, position: i + 1 }));
+  const sim = {
+    raceKey: 'blend_connect',
+    raceDistance: 1600,
+    phases: { start: { horses: field } },
+    finalStandings: finish,
+  };
+  const layouts = buildForecastLayoutsFromSimulation(sim, 1600);
+  check('forecast layouts 構築', !!layouts && layouts!.goal.length === 14);
+  const inputs = buildHorseInputsFromSimulation(sim);
+  const dyn = simulateRaceDynamics(inputs, { raceDistance: 1600, trackWidth: 25, seed: 7 });
+  const t = dyn.totalTime * 0.85;
+  const raw = interpolateDynamics(dyn, t);
+  const disp = interpolateDynamicsForDisplay(dyn, t, layouts);
+  const changed = disp.some((h) => {
+    const r = raw.find((x) => x.horseNumber === h.horseNumber)!;
+    return Math.abs(h.raceProgress - r.raceProgress) > 1e-6 || Math.abs(h.lateralPosition - r.lateralPosition) > 1e-6;
+  });
+  check('display経路でゴールblendが実適用', changed);
+  const leaderP = Math.max(...raw.map((h) => h.raceProgress));
+  const w = computeGoalBlendWeights(leaderP / 1600);
+  check('0.85付近で blendToGoal>0', w.blendToGoal > 0, `w=${JSON.stringify(w)} leaderM=${leaderP.toFixed(1)}`);
 }
 
 console.log(`\n結果: ${pass} passed, ${fail} failed`);

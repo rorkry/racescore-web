@@ -18,16 +18,16 @@ console.log('=== tracking-rows ===');
 const raceDistance = 1600;
 const wakuOf = (hn: number) => ((hn - 1) % 8) + 1;
 
-// dynamics フレーム風（progress が進むと走破距離が変わる）
+// dynamics フレーム風（raceProgress はメートル）
 const frameEarly = [
-  { horseNumber: 1, raceProgress: 0.10, rank: 2 },
-  { horseNumber: 2, raceProgress: 0.12, rank: 1 },
-  { horseNumber: 3, raceProgress: 0.08, rank: 3 },
+  { horseNumber: 1, raceProgress: 160, rank: 2 },
+  { horseNumber: 2, raceProgress: 192, rank: 1 },
+  { horseNumber: 3, raceProgress: 128, rank: 3 },
 ];
 const frameLate = [
-  { horseNumber: 1, raceProgress: 0.80, rank: 1 },
-  { horseNumber: 2, raceProgress: 0.75, rank: 2 },
-  { horseNumber: 3, raceProgress: 0.70, rank: 3 },
+  { horseNumber: 1, raceProgress: 1280, rank: 1 },
+  { horseNumber: 2, raceProgress: 1200, rank: 2 },
+  { horseNumber: 3, raceProgress: 1120, rank: 3 },
 ];
 
 const earlyInputs = trackingInputsFromDynamics(frameEarly, raceDistance, (n) => `馬${n}`);
